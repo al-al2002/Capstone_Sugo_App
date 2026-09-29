@@ -46,6 +46,27 @@ class BookingSuccessScreen extends StatelessWidget {
   /// missing, in which case the screen still works without the name.
   final Technician? technician;
 
+  /// Opens this screen in place of the whole booking flow.
+  ///
+  /// Everything above home goes, not just the screen that booked. Arriving
+  /// from a new post, the four posting steps are still on the stack under the
+  /// shortlist; replacing only the shortlist left them there, so Back from
+  /// this screen - or from "View booking" after it - walked into "post a
+  /// task" again. Once the request is sent the flow is over, so home is the
+  /// only thing left underneath.
+  static Future<void> show(
+    BuildContext context, {
+    required Job job,
+    Technician? technician,
+  }) {
+    return Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => BookingSuccessScreen(job: job, technician: technician),
+      ),
+      (Route<dynamic> route) => route.isFirst,
+    );
+  }
+
   String get _firstName =>
       technician?.displayName.split(' ').first ?? 'your technician';
 

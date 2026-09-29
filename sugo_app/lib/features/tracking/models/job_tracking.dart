@@ -1,6 +1,47 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../rb_cars/models/job_enums.dart';
+
+/// Which trip a `job_tracking` row belongs to.
+///
+/// ## One table, two journeys (2026-09-29)
+///
+/// Tracking was built for the workshop: the unit goes to the shop and comes
+/// back, so there are two legs and seven stages. A home visit is one trip -
+/// the technician drives to the client and repairs it there - and for a long
+/// time it was not tracked at all, because "the unit never leaves the house".
+/// True, but the *technician* still travels, and that is the wait a client
+/// actually sits through.
+///
+/// A home visit reuses two existing stages rather than adding new ones:
+///
+/// * `heading_to_pickup` - the technician driving to the client. The same
+///   trip, to the same address, as the start of a pickup.
+/// * `in_repair` - the repair under way, with nothing moving.
+///
+/// So the database, the ETA sampler, the delay detection and the realtime
+/// feed work unchanged, and no migration was needed. What differs is the
+/// *wording* and the *route*: [TrackingStage.labelOn], [TrackingStage.blurbOn],
+/// [TrackingStage.nextOptionsOn] and [TrackingStage.timelineFor] take the
+/// journey, and `jobs.service_path` says which one a row is on.
+enum TrackingJourney {
+  /// Rerouted to the workshop: collected, repaired at the shop, returned.
+  workshop,
+
+  /// Home service: the technician comes to the client and fixes it there.
+  homeVisit;
+
+  static TrackingJourney of(ServicePath? path) =>
+      path == ServicePath.homeService ? homeVisit : workshop;
+
+  /// Whether a job on [path] has a trip for the client to follow.
+  ///
+  /// Not `it_community`: a group diagnosis posted to the technician community,
+  /// where nobody goes anywhere.
+  static bool tracks(ServicePath? path) =>
+      path == ServicePath.pickup || path == ServicePath.homeService;
+}
 
 /// Where a transported job currently is in its journey.
 ///
@@ -120,6 +161,51 @@ enum TrackingStage {
 
   bool get isFinished => this == TrackingStage.delivered;
 
+  /// True while the trip ends at the client's own address: the technician on
+  /// the way to them, or the repaired unit on its way back.
+  ///
+  /// This decides where the map's destination pin goes. [headingToPickup]
+  /// used to be counted with the rest of the inbound leg and pinned the
+  /// *workshop*, so a client told "On the way to you" watched a line drawn to
+  /// a shop across town. Mirrors `leg_destination.ts`, which fixed the same
+  /// mistake in the ETA and the weather.
+  bool get headsToClient =>
+      this == TrackingStage.headingToPickup ||
+      this == TrackingStage.outForDelivery;
+
+  /// [label], worded for [journey].
+  String labelOn(TrackingJourney journey) => switch ((journey, this)) {
+    (TrackingJourney.homeVisit, TrackingStage.inRepair) =>
+      'Repairing at your home',
+    _ => label,
+  };
+
+  /// [blurb], worded for [journey].
+  String blurbOn(TrackingJourney journey) => switch ((journey, this)) {
+    (TrackingJourney.homeVisit, TrackingStage.headingToPickup) =>
+      'Your technician is travelling to your address.',
+    (TrackingJourney.homeVisit, TrackingStage.inRepair) =>
+      'Your technician has arrived and is working on it.',
+    _ => blurb,
+  };
+
+  /// [nextOptions] on [journey].
+  ///
+  /// A home visit has one move: arriving. What comes after the repair is the
+  /// job's own status - "Mark as complete" - not a tracking stage, because
+  /// nothing travels afterwards.
+  List<TrackingStage> nextOptionsOn(TrackingJourney journey) =>
+      journey == TrackingJourney.homeVisit
+      ? (this == TrackingStage.headingToPickup
+            ? const <TrackingStage>[TrackingStage.inRepair]
+            : const <TrackingStage>[])
+      : nextOptions;
+
+  /// [asksReturnChoice] on [journey]. Never on a home visit: the unit never
+  /// left, so there is nothing to bring back.
+  bool asksReturnChoiceOn(TrackingJourney journey) =>
+      journey == TrackingJourney.workshop && asksReturnChoice;
+
   /// The stage's colour. It is printed as *text* ("Stage 3 of 5") and as the
   /// icon on a pale wash, so the orange stages use the text orange: the
   /// bright one is 2.1:1 on white.
@@ -174,7 +260,18 @@ enum TrackingStage {
   /// The two branches are the same length, so the timeline does not change
   /// shape when the choice is made. Before it is made the delivery route is
   /// shown, because that is what happens unless someone says otherwise.
-  static List<TrackingStage> timelineFor(TrackingStage current) {
+  ///
+  /// A home visit is two stages long: on the way, then repairing.
+  static List<TrackingStage> timelineFor(
+    TrackingStage current, {
+    TrackingJourney journey = TrackingJourney.workshop,
+  }) {
+    if (journey == TrackingJourney.homeVisit) {
+      return const <TrackingStage>[
+        TrackingStage.headingToPickup,
+        TrackingStage.inRepair,
+      ];
+    }
     return <TrackingStage>[
       TrackingStage.headingToPickup,
       TrackingStage.collected,
@@ -207,6 +304,12 @@ class JobTracking {
     this.delayMinutes,
     this.delayReason,
     this.etaSampledAt,
+    this.clientLatitude,
+    this.clientLongitude,
+    this.clientAccuracyM,
+    this.clientPositionAt,
+    this.clientTripStartedAt,
+    this.clientArrivedAt,
   });
 
   factory JobTracking.fromJson(Map<String, dynamic> json) {
@@ -236,6 +339,12 @@ class JobTracking {
       delayMinutes: asDouble(json['delay_minutes']),
       delayReason: json['delay_reason'] as String?,
       etaSampledAt: asDate(json['eta_sampled_at']),
+      clientLatitude: asDouble(json['client_latitude']),
+      clientLongitude: asDouble(json['client_longitude']),
+      clientAccuracyM: asDouble(json['client_accuracy_m']),
+      clientPositionAt: asDate(json['client_position_at']),
+      clientTripStartedAt: asDate(json['client_trip_started_at']),
+      clientArrivedAt: asDate(json['client_arrived_at']),
     );
   }
 
@@ -267,6 +376,59 @@ class JobTracking {
   final String? delayReason;
 
   final DateTime? etaSampledAt;
+
+  // ------------------------------------------------ the client's own trip
+  //
+  // At `ready_for_collection` the CLIENT travels, to collect the unit
+  // (20260929000001). Their position has its own columns - [latitude] and
+  // [longitude] stay the technician's - and exists only during the trip.
+
+  final double? clientLatitude;
+  final double? clientLongitude;
+  final double? clientAccuracyM;
+  final DateTime? clientPositionAt;
+
+  /// When the client said "I'm on my way". Null while they have not.
+  final DateTime? clientTripStartedAt;
+
+  /// When the client said "I've arrived". Ends the trip.
+  final DateTime? clientArrivedAt;
+
+  /// The client is travelling to the workshop right now.
+  bool get clientOnTheWay =>
+      stage == TrackingStage.readyForCollection &&
+      clientTripStartedAt != null &&
+      clientArrivedAt == null;
+
+  /// The client has reached the workshop and not yet collected.
+  bool get clientArrived =>
+      stage == TrackingStage.readyForCollection && clientArrivedAt != null;
+
+  bool get hasClientPosition =>
+      clientLatitude != null && clientLongitude != null;
+
+  /// This row with the CLIENT as the one on the map, for [TrackingMap], which
+  /// draws whoever is in [latitude] / [longitude] and dates them by
+  /// [updatedAt]. Only the position and its age are swapped; the stage and
+  /// the ETA figures are already the client's on this leg.
+  JobTracking asClientTrip() => JobTracking(
+    id: id,
+    jobId: jobId,
+    technicianId: technicianId,
+    stage: stage,
+    latitude: clientLatitude,
+    longitude: clientLongitude,
+    accuracyM: clientAccuracyM,
+    startedAt: clientTripStartedAt,
+    updatedAt: clientPositionAt,
+    expectedArrivalAt: expectedArrivalAt,
+    projectedArrivalAt: projectedArrivalAt,
+    delayMinutes: delayMinutes,
+    delayReason: delayReason,
+    etaSampledAt: etaSampledAt,
+    clientTripStartedAt: clientTripStartedAt,
+    clientArrivedAt: clientArrivedAt,
+  );
 
   bool get hasPosition => latitude != null && longitude != null;
 

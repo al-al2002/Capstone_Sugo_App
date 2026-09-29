@@ -16,8 +16,8 @@ import '../services/tracking_service.dart';
 /// would empty the free tier in a day.
 ///
 /// So this widget requests once when it appears, and again only when
-/// [isOutboundLeg] flips - which is the one moment the destination actually
-/// moves, from the workshop to the client's address. Position updates change
+/// [headsToClient] flips - the only moments the destination actually moves,
+/// between the client's address and the workshop. Position updates change
 /// where the van is, not where it is going.
 ///
 /// ## Why it disappears rather than erroring
@@ -30,14 +30,14 @@ class WeatherChip extends StatefulWidget {
   const WeatherChip({
     super.key,
     required this.jobId,
-    required this.isOutboundLeg,
+    required this.headsToClient,
   });
 
   final String jobId;
 
-  /// True once the unit is heading back to the client. The only input that
-  /// justifies a refetch.
-  final bool isOutboundLeg;
+  /// True while the leg ends at the client's address rather than the
+  /// workshop. The only input that justifies a refetch.
+  final bool headsToClient;
 
   @override
   State<WeatherChip> createState() => _WeatherChipState();
@@ -59,7 +59,7 @@ class _WeatherChipState extends State<WeatherChip> {
     super.didUpdateWidget(oldWidget);
     // The destination moved. Note this deliberately does NOT test the job id:
     // a different job is a different screen, not a rebuild of this one.
-    if (oldWidget.isOutboundLeg != widget.isOutboundLeg) _load();
+    if (oldWidget.headsToClient != widget.headsToClient) _load();
   }
 
   Future<void> _load() async {

@@ -15,6 +15,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   job and message data rather than stored, so "which ones have I seen" has
 ///   nowhere on the server to live. See `NotificationFeedService`.
 /// * **Notification preferences** - which in-app alerts to show.
+/// * **Delay pop-ups already shown** - so "your technician is running late"
+///   interrupts once per trip, not every time the app is reopened.
 ///
 /// Every key is scoped by user id where it is personal, so two people signing
 /// in on one shared family phone do not see each other's favourites.
@@ -63,11 +65,18 @@ class LocalPrefs extends ChangeNotifier {
   static String _notifPrefKey(String uid, String channel) =>
       'notify.$channel.$uid';
 
+  /// Not scoped by user: every key names a job, and jobs are already one
+  /// person's.
+  static const String _delayAlertsKey = 'delay_alerts_shown';
+
   static const int maxRecentSearches = 8;
 
   /// How many seen-notification ids to remember. The feed is rebuilt from the
   /// last few weeks of activity, so older ids can be forgotten safely.
   static const int _maxSeenIds = 300;
+
+  /// A delay pop-up belongs to one trip, and trips end within hours.
+  static const int _maxDelayAlerts = 50;
 
   // -------------------------------------------------------- favourites
 
@@ -189,5 +198,23 @@ class LocalPrefs extends ChangeNotifier {
       await (await _store())?.setBool(_notifPrefKey(uid, channel), enabled);
     } catch (_) {}
     notifyListeners();
+  }
+
+  // ------------------------------------------------------- delay pop-ups
+
+  /// Keys of the delay pop-ups this device has shown. See `DelayAlerts`.
+  Future<Set<String>> shownDelayAlerts() async =>
+      ((await _store())?.getStringList(_delayAlertsKey) ?? const <String>[])
+          .toSet();
+
+  /// No [notifyListeners]: nothing on screen depends on this list.
+  Future<void> markDelayAlertShown(String key) async {
+    final List<String> merged = <String>{
+      key,
+      ...await shownDelayAlerts(),
+    }.take(_maxDelayAlerts).toList();
+    try {
+      await (await _store())?.setStringList(_delayAlertsKey, merged);
+    } catch (_) {}
   }
 }

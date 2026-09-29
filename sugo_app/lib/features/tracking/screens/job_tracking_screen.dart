@@ -16,10 +16,12 @@ import '../../../core/widgets/sugo_status_badge.dart';
 import '../../../core/widgets/sugo_timeline.dart';
 import '../../chat/screens/chat_thread_screen.dart';
 import '../../rb_cars/models/job.dart';
-import '../../rb_cars/models/job_enums.dart';
 import '../../rb_cars/models/technician.dart';
 import '../models/job_tracking.dart';
 import '../services/tracking_service.dart';
+import '../services/delay_alerts.dart';
+import '../widgets/collection_trip_panel.dart';
+import '../widgets/delay_alert_dialog.dart';
 import '../widgets/tracking_map.dart';
 import '../widgets/weather_chip.dart';
 import '../../rb_cars/models/technician_profile_details.dart';
@@ -45,16 +47,27 @@ import '../widgets/route_map_card.dart';
 /// shop - keep the old scrolling layout, because a frozen pin for four hours
 /// reads as a broken feed rather than as bench work in progress.
 ///
-/// ## The two legs
+/// ## Two journeys, and where each leg is heading
 ///
-/// A rerouted job travels twice, and the destination flips between them:
+/// A home visit (2026-09-29) is one trip: the technician drives to the client
+/// and repairs it there. A rerouted job travels twice, and the destination
+/// flips between its legs:
 ///
-/// * **Inbound** - heading to pickup, collected, returning to shop. The
-///   destination is the workshop.
-/// * **Outbound** - out for delivery. The destination is the client's address.
+/// * **To the client** - the technician on the way (either journey), and the
+///   repaired unit out for delivery. The destination is the client's address.
+/// * **To the shop** - collected, returning to shop. The destination is the
+///   workshop.
 ///
 /// Getting that the wrong way round would draw a line to the wrong end of the
-/// city, so [_destinationFor] is the one place that decides it.
+/// city, so [_destinationFor] is the one place that decides it. It used to pin
+/// the workshop for "On the way to you" as well - see
+/// [TrackingStage.headsToClient].
+///
+/// ## Running late
+///
+/// When the trip slips ten minutes past its first estimate, a pop-up says so
+/// once ([maybeShowDelayAlert]); the banner in the sheet stays for as long as
+/// it is true.
 class JobTrackingScreen extends StatefulWidget {
   const JobTrackingScreen({super.key, required this.job, this.technician});
 
@@ -104,16 +117,18 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
     }
   }
 
+  TrackingJourney get _journey => TrackingJourney.of(widget.job.servicePath);
+
   /// Where the current leg is heading.
   LatLng? _destinationFor(TrackingStage stage) {
-    if (stage.isOutboundLeg) {
-      // Coming back to the client.
+    if (stage.headsToClient) {
+      // The technician coming to the client, or the unit coming back.
       if (!widget.job.hasLocation) return null;
       return LatLng(widget.job.latitude!, widget.job.longitude!);
     }
 
-    // Everything before that is heading to the workshop. Falls back to the
-    // technician's own coordinates when no shop address is recorded.
+    // The rest heads to the workshop. Falls back to the technician's own
+    // coordinates when no shop address is recorded.
     final Technician? tech = _technician;
     final double? lat = tech?.latitude;
     final double? lon = tech?.longitude;
@@ -122,7 +137,16 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
   }
 
   String _destinationLabel(TrackingStage stage) =>
-      stage.isOutboundLeg ? 'Your address' : 'Workshop';
+      stage.headsToClient ? 'Your address' : 'Workshop';
+
+  /// The delay pop-up, after this frame. Called on every update; it shows at
+  /// most once per trip. No "see the map" button - the map is right here.
+  void _maybeAlert(JobTracking tracking) {
+    if (!DelayAlerts.isAlertable(tracking)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybeShowDelayAlert(context, tracking);
+    });
+  }
 
   Future<void> _message() async {
     await openChatThread(
@@ -168,13 +192,14 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
 
           final JobTracking? tracking = snapshot.data;
           final String? technicianId = widget.job.assignedTechnicianId;
+          if (tracking != null) _maybeAlert(tracking);
 
-          // A workshop repair the technician has not set off for yet. The
-          // "how do you want it back?" card used to sit here, which asked the
-          // question before the unit had even been collected - it now waits
-          // for the bench. See `TrackingStage.asksReturnChoice`.
+          // A trip the technician has not set off on yet. The "how do you
+          // want it back?" card used to sit here on a workshop repair, which
+          // asked the question before the unit had even been collected - it
+          // now waits for the bench. See `TrackingStage.asksReturnChoice`.
           if (tracking == null &&
-              widget.job.servicePath == ServicePath.pickup &&
+              TrackingJourney.tracks(widget.job.servicePath) &&
               technicianId != null) {
             return _Framed(
               child: ListView(
@@ -184,7 +209,7 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
                   AppSizes.screenPadding,
                   AppSizes.xxl,
                 ),
-                children: const <Widget>[_NotStarted()],
+                children: <Widget>[_NotStarted(journey: _journey)],
               ),
             );
           }
@@ -197,9 +222,8 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
                   icon: Icons.home_repair_service_rounded,
                   title: 'Nothing to track',
                   message:
-                      'This repair is being done on site, so nothing travels. '
-                      'A map appears here if it ever needs to go to the '
-                      'workshop.',
+                      'There is no trip to follow for this booking. A map '
+                      'appears here once a technician sets off.',
                 ),
               ),
             );
@@ -209,6 +233,7 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
           if (tracking.stage.showsMap) {
             return _LiveTracking(
               job: widget.job,
+              journey: _journey,
               tracking: tracking,
               technician: _technician,
               contactUnlocked: _contactUnlocked,
@@ -221,6 +246,7 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
           return _Framed(
             child: _StationaryBody(
               job: widget.job,
+              journey: _journey,
               tracking: tracking,
               technician: _technician,
               contactUnlocked: _contactUnlocked,
@@ -275,6 +301,7 @@ class _Framed extends StatelessWidget {
 class _LiveTracking extends StatelessWidget {
   const _LiveTracking({
     required this.job,
+    required this.journey,
     required this.tracking,
     required this.technician,
     required this.contactUnlocked,
@@ -284,6 +311,7 @@ class _LiveTracking extends StatelessWidget {
   });
 
   final Job job;
+  final TrackingJourney journey;
   final JobTracking tracking;
   final Technician? technician;
   final bool contactUnlocked;
@@ -397,7 +425,7 @@ class _LiveTracking extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        _StageHeader(tracking: tracking),
+                        _StageHeader(tracking: tracking, journey: journey),
                         const SizedBox(height: AppSizes.lg),
                         _LiveFacts(
                           eta: _etaLabel,
@@ -416,12 +444,13 @@ class _LiveTracking extends StatelessWidget {
                         ),
                         WeatherChip(
                           jobId: tracking.jobId,
-                          isOutboundLeg: tracking.stage.isOutboundLeg,
+                          headsToClient: tracking.stage.headsToClient,
                         ),
-                        // Only on the bench. See `TrackingStage
-                        // .asksReturnChoice` for why the question waits until
-                        // the repair is actually in hand.
-                        if (tracking.stage.asksReturnChoice) ...<Widget>[
+                        // Only on the bench of a workshop repair. See
+                        // `TrackingStage.asksReturnChoice` for why the
+                        // question waits until the repair is actually in hand.
+                        if (tracking.stage.asksReturnChoiceOn(journey))
+                          ...<Widget>[
                           const SizedBox(height: AppSizes.lg),
                           ReturnMethodCard(
                             jobId: tracking.jobId,
@@ -433,7 +462,10 @@ class _LiveTracking extends StatelessWidget {
                         const SectionHeader(title: 'Progress'),
                         const SizedBox(height: AppSizes.lg),
                         SugoTimeline(
-                          steps: trackingSteps(tracking.stage),
+                          steps: trackingSteps(
+                            tracking.stage,
+                            journey: journey,
+                          ),
                           compact: true,
                         ),
                       ],
@@ -453,6 +485,7 @@ class _LiveTracking extends StatelessWidget {
 class _StationaryBody extends StatelessWidget {
   const _StationaryBody({
     required this.job,
+    required this.journey,
     required this.tracking,
     required this.technician,
     required this.contactUnlocked,
@@ -460,6 +493,7 @@ class _StationaryBody extends StatelessWidget {
   });
 
   final Job job;
+  final TrackingJourney journey;
   final JobTracking tracking;
   final Technician? technician;
   final bool contactUnlocked;
@@ -481,7 +515,7 @@ class _StationaryBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              _StageHeader(tracking: tracking),
+              _StageHeader(tracking: tracking, journey: journey),
               const SizedBox(height: AppSizes.lg),
               _TechnicianRow(
                 technician: technician,
@@ -496,42 +530,52 @@ class _StationaryBody extends StatelessWidget {
           _ReadyForCollection(
             jobId: tracking.jobId,
             technicianId: tracking.technicianId,
+            tracking: tracking,
           )
         else
-          _AtBench(stage: stage),
+          _AtBench(stage: stage, journey: journey),
         const SizedBox(height: AppSizes.xl),
         const SectionHeader(title: 'Progress'),
         const SizedBox(height: AppSizes.md),
-        SugoCard(child: SugoTimeline(steps: trackingSteps(stage))),
+        SugoCard(
+          child: SugoTimeline(steps: trackingSteps(stage, journey: journey)),
+        ),
       ],
     );
   }
 }
 
 /// The stages of this job's journey, as timeline steps.
-List<SugoTimelineStep> trackingSteps(TrackingStage current) {
-  final List<TrackingStage> route = TrackingStage.timelineFor(current);
+List<SugoTimelineStep> trackingSteps(
+  TrackingStage current, {
+  TrackingJourney journey = TrackingJourney.workshop,
+}) {
+  final List<TrackingStage> route = TrackingStage.timelineFor(
+    current,
+    journey: journey,
+  );
   final int index = route.indexOf(current);
 
   return <SugoTimelineStep>[
     for (int i = 0; i < route.length; i++)
       SugoTimelineStep(
-        title: route[i].label,
+        title: route[i].labelOn(journey),
         icon: route[i].icon,
         state: i < index
             ? SugoStepState.done
             : i == index
             ? SugoStepState.current
             : SugoStepState.upcoming,
-        subtitle: route[i].blurb,
+        subtitle: route[i].blurbOn(journey),
       ),
   ];
 }
 
 class _StageHeader extends StatelessWidget {
-  const _StageHeader({required this.tracking});
+  const _StageHeader({required this.tracking, required this.journey});
 
   final JobTracking tracking;
+  final TrackingJourney journey;
 
   @override
   Widget build(BuildContext context) {
@@ -554,9 +598,9 @@ class _StageHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(stage.label, style: AppTextStyles.title),
+              Text(stage.labelOn(journey), style: AppTextStyles.title),
               const SizedBox(height: 2),
-              Text(stage.blurb, style: AppTextStyles.caption),
+              Text(stage.blurbOn(journey), style: AppTextStyles.caption),
             ],
           ),
         ),
@@ -763,15 +807,18 @@ class _TechnicianRow extends StatelessWidget {
   }
 }
 
-/// Shown instead of the map while the unit is on the bench.
+/// Shown instead of the map while the repair itself is under way: on the
+/// workshop bench, or at the client's home.
 class _AtBench extends StatelessWidget {
-  const _AtBench({required this.stage});
+  const _AtBench({required this.stage, required this.journey});
 
   final TrackingStage stage;
+  final TrackingJourney journey;
 
   @override
   Widget build(BuildContext context) {
     final bool done = stage.isFinished;
+    final bool atHome = journey == TrackingJourney.homeVisit;
 
     return Container(
       padding: const EdgeInsets.all(AppSizes.xl),
@@ -788,7 +835,11 @@ class _AtBench extends StatelessWidget {
           ),
           const SizedBox(height: AppSizes.md),
           Text(
-            done ? 'All done' : 'No map while it is on the bench',
+            done
+                ? 'All done'
+                : atHome
+                ? 'Your technician is with you'
+                : 'No map while it is on the bench',
             textAlign: TextAlign.center,
             style: AppTextStyles.titleSmall,
           ),
@@ -797,6 +848,9 @@ class _AtBench extends StatelessWidget {
             done
                 ? 'Your appliance has been returned. Rate the job from your '
                       'bookings when you are ready.'
+                : atHome
+                ? 'They have arrived, so the map is closed. You will be asked '
+                      'to rate the job once they mark it complete.'
                 : 'Nothing is moving during the repair itself. The map comes '
                       'back when it heads out for delivery.',
             textAlign: TextAlign.center,
@@ -889,10 +943,17 @@ class _DelayBanner extends StatelessWidget {
 /// same booking gate as the phone number - and a client who is collecting
 /// their own appliance has, by definition, a booking.
 class _ReadyForCollection extends StatefulWidget {
-  const _ReadyForCollection({required this.jobId, required this.technicianId});
+  const _ReadyForCollection({
+    required this.jobId,
+    required this.technicianId,
+    required this.tracking,
+  });
 
   final String jobId;
   final String technicianId;
+
+  /// The live row, for the client's own trip to the shop.
+  final JobTracking tracking;
 
   @override
   State<_ReadyForCollection> createState() => _ReadyForCollectionState();
@@ -928,6 +989,19 @@ class _ReadyForCollectionState extends State<_ReadyForCollection> {
     final TechnicianProfileDetails? profile = _profile;
     final bool hasShop = profile?.hasShopLocation ?? false;
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _collectCard(profile, hasShop),
+        const SizedBox(height: AppSizes.md),
+        // The trip itself (2026-09-29): tell the technician you are coming,
+        // and let them see you on the way.
+        SugoCard(child: CollectionTripPanel(tracking: widget.tracking)),
+      ],
+    );
+  }
+
+  Widget _collectCard(TechnicianProfileDetails? profile, bool hasShop) {
     return Container(
       padding: const EdgeInsets.all(AppSizes.lg),
       decoration: BoxDecoration(
@@ -989,9 +1063,11 @@ class _ReadyForCollectionState extends State<_ReadyForCollection> {
   }
 }
 
-/// A workshop repair whose technician has not set off yet.
+/// A booking whose technician has not set off yet.
 class _NotStarted extends StatelessWidget {
-  const _NotStarted();
+  const _NotStarted({required this.journey});
+
+  final TrackingJourney journey;
 
   @override
   Widget build(BuildContext context) {
@@ -1024,7 +1100,9 @@ class _NotStarted extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'The map appears here once they head out to collect it.',
+                  journey == TrackingJourney.homeVisit
+                      ? 'The map appears here once they start the trip to you.'
+                      : 'The map appears here once they head out to collect it.',
                   style: AppTextStyles.micro,
                 ),
                 const SizedBox(height: AppSizes.sm),

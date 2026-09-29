@@ -15,6 +15,14 @@
  * projected arrival slides and the delay grows - which is correct.
  *
  * Callers are responsible for authorising. This module assumes that is done.
+ *
+ * ## Who is travelling
+ *
+ * Every leg is the technician's, except one: `ready_for_collection`, where the
+ * CLIENT comes to the workshop (20260929000001). On that leg the position is
+ * `client_latitude` / `client_longitude`, the trip only counts between "I'm on
+ * my way" and "I've arrived", and a delay is pushed to the TECHNICIAN - the
+ * person waiting - instead of the client.
  */
 import { resolveLegDestination } from "./leg_destination.ts";
 import {
@@ -69,7 +77,14 @@ interface TrackingRow {
   expected_arrival_at: string | null;
   eta_sampled_at: string | null;
   delay_notified_at: string | null;
+  client_latitude: number | null;
+  client_longitude: number | null;
+  client_trip_started_at: string | null;
+  client_arrived_at: string | null;
 }
+
+/** The one leg the client travels: coming to collect the repaired unit. */
+export const CLIENT_TRIP_STAGE = "ready_for_collection";
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
@@ -85,15 +100,33 @@ export async function sampleLegEta(
     .from("job_tracking")
     .select(
       "stage, latitude, longitude, expected_arrival_at, eta_sampled_at, " +
-        "delay_notified_at",
+        "delay_notified_at, client_latitude, client_longitude, " +
+        "client_trip_started_at, client_arrived_at",
     )
     .eq("job_id", jobId)
     .maybeSingle<TrackingRow>();
 
   if (!tracking) return ({ sampled: false, reason: "no_tracking_leg" });
 
+  // The client's leg exists only between "on my way" and "arrived". Outside
+  // that window nobody is travelling towards the shop, so there is nothing to
+  // be late for.
+  const clientTrip = tracking.stage === CLIENT_TRIP_STAGE;
+  if (
+    clientTrip &&
+    (tracking.client_trip_started_at === null ||
+      tracking.client_arrived_at !== null)
+  ) {
+    return ({ sampled: false, reason: "client_not_travelling" });
+  }
+
+  const originLat = clientTrip ? tracking.client_latitude : tracking.latitude;
+  const originLon = clientTrip
+    ? tracking.client_longitude
+    : tracking.longitude;
+
   // No fix yet, so there is nothing to measure from.
-  if (tracking.latitude === null || tracking.longitude === null) {
+  if (originLat === null || originLon === null) {
     return ({ sampled: false, reason: "no_position" });
   }
 
@@ -115,8 +148,8 @@ export async function sampleLegEta(
   }
 
   const distanceKm = haversineKm(
-    tracking.latitude,
-    tracking.longitude,
+    originLat,
+    originLon,
     destination.latitude,
     destination.longitude,
   );
@@ -166,13 +199,21 @@ export async function sampleLegEta(
   // Announce once per leg, not on every sample for the rest of the journey.
   const shouldNotify = isLate && tracking.delay_notified_at === null;
 
+  // Whoever is WAITING hears about it: the client for the technician's legs,
+  // the technician for the client's.
   let pushed = 0;
   if (shouldNotify) {
-    pushed = await notifyClient(db, job.client_id, {
-      delayMinutes,
-      reason,
-      destinationLabel: destination.label,
-    });
+    pushed = await notifyDelay(
+      db,
+      clientTrip ? job.assigned_technician_id : job.client_id,
+      {
+        delayMinutes,
+        reason,
+        destinationLabel: destination.label,
+        clientTrip,
+        jobId,
+      },
+    );
   }
 
   const { error: writeError } = await db
@@ -216,27 +257,30 @@ export async function sampleLegEta(
 }
 
 /**
- * Pushes the delay to the client's devices.
+ * Pushes the delay to the devices of whoever is waiting.
  *
  * Returns how many actually went out. Never throws: the ETA sample is the
  * important write, and a push failure must not roll it back or surface as an
- * error to the technician who triggered it.
+ * error to the person whose app triggered it.
  */
-async function notifyClient(
+async function notifyDelay(
   // deno-lint-ignore no-explicit-any
   db: any,
-  clientId: string,
+  recipientId: string | null,
   delay: {
     delayMinutes: number;
     reason: string | null;
     destinationLabel: string;
+    clientTrip: boolean;
+    jobId: string;
   },
 ): Promise<number> {
+  if (!recipientId) return 0;
   try {
     const { data: devices } = await db
       .from("device_tokens")
       .select("token")
-      .eq("user_id", clientId)
+      .eq("user_id", recipientId)
       .returns<{ token: string }[]>();
 
     const tokens = (devices ?? []).map((row: { token: string }) => row.token);
@@ -255,12 +299,26 @@ async function notifyClient(
       ? " because of traffic and weather"
       : "";
 
-    const result = await sendPush(tokens, {
-      title: "Your technician is running late",
-      body:
-        `About ${rounded} minutes behind${cause}. Tap to see their live position.`,
-      data: { type: "job_delay", destination: delay.destinationLabel },
-    });
+    const result = await sendPush(
+      tokens,
+      delay.clientTrip
+        ? {
+          title: "Your client is running late",
+          body:
+            `About ${rounded} minutes behind${cause}. Tap to see where they are.`,
+          data: { type: "client_delay", job_id: delay.jobId },
+        }
+        : {
+          title: "Your technician is running late",
+          body:
+            `About ${rounded} minutes behind${cause}. Tap to see their live position.`,
+          data: {
+            type: "job_delay",
+            job_id: delay.jobId,
+            destination: delay.destinationLabel,
+          },
+        },
+    );
 
     // FCM said these installs are gone, so the rows are dead weight. Deleting
     // on the reply is what keeps device_tokens self-cleaning.

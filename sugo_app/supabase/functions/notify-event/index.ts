@@ -6,13 +6,15 @@
  * { "type": "message",       "message_id": "uuid" }
  * { "type": "stage",         "job_id": "uuid", "stage": "collected" }
  * { "type": "return_method", "job_id": "uuid", "method": "client_pickup" }
+ * { "type": "collection",    "job_id": "uuid" }
  * ```
  *
  * ## Who calls this
  *
  * Only the database. Three triggers (20260922000006) post here through
- * `pg_net` when a chat message is saved, when a pickup job changes stage, and
- * when a client chooses how they want their unit back. Those writes come
+ * `pg_net` when a chat message is saved, when a job's trip changes stage (a
+ * workshop pickup, or since 2026-09-29 a home visit), and when a client
+ * chooses how they want their unit back. Those writes come
  * straight from the apps under RLS, so there is no server code of ours in the
  * path to send a push from - a trigger is the one place that sees every one of
  * them, whichever build of the app made the write.
@@ -38,7 +40,7 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { deviceNoun, firstNameOf, notifyUser, preview } from "../_shared/notify.ts";
 
 interface EventRequest {
-  type?: "message" | "stage" | "return_method";
+  type?: "message" | "stage" | "return_method" | "collection";
   message_id?: string;
   job_id?: string;
   stage?: string;
@@ -50,20 +52,36 @@ interface JobRow {
   client_id: string;
   assigned_technician_id: string | null;
   device_type: string | null;
+  service_path: string | null;
 }
 
-/** What the client is told as their unit moves. */
+/**
+ * What the client is told as their unit - or their technician - moves.
+ *
+ * A home visit uses two of the same stages as a workshop pickup: the drive to
+ * the client (`heading_to_pickup`) and the repair (`in_repair`). The drive is
+ * the same trip either way, but "heading over to collect your laptop" would
+ * tell a home-service client their laptop is leaving, and "started work" at a
+ * workshop is not where their technician is standing. So [homeVisit] picks the
+ * wording; the stages themselves are shared.
+ */
 function stageCopy(
   stage: string,
   technician: string,
   noun: string,
+  homeVisit: boolean,
 ): { title: string; body: string } | null {
   switch (stage) {
     case "heading_to_pickup":
-      return {
-        title: "Your technician is on the way",
-        body: `${technician} is heading over to collect your ${noun}.`,
-      };
+      return homeVisit
+        ? {
+          title: "Your technician is on the way",
+          body: `${technician} is heading to your address to fix your ${noun}.`,
+        }
+        : {
+          title: "Your technician is on the way",
+          body: `${technician} is heading over to collect your ${noun}.`,
+        };
     case "collected":
       return {
         title: "Picked up",
@@ -75,10 +93,15 @@ function stageCopy(
         body: `Your ${noun} is on its way to the workshop.`,
       };
     case "in_repair":
-      return {
-        title: "Repair started",
-        body: `${technician} has started work on your ${noun}.`,
-      };
+      return homeVisit
+        ? {
+          title: "Your technician has arrived",
+          body: `${technician} is at your address and has started on your ${noun}.`,
+        }
+        : {
+          title: "Repair started",
+          body: `${technician} has started work on your ${noun}.`,
+        };
     case "out_for_delivery":
       return {
         title: "Out for delivery",
@@ -171,12 +194,36 @@ Deno.serve(async (req: Request) => {
       if (!job) return json({ sent: 0, reason: "job_not_found" });
 
       const technician = await firstNameOf(db, job.assigned_technician_id, "Your technician");
-      const copy = stageCopy(body.stage, technician, deviceNoun(job.device_type));
+      const copy = stageCopy(
+        body.stage,
+        technician,
+        deviceNoun(job.device_type),
+        job.service_path === "home_service",
+      );
       if (!copy) return json({ sent: 0, reason: "unknown_stage" });
 
       const sent = await notifyUser(db, job.client_id, {
         ...copy,
         data: { type: "stage", job_id: job.id, stage: body.stage },
+      });
+      return json({ sent });
+    }
+
+    // --------------------------------------------------------- collection
+    // The client set off to collect the unit (`start_collection_trip`,
+    // 20260929000001). The technician is the one waiting, so they are told.
+    if (body.type === "collection") {
+      if (!body.job_id) return fail("job_id is required", 422);
+
+      const job = await loadJob(db, body.job_id);
+      if (!job) return json({ sent: 0, reason: "job_not_found" });
+
+      const client = await firstNameOf(db, job.client_id, "Your client");
+      const sent = await notifyUser(db, job.assigned_technician_id, {
+        title: `${client} is on the way`,
+        body: `They are coming to collect the ${deviceNoun(job.device_type)}. ` +
+          "Open the job to see where they are.",
+        data: { type: "collection", job_id: job.id },
       });
       return json({ sent });
     }
@@ -214,7 +261,7 @@ async function loadJob(
 ): Promise<JobRow | null> {
   const { data } = await db
     .from("jobs")
-    .select("id, client_id, assigned_technician_id, device_type")
+    .select("id, client_id, assigned_technician_id, device_type, service_path")
     .eq("id", jobId)
     .maybeSingle<JobRow>();
   return data ?? null;

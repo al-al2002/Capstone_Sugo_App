@@ -8,6 +8,10 @@ import '../models/time_off.dart';
 import '../services/technician_service.dart';
 import '../services/time_off_service.dart';
 
+/// The dashboard actions that talk to the server, so the button that started
+/// one can show it running.
+enum TechnicianAction { accept, decline, reroute, needsShop, complete }
+
 /// State for the technician dashboard: profile, offers, active job, history.
 ///
 /// Loads all four in parallel because none depends on another, so the dashboard
@@ -31,6 +35,8 @@ class TechnicianDashboardProvider extends ChangeNotifier {
 
   bool _isLoading = true;
   bool _isBusy = false;
+  TechnicianAction? _busyAction;
+  String? _busyTarget;
   String? _error;
   String? _notice;
 
@@ -44,6 +50,17 @@ class TechnicianDashboardProvider extends ChangeNotifier {
   /// True while an accept, decline or complete is in flight. Buttons disable on
   /// this so a double tap cannot answer the same offer twice.
   bool get isBusy => _isBusy;
+
+  /// True while [action] is in flight for [id] - a match id for an offer, a
+  /// job id for the active job.
+  ///
+  /// [isBusy] disables every button; this picks out the one that was pressed,
+  /// so it alone shows a spinner. Accepting runs the whole decline cascade on
+  /// the server and completing feeds the outcome back to RB-CARS, so both can
+  /// take a few seconds - long enough for a disabled button with no sign of
+  /// life to look like a tap that did not register.
+  bool isDoing(TechnicianAction action, String id) =>
+      _isBusy && _busyAction == action && _busyTarget == id;
 
   String? get error => _error;
   String? get notice => _notice;
@@ -161,10 +178,16 @@ class TechnicianDashboardProvider extends ChangeNotifier {
 
   // ---------------------------------------------------------------- actions
 
-  Future<bool> acceptOffer(String matchId) =>
-      _act(() => _service.accept(matchId), 'Job accepted. It is yours.');
+  Future<bool> acceptOffer(String matchId) => _act(
+    TechnicianAction.accept,
+    matchId,
+    () => _service.accept(matchId),
+    'Job accepted. It is yours.',
+  );
 
   Future<bool> rerouteOffer(String matchId) => _act(
+    TechnicianAction.reroute,
+    matchId,
     () => _service.reroute(matchId),
     'Accepted as a shop pickup. The client has been told.',
   );
@@ -172,11 +195,15 @@ class TechnicianDashboardProvider extends ChangeNotifier {
   /// The unit has to go to the workshop after all. Reloads afterwards so the
   /// active card picks up its new service path and the tracking controls.
   Future<bool> markNeedsShop(String jobId) => _act(
+    TechnicianAction.needsShop,
+    jobId,
     () => _service.markNeedsShop(jobId),
     'Switched to shop pickup. The client can now track their appliance.',
   );
 
   Future<bool> declineOffer(String matchId) => _act(
+    TechnicianAction.decline,
+    matchId,
     () => _service.decline(matchId),
     'Declined. It has moved to the next technician.',
   );
@@ -190,6 +217,8 @@ class TechnicianDashboardProvider extends ChangeNotifier {
     bool reroutedMidJob = false,
   }) {
     return _act(
+      TechnicianAction.complete,
+      jobId,
       () => _service.complete(
         jobId,
         diagnosisCorrect: diagnosisCorrect,
@@ -200,12 +229,16 @@ class TechnicianDashboardProvider extends ChangeNotifier {
   }
 
   Future<bool> _act(
+    TechnicianAction kind,
+    String target,
     Future<JobResponseOutcome> Function() action,
     String successNotice,
   ) async {
     if (_isBusy) return false;
 
     _isBusy = true;
+    _busyAction = kind;
+    _busyTarget = target;
     _error = null;
     _notice = null;
     notifyListeners();
@@ -226,6 +259,8 @@ class TechnicianDashboardProvider extends ChangeNotifier {
       return false;
     } finally {
       _isBusy = false;
+      _busyAction = null;
+      _busyTarget = null;
       notifyListeners();
     }
   }

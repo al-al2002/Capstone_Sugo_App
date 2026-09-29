@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/supabase_service.dart';
@@ -409,6 +410,89 @@ class TrackingService {
       // vehicle and the next one is seconds away. Failing loudly here would
       // make driving feel broken.
       _log('pushPosition', error);
+    }
+  }
+
+  // ------------------------------------------- the client's collection trip
+  //
+  // The client travels on one leg: to the workshop, to collect the repaired
+  // unit. These go through database functions rather than an update, because
+  // the client cannot write `job_tracking` - see 20260929000001.
+
+  /// "I'm on my way." Starts the trip and tells the technician.
+  Future<void> startCollectionTrip(String jobId) async {
+    try {
+      await _client.rpc(
+        'start_collection_trip',
+        params: <String, dynamic>{'p_job_id': jobId},
+      );
+    } on PostgrestException catch (error) {
+      _log('startCollectionTrip', error);
+      // 23514 is a sentence written for the client ("once it is ready for
+      // collection"), so it is shown as is.
+      throw RbCarsFailure(
+        error.code == '23514'
+            ? error.message
+            : 'Could not start sharing your trip.',
+      );
+    }
+  }
+
+  /// One position fix on the client's trip. Never throws, like
+  /// [pushPosition]: a dropped fix is normal while moving.
+  Future<void> shareCollectionPosition(String jobId, Position position) async {
+    try {
+      await _client.rpc(
+        'share_collection_position',
+        params: <String, dynamic>{
+          'p_job_id': jobId,
+          'p_latitude': position.latitude,
+          'p_longitude': position.longitude,
+          'p_accuracy_m': position.accuracy,
+        },
+      );
+    } on PostgrestException catch (error) {
+      _log('shareCollectionPosition', error);
+    }
+  }
+
+  /// "I've arrived." Ends the trip; the server drops the client's position.
+  Future<void> endCollectionTrip(String jobId) async {
+    try {
+      await _client.rpc(
+        'end_collection_trip',
+        params: <String, dynamic>{'p_job_id': jobId},
+      );
+    } on PostgrestException catch (error) {
+      _log('endCollectionTrip', error);
+      throw const RbCarsFailure('Could not mark that you have arrived.');
+    }
+  }
+
+  /// The signed-in technician's workshop: where a collecting client is
+  /// heading. Same order as `leg_destination.ts` on the server - the shop,
+  /// then the registered base, then the last live position - so the pin on
+  /// the map is the place the ETA counts down to. Null when none is recorded.
+  Future<LatLng?> myWorkshop() async {
+    try {
+      final Map<String, dynamic>? row = await _client
+          .from('technicians')
+          .select(
+            'shop_latitude, shop_longitude, base_latitude, base_longitude, '
+            'latitude, longitude',
+          )
+          .eq('id', _uid)
+          .maybeSingle();
+      if (row == null) return null;
+      double? at(String key) => (row[key] as num?)?.toDouble();
+      final double? lat =
+          at('shop_latitude') ?? at('base_latitude') ?? at('latitude');
+      final double? lon =
+          at('shop_longitude') ?? at('base_longitude') ?? at('longitude');
+      return lat == null || lon == null ? null : LatLng(lat, lon);
+    } catch (error) {
+      _log('myWorkshop', error);
+      return null;
     }
   }
 

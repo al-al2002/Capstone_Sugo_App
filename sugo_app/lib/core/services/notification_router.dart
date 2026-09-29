@@ -51,6 +51,21 @@ class NotificationRouter {
     pending.value = NotificationTap.fromData(data);
   }
 
+  /// The last push that arrived while the app was OPEN.
+  ///
+  /// A tap asks to go somewhere ([pending]); this only says "something
+  /// changed". Android shows no notification for its own foreground app, so
+  /// without it a technician setting off, or running late, while the client
+  /// has SUGO open on another screen would change nothing they can see. The
+  /// client dashboard listens, re-reads the trip, and raises the delay pop-up
+  /// from there.
+  static final ValueNotifier<NotificationTap?> arrived =
+      ValueNotifier<NotificationTap?>(null);
+
+  static void arrive(Map<String, dynamic> data) {
+    arrived.value = NotificationTap.fromData(data);
+  }
+
   /// Takes the pending tap, so exactly one screen acts on it.
   static NotificationTap? take() {
     final NotificationTap? tap = pending.value;

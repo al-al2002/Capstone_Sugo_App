@@ -44,6 +44,44 @@ class SugoLoading extends StatelessWidget {
   }
 }
 
+/// A spinner and a word for the inside of a button whose action is running:
+/// "Accepting…", "Completing…".
+///
+/// The word stays because a bare spinner where "Accept" used to be leaves the
+/// technician guessing which button they pressed. The colour comes from the
+/// button itself (the icon colour it sets), so the same widget reads on a
+/// filled button and an outlined one.
+class SugoButtonProgress extends StatelessWidget {
+  const SugoButtonProgress({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color? color = IconTheme.of(context).color;
+
+    return Semantics(
+      label: label,
+      liveRegion: true,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          ),
+          const SizedBox(width: AppSizes.sm),
+          Flexible(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Skeleton of a technician card in a vertical list: avatar, name, meta line,
 /// and the two buttons.
 class SugoTechnicianSkeleton extends StatelessWidget {

@@ -34,6 +34,7 @@
 import { fail, json, preflight } from "../_shared/cors.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 import {
+  CLIENT_TRIP_STAGE,
   type LegJobRow,
   MIN_SAMPLE_INTERVAL_MS,
   sampleLegEta,
@@ -101,7 +102,34 @@ Deno.serve(async (req: Request) => {
 
     if (error) return fail("Could not list legs", 500, error.message);
 
-    const candidates = legs ?? [];
+    // The client's trips to the workshop (20260929000001), picked up the same
+    // way when their phone goes quiet. A separate query because the test is
+    // different: the client's position, and only between "on my way" and
+    // "arrived". Folding it into the one above by stage alone would pick up
+    // every unit waiting on a shelf - with the technician's last position -
+    // and, never sampled, they would sort first and starve the real legs.
+    const { data: trips, error: tripError } = await db
+      .from("job_tracking")
+      .select("job_id, eta_sampled_at")
+      .eq("stage", CLIENT_TRIP_STAGE)
+      .not("client_trip_started_at", "is", null)
+      .is("client_arrived_at", null)
+      .not("client_latitude", "is", null)
+      .or(`eta_sampled_at.is.null,eta_sampled_at.lt.${cutoff}`)
+      .order("eta_sampled_at", { ascending: true, nullsFirst: true })
+      .limit(MAX_PER_RUN)
+      .returns<{ job_id: string; eta_sampled_at: string | null }[]>();
+
+    if (tripError) {
+      return fail("Could not list client trips", 500, tripError.message);
+    }
+
+    // Oldest first across both, then the same ceiling.
+    const candidates = [...(legs ?? []), ...(trips ?? [])]
+      .sort((a, b) =>
+        (a.eta_sampled_at ?? "").localeCompare(b.eta_sampled_at ?? "")
+      )
+      .slice(0, MAX_PER_RUN);
     if (candidates.length === 0) {
       return json({ swept: 0, sampled: 0, skipped: 0 });
     }

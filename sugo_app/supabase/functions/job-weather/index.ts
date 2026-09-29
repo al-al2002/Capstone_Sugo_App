@@ -20,8 +20,9 @@
  * ## Why the destination is resolved here
  *
  * The caller sends a job id and nothing else. Which coordinate matters depends
- * on the leg - inbound legs head to the workshop, `out_for_delivery` heads back
- * to the client - and that decision reads `job_tracking.stage`, `jobs` and
+ * on the leg - the technician heading over and `out_for_delivery` end at the
+ * client's address, the rest of the inbound leg at the workshop (see
+ * `_shared/leg_destination.ts`) - and that decision reads `job_tracking.stage`, `jobs` and
  * `technicians`. Doing it here means the app cannot ask for the weather at a
  * coordinate of its choosing, which would turn this into a free geocoded
  * weather proxy for anybody with an anon key.

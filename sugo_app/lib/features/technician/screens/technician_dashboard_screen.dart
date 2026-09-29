@@ -28,6 +28,7 @@ import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../bookings/widgets/rate_job_sheet.dart';
 import '../../rb_cars/models/job.dart';
+import '../../rb_cars/models/job_enums.dart';
 import '../../rb_cars/models/job_party.dart';
 import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/models/technician.dart';
@@ -41,7 +42,11 @@ import '../widgets/job_request_details_sheet.dart';
 import '../widgets/recent_reviews_strip.dart';
 import '../widgets/technician_stat_cards.dart';
 import '../widgets/vacation_card.dart';
+import '../../tracking/models/job_tracking.dart';
+import '../../tracking/screens/home_visit_trip_screen.dart';
 import '../../tracking/screens/technician_delivery_screen.dart';
+import '../../tracking/services/tracking_service.dart';
+import '../../tracking/widgets/delay_alert_dialog.dart';
 
 /// The technician's landing screen.
 ///
@@ -136,6 +141,7 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     _loadBadges();
     _provider.addListener(_onProviderChanged);
     NotificationRouter.pending.addListener(_onNotificationTap);
+    NotificationRouter.arrived.addListener(_onPushArrived);
     // A tap that launched the app is already waiting by the time this exists.
     WidgetsBinding.instance.addPostFrameCallback((_) => _onNotificationTap());
   }
@@ -144,7 +150,58 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
   void dispose() {
     _provider.removeListener(_onProviderChanged);
     NotificationRouter.pending.removeListener(_onNotificationTap);
+    NotificationRouter.arrived.removeListener(_onPushArrived);
     super.dispose();
+  }
+
+  /// A push that landed while the app was open, about a client coming to
+  /// collect (2026-09-29). Android shows nothing for its own foreground app,
+  /// so this is where the technician hears it.
+  ///
+  /// * The client set off: a note, with a way to their live position.
+  /// * The client is running late: the same "Running late" pop-up the client
+  ///   gets about a technician, once per trip.
+  Future<void> _onPushArrived() async {
+    final NotificationTap? push = NotificationRouter.arrived.value;
+    final String? jobId = push?.jobId;
+    if (push == null || jobId == null || !mounted) return;
+
+    switch (push.type) {
+      case 'collection':
+        UiFeedback.showInfo(
+          context,
+          'Your client is on the way to collect their unit.',
+          actionLabel: 'View',
+          onAction: () => _openDeliveryFor(jobId),
+        );
+      case 'client_delay':
+        final JobTracking? trip = await TrackingService()
+            .fetch(jobId)
+            .catchError((Object _) => null);
+        if (trip == null || !mounted) return;
+        final bool look = await maybeShowDelayAlert(
+          context,
+          trip,
+          clientTrip: true,
+          offerTracking: true,
+        );
+        if (look && mounted) await _openDeliveryFor(jobId);
+    }
+  }
+
+  /// The pickup-and-delivery screen for [jobId], where the client's trip is
+  /// drawn.
+  Future<void> _openDeliveryFor(String jobId) async {
+    final Job? job = await RbCarsService()
+        .jobById(jobId)
+        .catchError((Object _) => null);
+    if (job == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TechnicianDeliveryScreen(job: job),
+      ),
+    );
+    if (mounted) await context.read<TechnicianDashboardProvider>().refresh();
   }
 
   void _onProviderChanged() => unawaited(_syncOfferBadges());
@@ -219,6 +276,12 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
       case 'booked':
         setState(() => _tab = TechnicianTab.home);
         await provider.refresh();
+      // The client coming to collect, or late on the way: their trip is on
+      // the delivery screen, not the job summary.
+      case 'collection' || 'client_delay':
+        final String? jobId = tap.jobId;
+        if (jobId == null) return;
+        await _openDeliveryFor(jobId);
       default:
         final String? jobId = tap.jobId;
         if (jobId == null) return;
@@ -442,14 +505,17 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     await _respond(provider, () => provider.markNeedsShop(job.id));
   }
 
-  /// Opens the pickup and delivery screen for a rerouted job.
+  /// Opens the trip screen: the drive to a home visit, or the pickup and
+  /// delivery of a rerouted job.
   ///
   /// Reloading on return keeps the dashboard in step with any stage change
   /// made over there.
-  Future<void> _openDelivery(Job job) async {
+  Future<void> _openTrip(Job job) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => TechnicianDeliveryScreen(job: job),
+        builder: (_) => job.servicePath == ServicePath.homeService
+            ? HomeVisitTripScreen(job: job)
+            : TechnicianDeliveryScreen(job: job),
       ),
     );
     if (!mounted) return;
@@ -633,6 +699,10 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
                         (MatchResult match) => IncomingOfferCard(
                           match: match,
                           isBusy: provider.isBusy,
+                          isAccepting: provider.isDoing(
+                            TechnicianAction.accept,
+                            match.id,
+                          ),
                           unreadMessages: _offerUnread[match.jobId] ?? 0,
                           onAccept: () => _respond(
                             provider,
@@ -685,8 +755,12 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
               : ActiveJobCard(
                   job: active,
                   isBusy: provider.isBusy,
+                  isCompleting: provider.isDoing(
+                    TechnicianAction.complete,
+                    active.id,
+                  ),
                   onComplete: () => _completeJob(provider, active),
-                  onTrack: () => _openDelivery(active),
+                  onTrack: () => _openTrip(active),
                   onNeedsShop: () => _markNeedsShop(provider, active),
                 ),
         ),

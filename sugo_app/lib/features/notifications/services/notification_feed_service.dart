@@ -240,7 +240,7 @@ class NotificationFeedService {
     final List<Job> travelling = jobs
         .where(
           (Job j) =>
-              j.servicePath == ServicePath.pickup &&
+              TrackingJourney.tracks(j.servicePath) &&
               (j.status == JobStatus.confirmed ||
                   j.status == JobStatus.inProgress),
         )
@@ -459,10 +459,13 @@ class NotificationFeedService {
 
   List<_Draft> _trackingItems(Job job, JobTracking t) {
     final String device = _device(job).toLowerCase();
+    final TrackingJourney journey = TrackingJourney.of(job.servicePath);
     final String title = switch (t.stage) {
       TrackingStage.headingToPickup => 'Technician is on the way',
       TrackingStage.collected => 'Your $device was collected',
       TrackingStage.returningToShop => 'Heading to the workshop',
+      TrackingStage.inRepair when journey == TrackingJourney.homeVisit =>
+        'Your technician has arrived',
       TrackingStage.inRepair => 'Repair started at the workshop',
       TrackingStage.outForDelivery => 'Out for delivery',
       TrackingStage.readyForCollection => 'Ready for collection',
@@ -474,7 +477,7 @@ class NotificationFeedService {
         id: 'track:${job.id}:${t.stage.wire}',
         category: NotificationCategory.tracking,
         title: title,
-        body: t.stage.blurb,
+        body: t.stage.blurbOn(journey),
         icon: t.stage.icon,
         tone: t.stage.isFinished ? SugoTone.success : SugoTone.info,
         jobId: job.id,

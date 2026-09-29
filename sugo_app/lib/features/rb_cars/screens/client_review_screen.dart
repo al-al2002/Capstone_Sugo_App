@@ -756,21 +756,19 @@ class _ClientReviewView extends StatelessWidget {
       // after that, and it under-sold the moment - the one point in the flow
       // where the client has actually committed to somebody.
       //
-      // `pushReplacement`, so Back from the confirmation reaches the
-      // dashboard rather than the shortlist it replaced.
+      // In place of the whole flow, not just this screen - see
+      // `BookingSuccessScreen.show`. This screen's own `PopScope` sent Back
+      // home, but it leaves with the screen it wraps.
       final Job? job = matching.job;
       if (job == null) {
         UiFeedback.showSuccess(context, 'Request sent to $name.');
         Navigator.of(context).popUntil((Route<void> route) => route.isFirst);
         return;
       }
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => BookingSuccessScreen(
-            job: job,
-            technician: match.technician,
-          ),
-        ),
+      BookingSuccessScreen.show(
+        context,
+        job: job,
+        technician: match.technician,
       );
     } else {
       UiFeedback.showError(

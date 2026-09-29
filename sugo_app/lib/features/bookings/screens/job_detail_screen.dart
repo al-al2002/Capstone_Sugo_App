@@ -27,6 +27,7 @@ import '../../rb_cars/screens/client_review_screen.dart';
 import '../../rb_cars/screens/job_posting_screen.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../tracking/models/job_tracking.dart';
+import '../../tracking/screens/home_visit_trip_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
 import '../../tracking/screens/technician_delivery_screen.dart';
 import '../../tracking/services/tracking_service.dart';
@@ -130,9 +131,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   bool get _canReview =>
       _job.status == JobStatus.completed && _job.assignedTechnicianId != null;
 
-  /// A pickup job travels twice and has something to track. An on-site repair
-  /// never leaves the client's home, so there is no journey to show.
-  bool get _needsTracking => _job.servicePath == ServicePath.pickup;
+  /// A pickup job travels twice; a home visit once, the technician driving to
+  /// the client (2026-09-29). Both have a trip to follow. A community
+  /// diagnosis has none.
+  bool get _needsTracking => TrackingJourney.tracks(_job.servicePath);
+
+  TrackingJourney get _journey => TrackingJourney.of(_job.servicePath);
+
+  bool get _isHomeVisit => _journey == TrackingJourney.homeVisit;
+
+  /// The last tracking stage this screen saw. See the stream builder.
+  TrackingStage? _seenStage;
 
   /// Chat opens once there is somebody on the other end - which since
   /// `20260923000003_negotiation_chat.sql` includes a technician the client
@@ -222,6 +231,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       MaterialPageRoute<void>(
         builder: (_) => _isClient
             ? JobTrackingScreen(job: _job)
+            : _isHomeVisit
+            ? HomeVisitTripScreen(job: _job)
             : TechnicianDeliveryScreen(job: _job),
       ),
     );
@@ -477,13 +488,19 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               (BuildContext context, AsyncSnapshot<JobTracking?> snapshot) {
                 final JobTracking? tracking = snapshot.data;
 
-                // A tracking row appearing on a job this screen still thinks
-                // is an on-site repair means the technician rerouted it while
-                // we were looking. Re-read so everything catches up; deferred
-                // to the next frame because this runs inside a build.
-                if (tracking != null && !_needsTracking) {
+                // The trip moving on can mean the job did too: arriving, or a
+                // home visit rerouted to the workshop while we were looking,
+                // which rewrites `service_path`. A tracking row on a job with
+                // no trip at all means the same. Re-read so everything catches
+                // up; deferred to the next frame because this runs inside a
+                // build, and a stage change is rare enough to be cheap.
+                final TrackingStage? stage = tracking?.stage;
+                final bool moved =
+                    _seenStage != null && stage != null && stage != _seenStage;
+                if (stage != null) _seenStage = stage;
+                if (tracking != null && (!_needsTracking || moved)) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted && !_needsTracking) _refresh();
+                    if (mounted) _refresh();
                   });
                 }
 
@@ -546,8 +563,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         tracking.stage.showsMap &&
         !tracking.stage.isFinished;
 
-    final String headline = travelling
-        ? tracking.stage.label
+    // A home visit's technician at the door is news too, even though nothing
+    // is moving any more: "Booking confirmed" would hide that they are here.
+    final bool arrivedHome =
+        tracking != null &&
+        _isHomeVisit &&
+        tracking.stage == TrackingStage.inRepair &&
+        (_job.status == JobStatus.confirmed ||
+            _job.status == JobStatus.inProgress);
+    final bool showStage = travelling || arrivedHome;
+
+    final String headline = showStage
+        ? tracking.stage.labelOn(_journey)
         : switch (_job.status) {
             JobStatus.pending => 'Finding your technician',
             JobStatus.matched =>
@@ -560,8 +587,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             JobStatus.cancelled => 'Booking cancelled',
           };
 
-    final String blurb = travelling
-        ? tracking.stage.blurb
+    final String blurb = showStage
+        ? tracking.stage.blurbOn(_journey)
         : switch (_job.status) {
             JobStatus.pending =>
               _isClient
@@ -601,7 +628,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   child: jobStatusBadge(_job.status),
                 ),
               ),
-              if (tracking != null && !tracking.stage.isFinished)
+              // Only while someone is moving: once they have arrived, or the
+              // unit is on the bench, the last position is just old.
+              if (travelling)
                 Text(
                   tracking.freshnessLabel,
                   style: AppTextStyles.micro.copyWith(
@@ -621,7 +650,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           // "Request sent" screen use. Placed from `jobs.status` - refined to
           // "under way" while a tracking row is live - and absent for a
           // cancelled booking, which is not on its way anywhere.
-          if (_routePosition(travelling)
+          if (_routePosition(showStage)
               case final SugoRoutePosition at) ...<Widget>[
             const SizedBox(height: AppSizes.lg),
             SugoRouteLine(stops: BookingRoute.stops, position: at),
@@ -652,7 +681,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             _job.status == JobStatus.inProgress)) {
       buttons.add(
         SugoButton(
-          label: _isClient ? 'Track' : 'Delivery controls',
+          label: _isClient
+              ? 'Track'
+              : _isHomeVisit
+              ? 'Trip'
+              : 'Delivery controls',
           icon: _isClient ? Icons.near_me_rounded : Icons.navigation_rounded,
           size: SugoButtonSize.small,
           variant: travelling
@@ -816,11 +849,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       ),
     ];
 
-    // The delivery legs of a pickup job sit between "accepted" and
-    // "completed", which is exactly where they happen.
+    // The trip - both legs of a pickup job, or the drive to a home visit -
+    // sits between "accepted" and "completed", which is exactly where it
+    // happens.
     if (_needsTracking && tracking != null) {
       final List<TrackingStage> route = TrackingStage.timelineFor(
         tracking.stage,
+        journey: _journey,
       );
       final int stageIndex = route.indexOf(tracking.stage);
       for (int i = 0; i < route.length; i++) {
@@ -828,7 +863,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         if (stage == TrackingStage.delivered) continue;
         steps.add(
           SugoTimelineStep(
-            title: stage.label,
+            title: stage.labelOn(_journey),
             state: _job.status == JobStatus.completed
                 ? SugoStepState.done
                 : i < stageIndex
@@ -837,7 +872,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 ? SugoStepState.current
                 : SugoStepState.upcoming,
             icon: stage.icon,
-            subtitle: stage.blurb,
+            subtitle: stage.blurbOn(_journey),
           ),
         );
       }
@@ -868,9 +903,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   // ------------------------------------------------------------ tracking
 
-  /// The live leg of a pickup job, and the client's "how do you want it back?"
+  /// The live trip, and on a pickup job the client's "how do you want it
+  /// back?"
   List<Widget> _trackingSection(JobTracking? tracking) {
     if (tracking == null && !_needsTracking) return const <Widget>[];
+    // A finished home visit's trip ended at "Repairing at your home", which
+    // would read as still going. The status card says it is done.
+    if (_isHomeVisit &&
+        (_job.status == JobStatus.completed ||
+            _job.status == JobStatus.cancelled)) {
+      return const <Widget>[];
+    }
 
     final TrackingStage? stage = tracking?.stage;
     final String? technicianId = _job.assignedTechnicianId;
@@ -883,20 +926,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         technicianId != null &&
         (_job.status == JobStatus.confirmed ||
             _job.status == JobStatus.inProgress) &&
-        (stage?.asksReturnChoice ?? false);
+        (stage?.asksReturnChoiceOn(_journey) ?? false);
 
     return <Widget>[
       SugoCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const SectionHeader(title: 'Delivery'),
+            SectionHeader(title: _isHomeVisit ? 'Trip' : 'Delivery'),
             const SizedBox(height: AppSizes.md),
             if (stage == null)
               Text(
                 _isClient
-                    ? 'Tracking opens once your technician sets off to collect '
-                          'the unit.'
+                    ? (_isHomeVisit
+                          ? 'Tracking opens once your technician sets off to '
+                                'your address.'
+                          : 'Tracking opens once your technician sets off to '
+                                'collect the unit.')
                     : 'Start tracking when you set off, so the client can '
                           'follow the trip.',
                 style: AppTextStyles.subtitle,
@@ -918,9 +964,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(stage.label, style: AppTextStyles.titleSmall),
+                        Text(
+                          stage.labelOn(_journey),
+                          style: AppTextStyles.titleSmall,
+                        ),
                         const SizedBox(height: 2),
-                        Text(stage.blurb, style: AppTextStyles.micro),
+                        Text(
+                          stage.blurbOn(_journey),
+                          style: AppTextStyles.micro,
+                        ),
                       ],
                     ),
                   ),
@@ -928,10 +980,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
             // The technician is told, on the job itself, when there is no
             // delivery trip to make.
-            if (!_isClient) _ClientCollectsNote(jobId: _job.id),
+            if (!_isClient && !_isHomeVisit)
+              _ClientCollectsNote(jobId: _job.id),
             const SizedBox(height: AppSizes.lg),
             SugoButton(
-              label: _isClient ? 'Track your appliance' : 'Delivery controls',
+              label: _isClient
+                  ? (_isHomeVisit
+                        ? 'Track your technician'
+                        : 'Track your appliance')
+                  : (_isHomeVisit ? 'Trip to the client' : 'Delivery controls'),
               icon: _isClient
                   ? Icons.location_on_outlined
                   : Icons.navigation_outlined,

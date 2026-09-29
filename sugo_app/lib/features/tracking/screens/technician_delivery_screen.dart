@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -16,7 +17,10 @@ import '../../../core/widgets/sugo_skeleton.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/job_tracking.dart';
+import '../services/delay_alerts.dart';
 import '../services/tracking_service.dart';
+import '../widgets/client_trip_card.dart';
+import '../widgets/delay_alert_dialog.dart';
 import '../widgets/return_method_card.dart';
 import '../widgets/route_map_card.dart';
 
@@ -48,6 +52,14 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
   final TrackingService _service = TrackingService();
 
   StreamSubscription<Position>? _positions;
+
+  /// The live row while the client is the one travelling - on their way to
+  /// collect the unit (2026-09-29). Open only at `ready_for_collection`:
+  /// on every other leg this screen is the writer and already knows.
+  StreamSubscription<JobTracking?>? _clientTrip;
+
+  /// This technician's shop, the pin the collecting client heads for.
+  LatLng? _workshop;
 
   /// When the ETA was last resampled, so the position stream can drive it
   /// without calling TomTom on every fix. The server enforces its own floor
@@ -84,6 +96,7 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
     // Stopping the stream here is what guarantees location sharing cannot
     // outlive the screen.
     _positions?.cancel();
+    _clientTrip?.cancel();
     super.dispose();
   }
 
@@ -106,6 +119,7 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
         _returnChoice = choice;
         _isLoading = false;
       });
+      _followClientTrip(tracking.stage);
     } on RbCarsFailure catch (failure) {
       if (!mounted) return;
       setState(() {
@@ -182,6 +196,7 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
       final JobTracking updated = await _service.setStage(widget.job.id, next);
       if (!mounted) return;
       setState(() => _tracking = updated);
+      _followClientTrip(updated.stage);
 
       // Nothing is moving during the repair or after delivery, so stop the
       // stream rather than reporting a parked van for hours.
@@ -197,6 +212,37 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
+  }
+
+  /// Watches the row while the client may be travelling to the shop, and
+  /// stops watching at any other stage.
+  void _followClientTrip(TrackingStage stage) {
+    if (stage != TrackingStage.readyForCollection) {
+      _clientTrip?.cancel();
+      _clientTrip = null;
+      return;
+    }
+    if (_clientTrip != null) return;
+
+    _service.myWorkshop().then((LatLng? shop) {
+      if (mounted) setState(() => _workshop = shop);
+    });
+
+    _clientTrip = _service.watch(widget.job.id).listen(
+      (JobTracking? row) {
+        if (row == null || !mounted) return;
+        setState(() => _tracking = row);
+        // "Your client is running late", once per trip. After this frame,
+        // because it opens a dialog.
+        if (DelayAlerts.isClientTripAlertable(row)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) maybeShowDelayAlert(context, row, clientTrip: true);
+          });
+        }
+      },
+      // A dropped feed leaves the card as it was.
+      onError: (Object _) {},
+    );
   }
 
   /// Button wording for moving to [stage].
@@ -305,6 +351,12 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
         // repair onwards, because that is when the client is asked - before
         // it, there is nothing to report.
         if (!stage.isFinished && !stage.isInboundLeg) ...<Widget>[
+          if (stage == TrackingStage.readyForCollection) ...<Widget>[
+            // The client's trip to the shop, live, once it is the stage
+            // where they travel.
+            ClientTripCard(tracking: tracking, workshop: _workshop),
+            const SizedBox(height: AppSizes.md),
+          ],
           if (clientCollects)
             const ClientPickupBanner()
           else

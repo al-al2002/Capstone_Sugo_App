@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../tracking/widgets/route_map_card.dart';
 import '../../../core/widgets/sugo_card.dart';
+import '../../../core/widgets/sugo_loading.dart';
 import '../../../core/widgets/sugo_pill.dart';
 import '../../../core/widgets/sugo_route_line.dart';
 import '../../bookings/models/booking_route.dart';
@@ -23,12 +24,14 @@ class ActiveJobCard extends StatelessWidget {
     required this.onTrack,
     required this.onNeedsShop,
     this.isBusy = false,
+    this.isCompleting = false,
   });
 
   final Job job;
   final VoidCallback onComplete;
 
-  /// Opens the pickup/delivery screen. Only meaningful for a rerouted job.
+  /// Opens the trip screen: the drive to a home visit, or the pickup and
+  /// delivery of a rerouted job.
   final VoidCallback onTrack;
 
   /// The on-site repair cannot be finished here, so the unit goes to the
@@ -37,6 +40,9 @@ class ActiveJobCard extends StatelessWidget {
   final VoidCallback onNeedsShop;
 
   final bool isBusy;
+
+  /// "Mark as complete" is the action in flight: its button shows a spinner.
+  final bool isCompleting;
 
   /// A pickup job travels twice, so it needs the tracking controls. An on-site
   /// repair never leaves the client's home and has nothing to share.
@@ -49,6 +55,46 @@ class ActiveJobCard extends StatelessWidget {
   /// anywhere. Showing that a route map to the client's address would invite a
   /// drive nobody agreed to.
   bool get _isHomeVisit => job.servicePath == ServicePath.homeService;
+
+  /// "Mark as complete", filled when it is the card's main action and
+  /// outlined when a trip button sits above it.
+  ///
+  /// While the completion is saving it keeps its own colours with a spinner
+  /// and "Completing…": it is disabled either way, but grey would read as
+  /// "not allowed" rather than "working on it".
+  Widget _completeButton({required bool filled}) {
+    const Widget icon = Icon(Icons.check_circle_outline_rounded, size: 18);
+    const Widget label = Text('Mark as complete');
+    const Widget progress = SugoButtonProgress(label: 'Completing…');
+    final VoidCallback? onPressed = isBusy ? null : onComplete;
+
+    if (filled) {
+      final ButtonStyle style = ElevatedButton.styleFrom(
+        disabledBackgroundColor: isCompleting ? AppColors.primary : null,
+        disabledForegroundColor: isCompleting ? Colors.white : null,
+      );
+      return isCompleting
+          ? ElevatedButton(onPressed: null, style: style, child: progress)
+          : ElevatedButton.icon(
+              onPressed: onPressed,
+              style: style,
+              icon: icon,
+              label: label,
+            );
+    }
+
+    final ButtonStyle style = OutlinedButton.styleFrom(
+      disabledForegroundColor: isCompleting ? AppColors.primary : null,
+    );
+    return isCompleting
+        ? OutlinedButton(onPressed: null, style: style, child: progress)
+        : OutlinedButton.icon(
+            onPressed: onPressed,
+            style: style,
+            icon: icon,
+            label: label,
+          );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -208,20 +254,25 @@ class ActiveJobCard extends StatelessWidget {
             const SizedBox(height: AppSizes.sm),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: isBusy ? null : onComplete,
-                icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
-                label: const Text('Mark as complete'),
-              ),
+              child: _completeButton(filled: false),
             ),
           ] else ...<Widget>[
+            // Since 2026-09-29 the drive to a home visit is tracked too: the
+            // client follows it on a map and hears if it runs late.
+            if (_isHomeVisit) ...<Widget>[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: isBusy ? null : onTrack,
+                  icon: const Icon(Icons.navigation_rounded, size: 18),
+                  label: const Text('Trip to the client'),
+                ),
+              ),
+              const SizedBox(height: AppSizes.sm),
+            ],
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: isBusy ? null : onComplete,
-                icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
-                label: const Text('Mark as complete'),
-              ),
+              child: _completeButton(filled: !_isHomeVisit),
             ),
             const SizedBox(height: AppSizes.sm),
             // The escape hatch, and the reason the offer screen no longer asks
@@ -247,8 +298,10 @@ class ActiveJobCard extends StatelessWidget {
                 ? 'Share your location from the pickup screen so the client '
                       'can see where their appliance is.'
                 // TODO(evidence): photo evidence at arrival and completion is
-                // still outstanding. Live tracking now covers transport, but an
-                // on-site repair has no timeline of its own yet.
+                // still outstanding.
+                : _isHomeVisit
+                ? 'Start the trip when you set off, so the client can follow '
+                      'you and knows if you are running late.'
                 : 'If it turns out this cannot be repaired on site, switch it '
                       'to a shop pickup and the client gets a live map.',
             textAlign: TextAlign.center,

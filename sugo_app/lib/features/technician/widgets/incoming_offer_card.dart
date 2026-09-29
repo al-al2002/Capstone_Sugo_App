@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/widgets/sugo_card.dart';
+import '../../../core/widgets/sugo_loading.dart';
 import '../../../core/widgets/sugo_pill.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/match_result.dart';
@@ -36,6 +37,7 @@ class IncomingOfferCard extends StatelessWidget {
     required this.onMessage,
     this.unreadMessages = 0,
     this.isBusy = false,
+    this.isAccepting = false,
   });
 
   final MatchResult match;
@@ -55,6 +57,10 @@ class IncomingOfferCard extends StatelessWidget {
   final int unreadMessages;
 
   final bool isBusy;
+
+  /// This offer's Accept is the action in flight: its button shows a spinner
+  /// in its own colour, while [isBusy] only disables the rest.
+  final bool isAccepting;
 
   /// How long this offer has been sitting.
   ///
@@ -262,8 +268,21 @@ class IncomingOfferCard extends StatelessWidget {
                   onPressed: isBusy ? null : onAccept,
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(42),
+                    // Half a row is narrow: at the theme's padding the
+                    // spinner and "Accepting…" did not fit side by side.
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.sm,
+                    ),
+                    // Still disabled while accepting, but in its own colour:
+                    // grey would read as "unavailable", not "working".
+                    disabledBackgroundColor: isAccepting
+                        ? AppColors.primary
+                        : null,
+                    disabledForegroundColor: isAccepting ? Colors.white : null,
                   ),
-                  child: const Text('Accept'),
+                  child: isAccepting
+                      ? const SugoButtonProgress(label: 'Accepting…')
+                      : const Text('Accept'),
                 ),
               ),
               const SizedBox(width: AppSizes.sm),

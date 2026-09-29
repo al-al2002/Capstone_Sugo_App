@@ -24,8 +24,10 @@ import 'supabase_service.dart';
 ///
 /// The server decides all of these (`notify-event`, `job-response`,
 /// `tracking-eta`); this class only makes the device reachable. While the app
-/// is open the same news arrives over Supabase Realtime, which is why nothing
-/// here shows a notification in the foreground.
+/// is open nothing here shows a notification: the same news arrives over
+/// Supabase Realtime. A push that lands in the foreground is still passed to
+/// [NotificationRouter.arrive], though, so the client dashboard knows to
+/// re-read a trip it was not watching yet - see the delay pop-up.
 ///
 /// ## Why registration is its own step
 ///
@@ -121,6 +123,11 @@ class PushNotificationService {
 
     FirebaseMessaging.onMessageOpenedApp.listen(
       (RemoteMessage message) => NotificationRouter.deliver(message.data),
+    );
+    // Not a tap: the app was already open. Nothing is shown here; the screen
+    // that cares refreshes itself.
+    FirebaseMessaging.onMessage.listen(
+      (RemoteMessage message) => NotificationRouter.arrive(message.data),
     );
     messaging.getInitialMessage().then((RemoteMessage? message) {
       if (message != null) NotificationRouter.deliver(message.data);

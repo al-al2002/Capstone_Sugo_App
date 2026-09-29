@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -44,7 +46,9 @@ import '../../rb_cars/services/rb_cars_service.dart';
 import '../../search/search_screen.dart';
 import '../../tracking/models/job_tracking.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
+import '../../tracking/services/delay_alerts.dart';
 import '../../tracking/services/tracking_service.dart';
+import '../../tracking/widgets/delay_alert_dialog.dart';
 import '../widgets/active_booking_card.dart';
 import '../widgets/home_header.dart';
 import '../widgets/home_hero_banner.dart';
@@ -118,10 +122,19 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   /// inside each tile: one request for the whole list, not one per row.
   Map<String, JobTechnician> _technicians = <String, JobTechnician>{};
 
-  /// Live tracking for the job in the hero card, when it is a pickup job that
-  /// has actually set off. One lookup, for one job - the rest of the list does
-  /// not need it.
+  /// Live tracking for the job in the hero card, when its technician has
+  /// actually set off - a pickup, or since 2026-09-29 a home visit. One job
+  /// only: the rest of the list does not need it.
   JobTracking? _heroTracking;
+
+  /// The hero trip's live feed, open only while somebody is on the move.
+  ///
+  /// `watch` falls back to polling every 15 seconds, so it is not opened for
+  /// every confirmed booking for the whole session - only for a trip that is
+  /// under way. A trip that starts while the app is open is caught by
+  /// [_onPushArrived]. This feed is what raises the delay pop-up.
+  StreamSubscription<JobTracking?>? _heroWatch;
+  String? _heroWatchJobId;
 
   /// The hero job's delete or withdraw is in flight.
   bool _heroBusy = false;
@@ -135,6 +148,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     NotificationRouter.pending.addListener(_onNotificationTap);
+    NotificationRouter.arrived.addListener(_onPushArrived);
     // A tap that launched the app is already waiting by the time this exists.
     WidgetsBinding.instance.addPostFrameCallback((_) => _onNotificationTap());
     _directory.load();
@@ -147,6 +161,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     NotificationRouter.pending.removeListener(_onNotificationTap);
+    NotificationRouter.arrived.removeListener(_onPushArrived);
+    _stopHeroWatch();
     _directory.dispose();
     super.dispose();
   }
@@ -210,10 +226,12 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     }
   }
 
-  /// Reads the tracking row for the hero job, if it travels.
+  /// Reads the tracking row for the hero job, if it travels, and follows it
+  /// live while it is moving.
   Future<void> _loadHeroTracking() async {
     final Job? hero = _heroJob;
-    if (hero == null || hero.servicePath != ServicePath.pickup) {
+    if (hero == null || !TrackingJourney.tracks(hero.servicePath)) {
+      _stopHeroWatch();
       if (mounted && _heroTracking != null) {
         setState(() => _heroTracking = null);
       }
@@ -221,10 +239,75 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     }
     try {
       final JobTracking? live = await _tracking.fetch(hero.id);
-      if (mounted) setState(() => _heroTracking = live);
+      if (!mounted) return;
+      setState(() => _heroTracking = live);
+      if (_isMoving(live)) {
+        _watchHero(hero);
+        _maybeAlertDelay(hero, live!);
+      } else {
+        _stopHeroWatch();
+      }
     } catch (_) {
       // No tracking is a normal state, not an error worth showing.
     }
+  }
+
+  static bool _isMoving(JobTracking? t) =>
+      t != null && t.stage.showsMap && !t.stage.isFinished;
+
+  void _watchHero(Job hero) {
+    if (_heroWatchJobId == hero.id) return;
+    _stopHeroWatch();
+    _heroWatchJobId = hero.id;
+    _heroWatch = _tracking
+        .watch(hero.id)
+        .listen(
+          (JobTracking? t) {
+            if (!mounted) return;
+            setState(() => _heroTracking = t);
+            if (_isMoving(t)) {
+              _maybeAlertDelay(hero, t!);
+              return;
+            }
+            // Arrived, or on the bench: nothing left to follow, and the job
+            // itself may have moved on too.
+            _stopHeroWatch();
+            _loadJobs();
+          },
+          // A dropped feed just leaves the card as it was.
+          onError: (Object _) {},
+        );
+  }
+
+  void _stopHeroWatch() {
+    _heroWatch?.cancel();
+    _heroWatch = null;
+    _heroWatchJobId = null;
+  }
+
+  /// The "running late" pop-up, once per trip.
+  ///
+  /// Offers the live map only when home is the screen in front. Over another
+  /// screen - a chat, the job detail, the tracking screen itself - it just
+  /// informs, so it never stacks a second tracking screen on the first.
+  Future<void> _maybeAlertDelay(Job job, JobTracking tracking) async {
+    if (!DelayAlerts.isAlertable(tracking)) return;
+    final bool onTop = ModalRoute.of(context)?.isCurrent ?? true;
+    final bool track = await maybeShowDelayAlert(
+      context,
+      tracking,
+      offerTracking: onTop,
+    );
+    if (track && mounted) await _trackJob(job);
+  }
+
+  /// A push landed while the app was open. Trip news - on the way, arrived,
+  /// running late - re-reads the bookings, which opens the live feed if the
+  /// technician has just set off.
+  void _onPushArrived() {
+    final NotificationTap? push = NotificationRouter.arrived.value;
+    if (push == null || !mounted) return;
+    if (push.type == 'stage' || push.type == 'job_delay') _loadJobs();
   }
 
   Future<void> _refresh() async {
@@ -488,9 +571,16 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     }
     if (job.status == JobStatus.confirmed) {
       final JobTracking? live = _heroTracking;
-      return live != null && !live.stage.isFinished
-          ? ActiveBookingState.travelling
-          : ActiveBookingState.confirmed;
+      if (live == null || live.stage.isFinished) {
+        return ActiveBookingState.confirmed;
+      }
+      // A home visit whose technician has arrived is a repair under way, not
+      // a trip: "Track technician" would open a map that has closed.
+      if (TrackingJourney.of(job.servicePath) == TrackingJourney.homeVisit &&
+          !live.stage.showsMap) {
+        return ActiveBookingState.inProgress;
+      }
+      return ActiveBookingState.travelling;
     }
     if (job.status == JobStatus.matched) {
       return who != null && who.isAwaiting

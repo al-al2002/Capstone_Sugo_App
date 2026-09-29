@@ -35,9 +35,14 @@ class TrackingMap extends StatefulWidget {
     this.height = 300,
     this.rounded = true,
     this.bottomInset = 0,
+    this.travellerIcon,
   });
 
   final JobTracking tracking;
+
+  /// The moving pin's icon. Defaults to the stage's (a van, a car); the
+  /// client's trip to the workshop passes a person instead.
+  final IconData? travellerIcon;
 
   /// Where this leg is heading: the shop on the way in, the client on the way
   /// back. Null when we do not know, in which case only the van is drawn.
@@ -282,6 +287,9 @@ class _TrackingMapState extends State<TrackingMap>
                                 height: 46,
                                 child: _TechnicianPin(
                                   stage: widget.tracking.stage,
+                                  icon:
+                                      widget.travellerIcon ??
+                                      widget.tracking.stage.icon,
                                   isLive: widget.tracking.isLive,
                                 ),
                               ),
@@ -355,9 +363,14 @@ class _TrackingMapState extends State<TrackingMap>
 }
 
 class _TechnicianPin extends StatelessWidget {
-  const _TechnicianPin({required this.stage, required this.isLive});
+  const _TechnicianPin({
+    required this.stage,
+    required this.icon,
+    required this.isLive,
+  });
 
   final TrackingStage stage;
+  final IconData icon;
   final bool isLive;
 
   @override
@@ -371,7 +384,7 @@ class _TechnicianPin extends StatelessWidget {
           BoxShadow(color: Color(0x40000000), blurRadius: 8),
         ],
       ),
-      child: Icon(stage.icon, size: 20, color: Colors.white),
+      child: Icon(icon, size: 20, color: Colors.white),
     );
   }
 }
