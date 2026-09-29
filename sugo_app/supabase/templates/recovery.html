@@ -1,0 +1,69 @@
+<!--
+  SUGO: the "forgot password" email.
+
+  Replaces Supabase's default recovery mail, which renders only
+  {{ .ConfirmationURL }} - a link that opens a browser page this app does not
+  have. The app instead asks for the six-digit code below, checks it with
+  `verifyOTP(type: recovery)`, and then lets the person choose a new password
+  on the same screen.
+
+  The link is deliberately absent, for the same reason as in magic_link.html:
+  the app is waiting for a code, and a link would reset the password somewhere
+  the app cannot see.
+
+  Table layout and inline styles on purpose. Gmail and Outlook strip <style>
+  blocks and do not implement flexbox. Colours are the 2026-09-27 palette:
+  navy #062B5C, SUGO blue #087FEA, soft blue #EAF5FF.
+-->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#F4F6FA;padding:32px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:480px;background:#FFFFFF;border-radius:20px;border:1px solid #E2E7EF;">
+        <tr>
+          <td style="padding:32px 32px 8px 32px;">
+            <p style="margin:0;font-size:13px;font-weight:800;letter-spacing:1.5px;color:#062B5C;text-transform:uppercase;">
+              SUGO
+            </p>
+            <h1 style="margin:12px 0 0 0;font-size:22px;font-weight:800;color:#10233F;">
+              Reset your password
+            </h1>
+            <p style="margin:8px 0 0 0;font-size:14px;line-height:1.5;color:#5F6E84;">
+              Enter this code in the SUGO app, then choose a new password.
+            </p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:24px 32px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background:#EAF5FF;border-radius:16px;">
+              <tr>
+                <td align="center" style="padding:22px 16px;">
+                  <span style="font-size:34px;font-weight:800;letter-spacing:10px;color:#0663C4;font-family:'SF Mono',Menlo,Consolas,monospace;">
+                    {{ .Token }}
+                  </span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:0 32px 32px 32px;">
+            <p style="margin:0;font-size:13px;line-height:1.55;color:#5F6E84;">
+              The code works once and expires within the hour. If you did not
+              ask to reset your SUGO password, ignore this email - your
+              password stays exactly as it is.
+            </p>
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:20px 0 0 0;font-size:11.5px;color:#8C95A8;">
+        SUGO &middot; Fix. Technology. Appliances.
+      </p>
+    </td>
+  </tr>
+</table>

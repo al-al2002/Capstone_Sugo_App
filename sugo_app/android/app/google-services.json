@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "497071683755",
+    "project_id": "sugo-e559c",
+    "storage_bucket": "sugo-e559c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:497071683755:android:226f3a69d8b497e2e61fee",
+        "android_client_info": {
+          "package_name": "com.example.sugo_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDcXjiV9kqR94T42IIlBR9sz9tJTVwYcXA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

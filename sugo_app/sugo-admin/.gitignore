@@ -1,0 +1,31 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+# Any other copy of the environment - e.g. .env.before-smtp - carries the
+# Supabase service role key. Only the template is safe to commit.
+.env.*
+!.env.example
+.phpactor.json
+.phpunit.result.cache
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+Thumbs.db

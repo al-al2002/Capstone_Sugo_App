@@ -1,0 +1,37 @@
+{
+  // SUGO run configurations.
+  //
+  // The MapTiler key is passed as a --dart-define rather than committed into
+  // Dart source. It is a client-side key by necessity - the browser downloads
+  // the map tiles itself, so there is nowhere to hide it - which is why
+  // MapTiler expects you to restrict it by origin in their dashboard instead
+  // of keeping it secret. Contrast with the TomTom and OpenWeatherMap keys,
+  // which are Supabase secrets and never reach the app at all.
+  //
+  // The key below is verified working: it returns a real 512x512 PNG tile of
+  // Davao City. Regenerate it in the MapTiler dashboard after the defence.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SUGO (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "sugo_app",
+      "program": "lib/main.dart",
+      "deviceId": "chrome",
+      "args": [
+        "--dart-define=MAPTILER_KEY=J7Add9jnneL7324URxfQ"
+      ]
+    },
+    {
+      "name": "SUGO (device)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "sugo_app",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=MAPTILER_KEY=J7Add9jnneL7324URxfQ"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+-- SUGO: hold `community_last_seen` to the same grant rule as its siblings
+--
+-- Migration 20260921000002 revoked anon from every community table, on the
+-- principle that an anonymous request should be refused at the privilege check
+-- rather than by a policy. `community_last_seen` arrived two migrations later
+-- and missed that sweep.
+--
+-- Nothing leaked: its RLS policy is own-row, and `auth.uid()` is null for anon,
+-- so the table already returned an empty set. This is about keeping one rule
+-- rather than two - a reader of `\dp` should see the same posture on all five
+-- community tables, not four locked and one relying on a policy to save it.
+revoke all on table public.community_last_seen from anon;
