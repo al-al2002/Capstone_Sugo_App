@@ -34,8 +34,8 @@
     }
     #sugo-progress > div {
         height: 100%; width: 0;
-        background: linear-gradient(90deg, #5B9DF7, #1877F2);
-        box-shadow: 0 0 10px rgba(24, 119, 242, .55);
+        background: linear-gradient(90deg, #11C5E8, #087FEA);
+        box-shadow: 0 0 10px rgba(8, 127, 234, .45);
         border-radius: 0 3px 3px 0;
     }
     /* Fast at first, then slower and slower: it keeps moving for as long as

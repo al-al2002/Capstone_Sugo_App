@@ -89,10 +89,13 @@
             'ink' => ['bg-canvas', 'text-ink-muted'],
         ];
 
-        // Status breakdown, in lifecycle order, for the stacked bar.
+        // Status breakdown, in lifecycle order, for the stacked bar. Segments
+        // are fills, so they use the bright `-light` shades where a colour has
+        // one: `warn` and `accent` are the same dark amber as text, and would
+        // merge into one segment.
         $statusOrder = [
             'pending' => ['Posted', 'bg-warn'],
-            'matched' => ['Matched', 'bg-accent'],
+            'matched' => ['Matched', 'bg-accent-light'],
             'confirmed' => ['Accepted', 'bg-brand-light'],
             'in_progress' => ['In progress', 'bg-brand'],
             'completed' => ['Completed', 'bg-ok'],
@@ -107,8 +110,8 @@
             'completed' => array_map(fn($d) => (int) $d['completed'], $daily),
         ]);
         $series = [
-            'posted' => ['Posted', 'bg-brand', '#1877F2'],
-            'completed' => ['Completed', 'bg-ok', '#15A05B'],
+            'posted' => ['Posted', 'bg-brand-light', '#087FEA'],
+            'completed' => ['Completed', 'bg-ok', '#157F4B'],
         ];
         $periodPosted = array_sum(array_map(fn($d) => (int) $d['posted'], $daily));
         $periodDone = array_sum(array_map(fn($d) => (int) $d['completed'], $daily));
@@ -212,7 +215,7 @@
                                 @foreach ($chart->ticks() as $tick)
                                     @php $gy = round($chart->yPercent($tick) / 100 * \App\Support\LineChart::HEIGHT, 2); @endphp
                                     <line x1="0" x2="{{ \App\Support\LineChart::WIDTH }}" y1="{{ $gy }}" y2="{{ $gy }}"
-                                        stroke="{{ $tick == 0 ? '#CBD5E1' : '#E3E9F2' }}" stroke-width="1"
+                                        stroke="{{ $tick == 0 ? '#CBD5E1' : '#E3E8EF' }}" stroke-width="1"
                                         vector-effect="non-scaling-stroke" />
                                 @endforeach
                                 @foreach ($series as $key => [$label, $bg, $hex])

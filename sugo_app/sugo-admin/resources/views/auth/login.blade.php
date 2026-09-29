@@ -11,26 +11,49 @@
             theme: {
                 extend: {
                     colors: {
+                        // The SUGO palette, taken from lib/core/constants/
+                        // app_colors.dart so the console and the app read as
+                        // one product (brought in line on 2026-09-29; it was
+                        // still the retired #1877F2 blue and #FF7A00 orange).
+                        //
+                        // One rule carried over from the app: bright for
+                        // marks, dark for words. `brand`, `accent` and `warn`
+                        // are the *text* shades, because this console prints
+                        // them as words and puts white words on them.
                         brand: {
-                            DEFAULT: '#1877F2',
-                            dark: '#0D5BC4',
-                            soft: '#E8F1FE'
+                            DEFAULT: '#0663C4', // SUGO blue, text shade: 5.8:1
+                            dark: '#054FA0',
+                            light: '#087FEA', // SUGO blue, for fills only
+                            soft: '#EAF5FF',
+                            softer: '#F4F9FF',
                         },
-                        navy: '#0B2B5C',
-                        accent: '#FF7A00',
+                        navy: '#062B5C',
+                        accent: {
+                            DEFAULT: '#B45309', // orange as text: 5.0:1
+                            light: '#F59E0B', // SUGO orange, for fills only
+                            soft: '#FEF3DE'
+                        },
                         ink: {
-                            DEFAULT: '#1B1F2A',
-                            muted: '#6B7280'
+                            DEFAULT: '#10233F',
+                            muted: '#5F6E84'
                         },
-                        line: '#E3E9F2',
-                        canvas: '#F4F8FF',
+                        line: '#E3E8EF', // Hairline
+                        canvas: '#F5F7FA', // Paper
+                        ok: {
+                            DEFAULT: '#157F4B',
+                            soft: '#EAF7F0'
+                        },
+                        warn: {
+                            DEFAULT: '#B45309',
+                            soft: '#FEF3E0'
+                        },
                         bad: {
-                            DEFAULT: '#E02D3C',
-                            soft: '#FDECEE'
+                            DEFAULT: '#CE2C31',
+                            soft: '#FDEBEC'
                         },
                     },
                     fontFamily: {
-                        sans: ['Inter', 'Segoe UI', 'system-ui', 'sans-serif']
+                        sans: ['Plus Jakarta Sans', 'Segoe UI', 'system-ui', 'sans-serif']
                     }
                 }
             }
@@ -39,7 +62,7 @@
     <link rel="icon" href="{{ asset('favicon.ico') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body class="h-full bg-canvas font-sans text-ink antialiased">
