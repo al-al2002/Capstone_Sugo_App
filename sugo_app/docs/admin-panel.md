@@ -17,7 +17,10 @@ Then open <http://localhost:8000> and sign in.
 | | |
 |---|---|
 | Email | `admin@sugo.ph` |
-| Password | `admin123` |
+| Password | Ask the team. Changed on 2026-09-29 and kept out of the repository. |
+
+A database built fresh from the migrations starts with the seed password
+`admin123` - change it straight away (see "Known limitations" below).
 
 No `npm install`, no `npm run build`, no database to migrate. Tailwind loads
 from its CDN and there is no local database at all — see below.
@@ -181,13 +184,25 @@ and `20260907000006` now writes them correctly.
 
 Name these first rather than being asked.
 
-1. **The password is `admin123` and it is in the repository.** Acceptable for a
-   capstone demonstration and nothing else. To change it:
+1. **The seed password `admin123` is in the repository**, in the
+   `20260907000006_admin_role` migration. The repository is public, so the live
+   project's password was changed on 2026-09-29 and is kept outside it. Any
+   database built fresh from the migrations starts with `admin123` again;
+   change it in the SQL Editor (not the terminal, which keeps a history):
    ```sql
    update auth.users
-   set encrypted_password = extensions.crypt('a better password', extensions.gen_salt('bf'))
+   set encrypted_password = extensions.crypt('a better password', extensions.gen_salt('bf')),
+       updated_at = now()
    where email = 'admin@sugo.ph';
    ```
+   Then confirm the seed password no longer works - this should say `false`:
+   ```sql
+   select encrypted_password = extensions.crypt('admin123', encrypted_password)
+   from auth.users where email = 'admin@sugo.ph';
+   ```
+   The migration itself is left as it is: it has already run on the live
+   project, and editing an applied migration makes the files disagree with
+   the database's migration history.
 
 2. **Anyone with the `.env` has full read access to every identity document.**
    The service role key bypasses RLS by design. Protect that file the way you
