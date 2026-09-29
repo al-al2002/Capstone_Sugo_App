@@ -357,6 +357,7 @@ class _WorkshopRouteState extends State<_WorkshopRoute> {
         const SizedBox(height: AppSizes.md),
         if (hasShop)
           RouteMapCard(
+            icon: Icons.storefront_rounded,
             jobId: widget.jobId,
             latitude: profile!.shopLatitude!,
             longitude: profile.shopLongitude!,

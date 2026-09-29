@@ -15,13 +15,6 @@ class AppAssets {
   /// real one in that space once it has finished loading.
   static const String splash = '$_images/splash_art.jpg';
 
-  /// The cover behind the Profile tab's identity card (1200x564): the emblem
-  /// from the app icon, cropped wide by `tool/prepare_brand_images.py`.
-  ///
-  /// The same for every account - there is no per-user cover upload. Swap this
-  /// file for a purpose-made wide banner and the card picks it up unchanged.
-  static const String profileCover = '$_images/profile_cover.png';
-
   /// The emblem alone - house, wrench, swoosh and van - on the icon's navy
   /// (512x512). The app's small logo mark, and the disc at the centre of the
   /// matching screen. Cut from the app icon by `tool/prepare_brand_images.py`

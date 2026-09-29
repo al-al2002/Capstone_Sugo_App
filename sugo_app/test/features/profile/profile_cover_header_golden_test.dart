@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sugo_app/core/constants/app_assets.dart';
 import 'package:sugo_app/core/constants/app_sizes.dart';
 import 'package:sugo_app/core/theme/app_theme.dart';
 import 'package:sugo_app/features/profile/widgets/profile_cover_header.dart';
@@ -36,14 +35,8 @@ void main() {
       ),
     );
 
-    // Image decoding is genuinely async, so it has to run outside the
-    // fake-async zone or the cover captures blank.
-    await tester.runAsync(() async {
-      await precacheImage(
-        const AssetImage(AppAssets.profileCover),
-        tester.binding.rootElement!,
-      );
-    });
+    // The cover is drawn in code since 2026-09-29, so there is no image to
+    // wait for.
     await tester.pumpAndSettle();
   }
 

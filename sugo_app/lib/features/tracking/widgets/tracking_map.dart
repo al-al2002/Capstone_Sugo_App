@@ -8,17 +8,30 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_motion.dart';
 import '../models/job_tracking.dart';
+import '../models/route_result.dart';
+import '../services/tracking_service.dart';
+import '../../../core/widgets/sugo_map.dart';
 
-/// The live map: technician, destination, and the line between them.
+/// The live map: whoever is travelling, where they are going, and the road
+/// between them.
 ///
-/// ## What the line is, and is not
+/// ## The route (2026-09-29)
 ///
-/// It is a straight line between the technician and their destination, not a
-/// driven route. Drawing a real route would mean a directions API call every
-/// time the van moves, which is a request per fix and would exhaust the free
-/// tier within a single delivery. A straight line communicates the two things
-/// a waiting client actually wants - which way and roughly how far - without
-/// pretending to a precision we are not paying for.
+/// It used to be a straight dotted line, because a directions call per GPS
+/// fix would empty the free tier within one delivery. It is now the road
+/// route (`job-route`, live mode), fetched sparingly:
+///
+/// * once when the map opens, and again when the stage changes (the
+///   destination flips);
+/// * again only when the traveller has drifted more than [_offRouteMetres]
+///   from the drawn route, and never more than once per [_minRouteInterval] -
+///   a wrong turn, or a road the route did not expect;
+/// * between fetches the line is trimmed to start at the moving marker, so it
+///   shrinks as they drive without another request.
+///
+/// If no route can be had - no key, no road between the points, the provider
+/// down - the old dotted straight line comes back, which is still honest about
+/// which way and roughly how far.
 ///
 /// ## Honesty about staleness
 ///
@@ -36,7 +49,20 @@ class TrackingMap extends StatefulWidget {
     this.rounded = true,
     this.bottomInset = 0,
     this.travellerIcon,
+    this.destinationIcon = Icons.place_rounded,
+    this.showRoute = true,
+    this.service,
   });
+
+  /// The destination pin's icon: a house for the client, a shop for the
+  /// workshop.
+  final IconData destinationIcon;
+
+  /// Draw the road route. Off only where a route would be noise.
+  final bool showRoute;
+
+  /// Tests pass a fake; the app uses the real service.
+  final TrackingService? service;
 
   final JobTracking tracking;
 
@@ -100,6 +126,56 @@ class _TrackingMapState extends State<TrackingMap>
   /// quota on an overlay most clients are not reading. Off until asked for.
   bool _showTraffic = false;
 
+  // ---------------------------------------------------------------- route
+
+  /// Never ask for a route more often than this.
+  static const Duration _minRouteInterval = Duration(seconds: 60);
+
+  /// How far off the drawn route counts as "took another road".
+  static const double _offRouteMetres = 200;
+
+  late final TrackingService _routes = widget.service ?? TrackingService();
+
+  /// The road route for the current leg, or null for the dotted fallback.
+  List<LatLng>? _route;
+  DateTime? _routeAt;
+  TrackingStage? _routeStage;
+  bool _routing = false;
+
+  /// Asks for a route when the rules in the class note say it is worth it.
+  void _maybeRoute() {
+    if (!widget.showRoute || _routing || !AppEnv.hasMapTilerKey) return;
+    final LatLng? at = _technicianPoint;
+    if (at == null || widget.destination == null) return;
+
+    final bool newLeg = _routeStage != widget.tracking.stage;
+    final DateTime? last = _routeAt;
+    final bool due =
+        last == null || DateTime.now().difference(last) >= _minRouteInterval;
+    final List<LatLng>? route = _route;
+    final bool offRoute =
+        route == null || distanceToRoute(at, route) > _offRouteMetres;
+
+    if (newLeg || (offRoute && due)) _fetchRoute();
+  }
+
+  Future<void> _fetchRoute() async {
+    _routing = true;
+    final TrackingStage stage = widget.tracking.stage;
+    try {
+      final RouteResult result = await _routes.liveRoute(widget.tracking.jobId);
+      if (!mounted) return;
+      setState(() {
+        _route = result.available ? result.points : null;
+        _routeAt = DateTime.now();
+        _routeStage = stage;
+      });
+    } finally {
+      _routing = false;
+    }
+  }
+
+
   /// Auth headers for the tile proxy, built once per toggle.
   ///
   /// `traffic-tile` requires a signed-in caller, so the session token rides on
@@ -141,6 +217,9 @@ class _TrackingMapState extends State<TrackingMap>
     super.initState();
     _move = AnimationController(vsync: this, duration: AppMotion.slow);
     _to = _technicianPoint;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeRoute();
+    });
   }
 
   @override
@@ -167,6 +246,8 @@ class _TrackingMapState extends State<TrackingMap>
         _move.forward(from: 0);
       }
     }
+
+    _maybeRoute();
 
     // Recentre only while following, so a client who has panned to look at the
     // route is not yanked back every time a fix arrives. Skipped entirely when
@@ -224,11 +305,7 @@ class _TrackingMapState extends State<TrackingMap>
                 },
               ),
               children: <Widget>[
-                TileLayer(
-                  urlTemplate: AppEnv.mapTilerTileUrl,
-                  userAgentPackageName: 'com.example.sugo_app',
-                  maxZoom: 18,
-                ),
+                const SugoMapTiles(),
 
                 // Traffic sits directly on the base map, under the route line
                 // and the pins - congestion is context for the journey, and it
@@ -252,9 +329,14 @@ class _TrackingMapState extends State<TrackingMap>
                   animation: _move,
                   builder: (BuildContext context, Widget? _) {
                     final LatLng? van = _displayPoint;
+                    final List<LatLng>? route = _route;
                     return Stack(
                       children: <Widget>[
-                        if (van != null && destination != null)
+                        if (van != null && route != null && route.length >= 2)
+                          PolylineLayer<Object>(
+                            polylines: sugoRouteLines(routeAhead(van, route)),
+                          )
+                        else if (van != null && destination != null)
                           PolylineLayer<Object>(
                             polylines: <Polyline<Object>>[
                               Polyline<Object>(
@@ -273,23 +355,29 @@ class _TrackingMapState extends State<TrackingMap>
                             if (destination != null)
                               Marker(
                                 point: destination,
-                                width: 44,
-                                height: 44,
+                                width: SugoMapPin.markerWidth,
+                                height: SugoMapPin.markerHeight(
+                                  labelled: true,
+                                ),
                                 alignment: Alignment.topCenter,
-                                child: _DestinationPin(
+                                child: SugoMapPin(
+                                  icon: widget.destinationIcon,
+                                  color: AppColors.accentDark,
                                   label: widget.destinationLabel,
                                 ),
                               ),
                             if (van != null)
                               Marker(
                                 point: van,
-                                width: 46,
-                                height: 46,
-                                child: _TechnicianPin(
-                                  stage: widget.tracking.stage,
+                                width: SugoTravellerMarker.size,
+                                height: SugoTravellerMarker.size,
+                                child: SugoTravellerMarker(
+                                  // A truck on every technician leg; the
+                                  // client's own trip passes a person.
                                   icon:
                                       widget.travellerIcon ??
-                                      widget.tracking.stage.icon,
+                                      Icons.local_shipping_rounded,
+                                  color: AppColors.primary,
                                   isLive: widget.tracking.isLive,
                                 ),
                               ),
@@ -357,54 +445,6 @@ class _TrackingMapState extends State<TrackingMap>
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _TechnicianPin extends StatelessWidget {
-  const _TechnicianPin({
-    required this.stage,
-    required this.icon,
-    required this.isLive,
-  });
-
-  final TrackingStage stage;
-  final IconData icon;
-  final bool isLive;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isLive ? stage.color : AppColors.hint,
-        border: Border.all(color: Colors.white, width: 3),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(color: Color(0x40000000), blurRadius: 8),
-        ],
-      ),
-      child: Icon(icon, size: 20, color: Colors.white),
-    );
-  }
-}
-
-class _DestinationPin extends StatelessWidget {
-  const _DestinationPin({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: const Icon(
-        Icons.place_rounded,
-        size: 40,
-        color: AppColors.accent,
-        shadows: <Shadow>[
-          Shadow(color: Color(0x40000000), blurRadius: 6, offset: Offset(0, 2)),
-        ],
       ),
     );
   }

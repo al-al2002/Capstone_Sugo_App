@@ -6,7 +6,10 @@ import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/sugo_button.dart';
+import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/sugo_card.dart';
+import '../../../core/widgets/sugo_delete_animation.dart';
+import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
 import '../../../core/widgets/sugo_loading.dart';
 import '../../../core/widgets/sugo_status_badge.dart';
@@ -150,6 +153,34 @@ class _BookingsListViewState extends State<BookingsListView> {
   /// Looks up any existing rating first, so tapping the stars of a job
   /// already rated opens the sheet to *edit* that rating rather than trying
   /// to write a second one the unique constraint would refuse.
+  /// Deletes a request nobody has taken yet, from the list itself
+  /// (2026-09-29), under the same bin animation as everywhere else.
+  Future<void> _delete(Job job) async {
+    final bool confirmed = await showSugoConfirmDialog(
+      context: context,
+      icon: Icons.delete_outline_rounded,
+      iconColor: AppColors.textPrimary,
+      iconTint: AppColors.divider,
+      title: 'Delete this request?',
+      message:
+          'Nobody has taken it yet, so it will be removed along with the '
+          'matches we found. This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Keep it',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    try {
+      // The bin says "Request deleted" itself, so no snackbar.
+      await runWithDeleteAnimation(context, _clientService.deleteJob(job.id));
+      if (!mounted) return;
+      await _load();
+    } on RbCarsFailure catch (failure) {
+      if (mounted) UiFeedback.showError(context, failure.message);
+    }
+  }
+
   Future<void> _rate(Job job) async {
     final JobParty? party = _parties[job.id];
     final bool isClient = widget.role == BookingsRole.client;
@@ -267,6 +298,11 @@ class _BookingsListViewState extends State<BookingsListView> {
                     ReturnMethod.clientPickup,
                 onReturn: _load,
                 onRate: () => _rate(_visible[index]),
+                onDelete:
+                    widget.role == BookingsRole.client &&
+                        _visible[index].canBeDeletedByClient
+                    ? () => _delete(_visible[index])
+                    : null,
               ),
             ),
     );
@@ -509,8 +545,12 @@ class BookingCard extends StatelessWidget {
     required this.onReturn,
     this.party,
     this.onRate,
+    this.onDelete,
     this.clientCollects = false,
   });
+
+  /// Deletes the request. Non-null only for a client's job nobody has taken.
+  final VoidCallback? onDelete;
 
   final Job job;
   final BookingsRole role;
@@ -701,6 +741,10 @@ class BookingCard extends StatelessWidget {
           Expanded(
             child: Text(_unassignedLabel(), style: AppTextStyles.caption),
           ),
+          if (onDelete != null) ...<Widget>[
+            _DeleteButton(onPressed: onDelete!),
+            const SizedBox(width: AppSizes.sm),
+          ],
           SugoButton(
             label: 'View',
             variant: SugoButtonVariant.tonal,
@@ -808,6 +852,11 @@ class BookingCard extends StatelessWidget {
                 onPressed: () => _open(context),
               ),
             ),
+            // A request still waiting on the technician can be dropped here.
+            if (onDelete != null) ...<Widget>[
+              const SizedBox(width: AppSizes.sm),
+              _DeleteButton(onPressed: onDelete!),
+            ],
           ],
         ),
       ],
@@ -890,6 +939,32 @@ class BookingCard extends StatelessWidget {
 }
 
 /// A small icon, a caption and the value under it.
+/// The bin on a booking card: an icon button, red, with its name for screen
+/// readers and a long press. Small, because on a card it sits beside the main
+/// action and must not compete with it.
+class _DeleteButton extends StatelessWidget {
+  const _DeleteButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Delete request',
+      onPressed: onPressed,
+      icon: const Icon(Icons.delete_outline_rounded),
+      color: AppColors.error,
+      style: IconButton.styleFrom(
+        backgroundColor: AppColors.errorSoft,
+        minimumSize: const Size.square(AppSizes.compactButtonHeight),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radius),
+        ),
+      ),
+    );
+  }
+}
+
 class _Fact extends StatelessWidget {
   const _Fact({required this.icon, required this.label, required this.value});
 

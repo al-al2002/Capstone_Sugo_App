@@ -42,6 +42,28 @@
  * check was `service_path !== "home_service" -> refuse`, so the one person who
  * actually had to drive to an address was the one the app would not navigate.
  *
+ * ## Live mode: the trip that is happening now (2026-09-29)
+ *
+ * ```
+ * POST /functions/v1/job-route
+ * { "job_id": "uuid", "live": true }
+ * ```
+ *
+ * The tracking maps used to draw a straight dotted line between whoever was
+ * travelling and where they were going. Live mode returns the road route for
+ * the leg in progress instead, so the person WATCHING - the client following
+ * a technician, or a technician waiting for a client to arrive - sees the
+ * streets being driven.
+ *
+ * No origin is taken from the caller: it is the traveller's last reported
+ * position in `job_tracking` (the technician's, or on `ready_for_collection`
+ * the client's own trip columns), and the destination comes from
+ * `_shared/leg_destination.ts` - the same place the ETA counts down to. Either
+ * person on the job may ask, and only while a leg is actually moving.
+ *
+ * The app asks again only when the traveller drifts well off the drawn route
+ * or the stage changes, not per GPS fix - see `TrackingMap`.
+ *
  * ## Why the workshop never falls back to a live position
  *
  * Shop coordinates, then the registered base, and then nothing. The
@@ -60,12 +82,26 @@
 import { fail, json, preflight } from "../_shared/cors.ts";
 import { callerId, readJson, serviceClient } from "../_shared/supabase.ts";
 import { haversineKm } from "../match-technician/scoring/geo.ts";
+import { resolveLegDestination } from "../_shared/leg_destination.ts";
 
 interface RouteRequest {
   job_id?: string;
   origin_latitude?: number;
   origin_longitude?: number;
+  /** Route the leg in progress, from the traveller's last position. */
+  live?: boolean;
 }
+
+/** The technician's legs that move. `in_repair` and `delivered` do not. */
+const LIVE_TECHNICIAN_STAGES = new Set([
+  "heading_to_pickup",
+  "collected",
+  "returning_to_shop",
+  "out_for_delivery",
+]);
+
+/** The one leg the client travels: coming to collect (20260929000001). */
+const CLIENT_TRIP_STAGE = "ready_for_collection";
 
 /**
  * Car, not motorcycle. TomTom documents `motorcycle` as BETA, and a capstone
@@ -111,12 +147,6 @@ Deno.serve(async (req: Request) => {
     const jobId = body.job_id;
     if (!jobId) return fail("job_id is required", 422);
 
-    const originLat = body.origin_latitude;
-    const originLng = body.origin_longitude;
-    if (!validCoordinate(originLat, originLng)) {
-      return fail("A valid origin is required", 422);
-    }
-
     const db = serviceClient();
 
     const { data: job, error: jobError } = await db
@@ -138,6 +168,64 @@ Deno.serve(async (req: Request) => {
 
     if (jobError) return fail("Could not load the job", 500, jobError.message);
     if (!job) return fail("Job not found", 404);
+
+    // ------------------------------------------------------------- live
+    if (body.live === true) {
+      if (uid !== job.client_id && uid !== job.assigned_technician_id) {
+        return fail("This job belongs to someone else", 403);
+      }
+
+      const { data: leg } = await db
+        .from("job_tracking")
+        .select(
+          "stage, latitude, longitude, client_latitude, client_longitude, " +
+            "client_trip_started_at, client_arrived_at",
+        )
+        .eq("job_id", jobId)
+        .maybeSingle<{
+          stage: string;
+          latitude: number | null;
+          longitude: number | null;
+          client_latitude: number | null;
+          client_longitude: number | null;
+          client_trip_started_at: string | null;
+          client_arrived_at: string | null;
+        }>();
+
+      if (!leg) return json({ available: false, reason: "not_travelling" });
+
+      const clientTrip = leg.stage === CLIENT_TRIP_STAGE;
+      const moving = clientTrip
+        ? leg.client_trip_started_at !== null && leg.client_arrived_at === null
+        : LIVE_TECHNICIAN_STAGES.has(leg.stage);
+      if (!moving) return json({ available: false, reason: "not_travelling" });
+
+      const fromLat = clientTrip ? leg.client_latitude : leg.latitude;
+      const fromLng = clientTrip ? leg.client_longitude : leg.longitude;
+      if (!validCoordinate(fromLat, fromLng)) {
+        return json({ available: false, reason: "no_position" });
+      }
+
+      const destination = await resolveLegDestination(db, job);
+      if (destination.latitude === null || destination.longitude === null) {
+        return json({ available: false, reason: "no_destination" });
+      }
+
+      return await routeBetween(
+        fromLat,
+        fromLng!,
+        destination.latitude,
+        destination.longitude,
+        destination.label,
+      );
+    }
+
+    // ----------------------------------------- from the caller's position
+    const originLat = body.origin_latitude;
+    const originLng = body.origin_longitude;
+    if (!validCoordinate(originLat, originLng)) {
+      return fail("A valid origin is required", 422);
+    }
 
     let destLat: number | null = null;
     let destLng: number | null = null;
@@ -242,7 +330,26 @@ Deno.serve(async (req: Request) => {
       return json({ available: false, reason: "no_destination" });
     }
 
-    const straightKm = haversineKm(originLat, originLng!, destLat, destLng);
+    return await routeBetween(originLat, originLng!, destLat, destLng, label);
+  } catch (error) {
+    console.warn("route failed", (error as Error).message);
+    return json({ available: false, reason: "provider_unavailable" });
+  }
+});
+
+/**
+ * The road route from one point to another, as the app draws it. Shared by
+ * both modes; every failure is an `available: false` with a reason.
+ */
+async function routeBetween(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  label: string,
+): Promise<Response> {
+  try {
+    const straightKm = haversineKm(originLat, originLng, destLat, destLng);
     if (straightKm > MAX_ROUTE_KM) {
       return json({ available: false, reason: "too_far" });
     }
@@ -313,4 +420,4 @@ Deno.serve(async (req: Request) => {
     console.warn("route failed", (error as Error).message);
     return json({ available: false, reason: "provider_unavailable" });
   }
-});
+}

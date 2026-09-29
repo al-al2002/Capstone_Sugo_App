@@ -29,6 +29,12 @@ void main() {
 
   Widget host(TrackingService service) => MaterialApp(
     theme: AppTheme.light,
+    // Reduced motion: the trip's truck drives forever while sharing, which
+    // `pumpAndSettle` would wait on for good. Its motion has its own test.
+    builder: (BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: true),
+      child: child!,
+    ),
     home: HomeVisitTripScreen(job: job, service: service),
   );
 
@@ -87,9 +93,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('coming back mid-trip offers to share again', (
+  testWidgets('coming back mid-trip shares again without a tap', (
     WidgetTester tester,
   ) async {
+    // The user's ask (2026-09-29): a technician who forgets to switch it back
+    // on must not leave the client watching a frozen pin.
     final _FakeTracking service = _FakeTracking(
       existing: TrackingStage.headingToPickup,
     );
@@ -97,12 +105,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('On the way to the client'), findsOneWidget);
-    expect(find.text('Share my location again'), findsOneWidget);
-
-    await tester.tap(find.text('Share my location again'));
-    await tester.pumpAndSettle();
     expect(service.listening, isTrue);
     expect(find.text('Share my location again'), findsNothing);
+  });
+
+  testWidgets('location switched off: a way to the setting, not a dead end', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTracking service = _FakeTracking(
+      readiness: const LocationReadiness.blocked(
+        'Location is switched off on this phone.',
+        fix: LocationFix.locationSettings,
+      ),
+    );
+    await tester.pumpWidget(host(service));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Start trip'));
+    await tester.pumpAndSettle();
+
+    expect(service.started, isFalse);
+    expect(find.text('Location is switched off on this phone.'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
   });
 }
 

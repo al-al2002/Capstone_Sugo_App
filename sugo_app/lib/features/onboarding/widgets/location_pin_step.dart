@@ -12,6 +12,7 @@ import '../../../core/utils/ui_feedback.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/client_onboarding_models.dart';
 import '../services/geocoding_service.dart';
+import '../../../core/widgets/sugo_map.dart';
 
 /// Map-based location picker with address search and a current-location button.
 ///
@@ -316,11 +317,7 @@ class _LocationPinStepState extends State<LocationPinStep> {
                 onTap: (TapPosition _, LatLng point) => _placePin(point),
               ),
               children: <Widget>[
-                TileLayer(
-                  urlTemplate: AppEnv.mapTilerTileUrl,
-                  userAgentPackageName: 'com.example.sugo_app',
-                  maxZoom: 18,
-                ),
+                const SugoMapTiles(),
 
                 // The service-radius ring, drawn under the marker so the pin
                 // stays legible on top of it. Only present for a technician.

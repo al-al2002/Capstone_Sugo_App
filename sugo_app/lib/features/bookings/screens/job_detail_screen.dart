@@ -30,6 +30,8 @@ import '../../tracking/models/job_tracking.dart';
 import '../../tracking/screens/home_visit_trip_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
 import '../../tracking/screens/technician_delivery_screen.dart';
+import '../../technician/widgets/active_job_card.dart';
+import '../../technician/widgets/technician_job_actions.dart';
 import '../../tracking/services/tracking_service.dart';
 import '../../tracking/widgets/return_method_card.dart';
 import 'bookings_list_view.dart';
@@ -102,6 +104,10 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   String? _error;
   bool _busy = false;
 
+  /// "Mark as complete" / "take to shop" in flight, for their spinners.
+  bool _completing = false;
+  bool _movingToShop = false;
+
   bool get _isClient => widget.role == BookingsRole.client;
 
   /// The caller's own rating of the other person on this job.
@@ -163,6 +169,90 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   /// Re-reads the row. `jobById` filters on nothing but the id - RLS decides
   /// what comes back - so the one method serves both roles.
+  /// The technician on this job while it is under way: the one who can
+  /// complete it or take it to the shop.
+  bool get _isWorking =>
+      !_isClient &&
+      _job.assignedTechnicianId != null &&
+      (_job.status == JobStatus.confirmed ||
+          _job.status == JobStatus.inProgress);
+
+  /// Closes the job. The two RB-CARS questions come first - they are the only
+  /// signals Stage 1 learns from, so they are asked, never defaulted - and the
+  /// client is rated straight after, while the job is fresh.
+  Future<void> _complete() async {
+    if (_completing || _movingToShop) return;
+    final CompletionAnswers? answers = await CompleteJobSheet.show(
+      context,
+      _job,
+    );
+    if (answers == null || !mounted) return;
+
+    setState(() => _completing = true);
+    try {
+      await _service.completeJob(
+        _job.id,
+        diagnosisCorrect: answers.diagnosisCorrect,
+        reroutedMidJob: answers.reroutedMidJob,
+      );
+      if (!mounted) return;
+      UiFeedback.showSuccess(
+        context,
+        'Job completed. The client can now rate it.',
+      );
+      await _refresh();
+      if (mounted && _canReview && _myReview == null) await _openReview();
+    } on RbCarsFailure catch (failure) {
+      if (mounted) UiFeedback.showError(context, failure.message);
+    } finally {
+      if (mounted) setState(() => _completing = false);
+    }
+  }
+
+  /// Switches an on-site job to a shop pickup. Confirmed first: the client
+  /// sees it at once - "someone is coming to fix it" becomes "someone is
+  /// taking it away" - which is not something to trigger on a stray tap.
+  Future<void> _takeToShop() async {
+    if (_completing || _movingToShop) return;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Take it to the shop?'),
+        content: const Text(
+          'This tells the client the repair cannot be finished at their home '
+          'and that you are collecting the unit. They will see a live map of '
+          'the pickup. You cannot switch it back.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep on site'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Collect it'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _movingToShop = true);
+    try {
+      await _service.markNeedsShop(_job.id);
+      if (!mounted) return;
+      UiFeedback.showSuccess(
+        context,
+        'Switched to shop pickup. The client can now track their appliance.',
+      );
+      await _refresh();
+    } on RbCarsFailure catch (failure) {
+      if (mounted) UiFeedback.showError(context, failure.message);
+    } finally {
+      if (mounted) setState(() => _movingToShop = false);
+    }
+  }
+
   Future<void> _refresh() async {
     try {
       final Job? fresh = await _service.jobById(_job.id);
@@ -518,6 +608,19 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     ],
                     _statusHero(tracking),
                     const SizedBox(height: AppSizes.md),
+                    // The technician's actions on a job they are on - moved
+                    // here from the dashboard card on 2026-09-29.
+                    if (_isWorking) ...<Widget>[
+                      TechnicianJobActions(
+                        job: _job,
+                        onTrip: _openTracking,
+                        onComplete: _complete,
+                        onNeedsShop: _takeToShop,
+                        isCompleting: _completing,
+                        isMovingToShop: _movingToShop,
+                      ),
+                      const SizedBox(height: AppSizes.md),
+                    ],
                     if (_party != null && _counterpartName != null) ...<Widget>[
                       _counterpartCard(),
                       const SizedBox(height: AppSizes.md),
@@ -675,7 +778,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Widget _actions(bool travelling) {
     final List<Widget> buttons = <Widget>[];
 
+    // The technician's trip button lives in their work card, just below.
     if (_needsTracking &&
+        !_isWorking &&
         (travelling ||
             _job.status == JobStatus.confirmed ||
             _job.status == JobStatus.inProgress)) {
@@ -755,15 +860,36 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       );
     }
 
+    // Out in the open while nobody has taken the job (2026-09-29). It was only
+    // in the overflow menu, where a client looking for "delete" did not find
+    // it. Its own line, full width and red, so it never sits beside "Choose
+    // technician" at the same weight.
+    final bool canDelete = _isClient && _job.canBeDeletedByClient;
+
     return Opacity(
       opacity: _busy ? 0.5 : 1,
       child: IgnorePointer(
         ignoring: _busy,
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            for (int i = 0; i < buttons.length && i < 2; i++) ...<Widget>[
-              if (i > 0) const SizedBox(width: AppSizes.md),
-              Expanded(child: buttons[i]),
+            Row(
+              children: <Widget>[
+                for (int i = 0; i < buttons.length && i < 2; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(width: AppSizes.md),
+                  Expanded(child: buttons[i]),
+                ],
+              ],
+            ),
+            if (canDelete) ...<Widget>[
+              const SizedBox(height: AppSizes.sm),
+              SugoButton(
+                label: 'Delete request',
+                icon: Icons.delete_outline_rounded,
+                size: SugoButtonSize.small,
+                variant: SugoButtonVariant.danger,
+                onPressed: _delete,
+              ),
             ],
           ],
         ),
@@ -982,19 +1108,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             // delivery trip to make.
             if (!_isClient && !_isHomeVisit)
               _ClientCollectsNote(jobId: _job.id),
-            const SizedBox(height: AppSizes.lg),
-            SugoButton(
-              label: _isClient
-                  ? (_isHomeVisit
-                        ? 'Track your technician'
-                        : 'Track your appliance')
-                  : (_isHomeVisit ? 'Trip to the client' : 'Delivery controls'),
-              icon: _isClient
-                  ? Icons.location_on_outlined
-                  : Icons.navigation_outlined,
-              size: SugoButtonSize.medium,
-              onPressed: _openTracking,
-            ),
+            // A working technician already has this in their work card.
+            if (!_isWorking) ...<Widget>[
+              const SizedBox(height: AppSizes.lg),
+              SugoButton(
+                label: _isClient
+                    ? (_isHomeVisit
+                          ? 'Track your technician'
+                          : 'Track your appliance')
+                    : (_isHomeVisit ? 'Trip to the client' : 'Delivery controls'),
+                icon: _isClient
+                    ? Icons.location_on_outlined
+                    : Icons.navigation_outlined,
+                size: SugoButtonSize.medium,
+                onPressed: _openTracking,
+              ),
+            ],
           ],
         ),
       ),

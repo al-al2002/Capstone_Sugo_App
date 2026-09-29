@@ -140,6 +140,30 @@ class TrackingService {
     }
   }
 
+  /// The road route of the trip happening now, from the traveller's last
+  /// reported position to where that leg is going (`job-route`, live mode,
+  /// 2026-09-29). For the person WATCHING a trip - the client following their
+  /// technician, the technician waiting for a collecting client - so no
+  /// origin is sent: the server reads it from `job_tracking`.
+  ///
+  /// Never throws; an unavailable route comes back with the server's reason.
+  Future<RouteResult> liveRoute(String jobId) async {
+    try {
+      final FunctionResponse response = await _client.functions.invoke(
+        'job-route',
+        body: <String, dynamic>{'job_id': jobId, 'live': true},
+      );
+      final Object? data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return const RouteResult.unavailable('provider_unavailable');
+      }
+      return RouteResult.fromJson(data);
+    } catch (error) {
+      _log('liveRoute', error);
+      return const RouteResult.unavailable('provider_unavailable');
+    }
+  }
+
   /// One position fix now, for the start of a route. Null when location is off
   /// or no fix arrives in time.
   Future<Position?> currentPosition() async {
@@ -498,16 +522,29 @@ class TrackingService {
 
   // ------------------------------------------------------- device location
 
-  /// Asks for location permission, explaining the outcome rather than
-  /// returning a bare bool.
+  /// Gets the device ready to share a position, doing as much of it for the
+  /// person as the platform allows.
+  ///
+  /// ## Why it switches location on rather than complaining (2026-09-29)
+  ///
+  /// This used to stop at the first obstacle with a sentence - "Location
+  /// services are switched off" - and leave the person to find the setting,
+  /// come back and tap again. Mid-trip, with the client waiting, a forgotten
+  /// GPS toggle became "the map never showed him". Now:
+  ///
+  /// * **Permission** is requested on the spot, as before.
+  /// * **Location switched off, on Android**: one position is requested, and
+  ///   Google Play services answers with its own "Turn on location?" dialog
+  ///   inside the app (geolocator's `startResolutionForResult`). One tap and
+  ///   the trip carries on.
+  /// * **Anything that cannot be fixed from here** - the dialog declined,
+  ///   permission refused for good, iOS or the web, which cannot switch it
+  ///   for you - comes back with [LocationReadiness.fix], so the screen can
+  ///   offer a button straight to the right settings page.
+  ///
+  /// Permission is asked before the switch, because the switch dialog only
+  /// appears for an app that is allowed to use location at all.
   Future<LocationReadiness> prepareLocation() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      return const LocationReadiness.blocked(
-        'Location services are switched off on this device. Turn them on to '
-        'share your position with the client.',
-      );
-    }
-
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -515,18 +552,50 @@ class TrackingService {
 
     if (permission == LocationPermission.denied) {
       return const LocationReadiness.blocked(
-        'Location permission was declined. The client will not be able to see '
-        'where their appliance is.',
+        'Location permission was declined, so your position cannot be '
+        'shared on this trip.',
       );
     }
     if (permission == LocationPermission.deniedForever) {
       return const LocationReadiness.blocked(
-        'Location permission is permanently denied. Enable it for SUGO in '
-        'your device settings.',
+        'Location is blocked for SUGO. Allow it in the app settings to share '
+        'your position.',
+        fix: LocationFix.appSettings,
       );
     }
 
-    return const LocationReadiness.ready();
+    if (await Geolocator.isLocationServiceEnabled()) {
+      return const LocationReadiness.ready();
+    }
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        // The request is the point, not the fix: it is what makes Android
+        // show "Turn on location?". The limit only stops a slow first fix,
+        // after the person said yes, from holding the button forever.
+        await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 20),
+          ),
+        );
+        return const LocationReadiness.ready();
+      } on LocationServiceDisabledException {
+        // They said no to the dialog. Fall through to the settings button.
+      } catch (error) {
+        // A timeout after saying yes is still a yes.
+        _log('prepareLocation', error);
+        if (await Geolocator.isLocationServiceEnabled()) {
+          return const LocationReadiness.ready();
+        }
+      }
+    }
+
+    return const LocationReadiness.blocked(
+      'Location is switched off on this phone. Turn it on to share your '
+      'position.',
+      fix: LocationFix.locationSettings,
+    );
   }
 
   /// Continuous position updates while a leg is in progress.
@@ -547,12 +616,41 @@ class TrackingService {
   }
 }
 
+/// Where the person has to go to fix what [TrackingService.prepareLocation]
+/// could not.
+enum LocationFix {
+  /// Nothing to open: they declined the permission prompt and can simply
+  /// tap again to see it again.
+  none,
+
+  /// The phone's location switch.
+  locationSettings,
+
+  /// SUGO's own permissions page, after "don't ask again".
+  appSettings,
+}
+
 /// Whether the device can report a position, and why not if it cannot.
 class LocationReadiness {
-  const LocationReadiness.ready() : reason = null;
-  const LocationReadiness.blocked(this.reason);
+  const LocationReadiness.ready() : reason = null, fix = LocationFix.none;
+  const LocationReadiness.blocked(this.reason, {this.fix = LocationFix.none});
 
   final String? reason;
+  final LocationFix fix;
 
   bool get isReady => reason == null;
+
+  /// Opens the settings page that [fix] names. False when there is none, or
+  /// the platform would not open it.
+  Future<bool> openFix() async {
+    try {
+      return switch (fix) {
+        LocationFix.none => false,
+        LocationFix.locationSettings => await Geolocator.openLocationSettings(),
+        LocationFix.appSettings => await Geolocator.openAppSettings(),
+      };
+    } catch (_) {
+      return false;
+    }
+  }
 }

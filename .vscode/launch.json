@@ -24,6 +24,23 @@
       ]
     },
     {
+      // Serves the app without opening a browser; open http://localhost:5555
+      // in your OWN Chrome. The "SUGO (Chrome)" config above launches Chrome
+      // with a throwaway profile and extensions disabled, so a mobile-view
+      // extension never appears there. A fixed port keeps the URL the same
+      // on every run.
+      "name": "SUGO (web server, your Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "sugo_app",
+      "program": "lib/main.dart",
+      "deviceId": "web-server",
+      "args": [
+        "--web-port=5555",
+        "--dart-define=MAPTILER_KEY=J7Add9jnneL7324URxfQ"
+      ]
+    },
+    {
       "name": "SUGO (device)",
       "request": "launch",
       "type": "dart",

@@ -8,6 +8,8 @@ import '../../../core/theme/app_elevation.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../core/widgets/sugo_delete_animation.dart';
+import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/staggered_entrance.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../../core/widgets/sugo_card.dart';
@@ -300,10 +302,17 @@ class _ClientReviewView extends StatelessWidget {
       // "Edit post" took the place of the old "Return to dashboard" link:
       // back already goes home, and changing the post is the thing a client
       // looking at three technicians who do not suit them actually needs.
+      //
+      // "Delete request" sits beside it (2026-09-29): a client who has not
+      // booked anyone can drop the whole thing from here, rather than having
+      // to find the job again under Bookings.
       bottomNavigationBar: job != null && _canEdit(job, matching)
           ? _EditPostBar(
               enabled: !matching.isLoading && !matching.isResponding,
               onEdit: () => _editPost(context, job, matching),
+              onDelete: job.canBeDeletedByClient
+                  ? () => _deletePost(context, matching)
+                  : null,
             )
           : null,
       // Named for what the client does here, and matching the home card's
@@ -612,6 +621,34 @@ class _ClientReviewView extends StatelessWidget {
   /// has taken the job. Mirrors `handleUpdateJob`, which re-checks it.
   bool _canEdit(Job job, MatchProvider matching) =>
       job.canBeEditedByClient && matching.acceptedMatch == null;
+
+  /// Deletes a job nobody has booked yet, under the bin animation, then goes
+  /// home - there is nothing left on this screen to look at.
+  Future<void> _deletePost(BuildContext context, MatchProvider matching) async {
+    final bool confirmed = await showSugoConfirmDialog(
+      context: context,
+      icon: Icons.delete_outline_rounded,
+      iconColor: AppColors.textPrimary,
+      iconTint: AppColors.divider,
+      title: 'Delete this request?',
+      message:
+          'Nobody has taken it yet, so it will be removed along with the '
+          'matches we found. This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Keep it',
+      destructive: true,
+    );
+    if (!confirmed || !context.mounted) return;
+
+    try {
+      // The bin says "Request deleted" itself, so no snackbar.
+      await runWithDeleteAnimation(context, matching.deleteJob());
+      if (!context.mounted) return;
+      Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+    } on RbCarsFailure catch (failure) {
+      if (context.mounted) UiFeedback.showError(context, failure.message);
+    }
+  }
 
   /// Opens the posting flow on this job, every answer filled in.
   ///
@@ -1047,12 +1084,20 @@ class _RankedByPill extends StatelessWidget {
   }
 }
 
-/// The sticky bar under the matches: "Edit post".
+/// The sticky bar under the matches: "Edit post", and "Delete request" while
+/// nobody has taken the job.
 class _EditPostBar extends StatelessWidget {
-  const _EditPostBar({required this.onEdit, required this.enabled});
+  const _EditPostBar({
+    required this.onEdit,
+    required this.enabled,
+    this.onDelete,
+  });
 
   final VoidCallback onEdit;
   final bool enabled;
+
+  /// Null when the job can no longer be deleted.
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1070,27 +1115,64 @@ class _EditPostBar extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          width: double.infinity,
-          height: AppSizes.buttonHeight,
-          child: OutlinedButton.icon(
-            onPressed: enabled ? onEdit : null,
-            icon: const Icon(Icons.edit_rounded, size: 18),
-            label: const Text('Edit post'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: BorderSide(
-                color: enabled ? AppColors.primary : AppColors.border,
-                width: 1.4,
+        child: Row(
+          children: <Widget>[
+            Expanded(child: _edit()),
+            if (onDelete != null) ...<Widget>[
+              const SizedBox(width: AppSizes.sm),
+              Expanded(
+                child: SizedBox(
+                  height: AppSizes.buttonHeight,
+                  child: OutlinedButton.icon(
+                    onPressed: enabled ? onDelete : null,
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Delete request'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                      side: BorderSide(
+                        color: enabled ? AppColors.error : AppColors.border,
+                        width: 1.4,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppSizes.buttonRadius,
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSizes.sm,
+                      ),
+                      textStyle: AppTextStyles.button,
+                    ),
+                  ),
+                ),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
-              ),
-              // A button's textStyle replaces the inherited one, so it must
-              // name the family or the label falls back to the phone's font.
-              textStyle: AppTextStyles.button,
-            ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _edit() {
+    return SizedBox(
+      width: double.infinity,
+      height: AppSizes.buttonHeight,
+      child: OutlinedButton.icon(
+        onPressed: enabled ? onEdit : null,
+        icon: const Icon(Icons.edit_rounded, size: 18),
+        label: const Text('Edit post'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          side: BorderSide(
+            color: enabled ? AppColors.primary : AppColors.border,
+            width: 1.4,
           ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+          ),
+          // A button's textStyle replaces the inherited one, so it must
+          // name the family or the label falls back to the phone's font.
+          textStyle: AppTextStyles.button,
         ),
       ),
     );

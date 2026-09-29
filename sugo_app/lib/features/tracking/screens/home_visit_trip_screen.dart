@@ -12,10 +12,12 @@ import '../../../core/widgets/sugo_button.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
+import '../../../core/widgets/sugo_truck_drive.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/job_tracking.dart';
 import '../services/tracking_service.dart';
+import '../widgets/location_feedback.dart';
 import '../widgets/route_map_card.dart';
 
 /// The technician's side of a home visit: the drive to the client's door.
@@ -43,6 +45,12 @@ import '../widgets/route_map_card.dart';
 /// machinery - no return method, no second leg.
 ///
 /// ## Location
+///
+/// Switched on for them: "Start trip" asks for permission and, if the phone's
+/// location is off, for Android's "Turn on location?" (see
+/// `TrackingService.prepareLocation`). Coming back to this screen mid-trip
+/// resumes sharing without a tap, so a technician who stepped away cannot
+/// leave the client watching a frozen pin.
 ///
 /// Only during the trip, and only while this screen is alive. Opening the
 /// route pushes a screen on top, which keeps this one - and sharing - running.
@@ -103,6 +111,10 @@ class _HomeVisitTripScreenState extends State<HomeVisitTripScreen> {
         _tracking = tracking;
         _isLoading = false;
       });
+      // Back on the screen mid-trip: share again straight away.
+      if (tracking?.stage == TrackingStage.headingToPickup) {
+        unawaited(_resumeSharing());
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -151,7 +163,7 @@ class _HomeVisitTripScreenState extends State<HomeVisitTripScreen> {
     final LocationReadiness readiness = await _service.prepareLocation();
     if (!mounted) return false;
     if (!readiness.isReady) {
-      UiFeedback.showError(context, readiness.reason!);
+      showLocationBlocked(context, readiness);
       return false;
     }
     return true;
@@ -269,6 +281,14 @@ class _HomeVisitTripScreenState extends State<HomeVisitTripScreen> {
           isSharing: _isSharing,
           fixesSent: _fixesSent,
         ),
+        // On the road: the truck drives while the client can see it.
+        if (onTheWay) ...<Widget>[
+          const SizedBox(height: AppSizes.md),
+          SugoTruckDrive(
+            moving: _isSharing,
+            destinationIcon: Icons.home_rounded,
+          ),
+        ],
         const SizedBox(height: AppSizes.lg),
         if (widget.job.hasLocation)
           RouteMapCard(

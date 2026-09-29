@@ -26,10 +26,7 @@ import '../../notifications/services/notification_feed_service.dart';
 import '../../profile/screens/profile_view.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
-import '../../bookings/widgets/rate_job_sheet.dart';
 import '../../rb_cars/models/job.dart';
-import '../../rb_cars/models/job_enums.dart';
-import '../../rb_cars/models/job_party.dart';
 import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/models/technician.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
@@ -43,7 +40,6 @@ import '../widgets/recent_reviews_strip.dart';
 import '../widgets/technician_stat_cards.dart';
 import '../widgets/vacation_card.dart';
 import '../../tracking/models/job_tracking.dart';
-import '../../tracking/screens/home_visit_trip_screen.dart';
 import '../../tracking/screens/technician_delivery_screen.dart';
 import '../../tracking/services/tracking_service.dart';
 import '../../tracking/widgets/delay_alert_dialog.dart';
@@ -426,100 +422,16 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     }
   }
 
-  Future<void> _completeJob(
-    TechnicianDashboardProvider provider,
-    Job job,
-  ) async {
-    final CompletionAnswers? answers = await CompleteJobSheet.show(
-      context,
-      job,
-    );
-    if (answers == null || !mounted) return;
-
-    final bool completed = await provider.completeJob(
-      job.id,
-      diagnosisCorrect: answers.diagnosisCorrect,
-      reroutedMidJob: answers.reroutedMidJob,
-    );
-    if (!mounted) return;
-    _flash(provider);
-
-    // The client is rated at the moment the work ends, while it is fresh -
-    // the sheet opens straight after "complete" instead of waiting for the
-    // technician to find the job again in their history. Dismissing it is
-    // fine: the Jobs list still offers "Rate" on the card.
-    if (completed) await _rateClient(job);
-  }
-
-  Future<void> _rateClient(Job job) async {
-    final Map<String, JobParty> parties = await RbCarsService().jobParties();
-    if (!mounted) return;
-    final JobParty? party = parties[job.id];
-    // Already rated - possible if the job was closed on another device.
-    if (party?.myRating != null) return;
-
-    final bool saved = await RateJobSheet.showForClient(
-      context,
-      jobId: job.id,
-      clientId: job.clientId,
-      clientName: party?.clientLabel ?? 'your client',
-    );
-    if (saved && mounted) {
-      UiFeedback.showSuccess(context, 'Thanks - your rating was saved.');
-    }
-  }
-
-  /// Switches an on-site job to a shop pickup, once the technician has seen it.
-  ///
-  /// Confirmed first because it is visible to the client immediately: their
-  /// booking changes from "someone is coming to fix it" to "someone is taking
-  /// it away", and a tracking map appears. That is not something to trigger on
-  /// a stray tap.
-  Future<void> _markNeedsShop(
-    TechnicianDashboardProvider provider,
-    Job job,
-  ) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('Take it to the shop?'),
-        content: const Text(
-          'This tells the client the repair cannot be finished at their home '
-          'and that you are collecting the unit. They will see a live map of '
-          'the pickup. You cannot switch it back.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep on site'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Collect it'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-    await _respond(provider, () => provider.markNeedsShop(job.id));
-  }
-
-  /// Opens the trip screen: the drive to a home visit, or the pickup and
-  /// delivery of a rerouted job.
-  ///
-  /// Reloading on return keeps the dashboard in step with any stage change
-  /// made over there.
-  Future<void> _openTrip(Job job) async {
+  /// Opens the active job, where its trip, completion and shop actions are
+  /// (moved off this card on 2026-09-29). Reloads on return, since any of
+  /// them may have changed the job.
+  Future<void> _openJob(Job job) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => job.servicePath == ServicePath.homeService
-            ? HomeVisitTripScreen(job: job)
-            : TechnicianDeliveryScreen(job: job),
+        builder: (_) => JobDetailScreen(job: job, role: BookingsRole.technician),
       ),
     );
-    if (!mounted) return;
-    await context.read<TechnicianDashboardProvider>().refresh();
+    if (mounted) await context.read<TechnicianDashboardProvider>().refresh();
   }
 
   Future<void> _respond(
@@ -748,21 +660,11 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
                   icon: Icons.handyman_outlined,
                   title: 'Nothing in progress',
                   message:
-                      'Accept a request above and it will show up here with '
-                      'the client location and a completion action.',
+                      'Accept a request above and it will show up here. Open '
+                      'it for the route, the trip and the completion.',
                   compact: true,
                 )
-              : ActiveJobCard(
-                  job: active,
-                  isBusy: provider.isBusy,
-                  isCompleting: provider.isDoing(
-                    TechnicianAction.complete,
-                    active.id,
-                  ),
-                  onComplete: () => _completeJob(provider, active),
-                  onTrack: () => _openTrip(active),
-                  onNeedsShop: () => _markNeedsShop(provider, active),
-                ),
+              : ActiveJobCard(job: active, onView: () => _openJob(active)),
         ),
 
         const SizedBox(height: AppSizes.xl),

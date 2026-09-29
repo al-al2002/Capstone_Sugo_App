@@ -6,6 +6,7 @@ import 'package:sugo_app/features/rb_cars/models/job_enums.dart';
 import 'package:sugo_app/features/rb_cars/models/match_result.dart';
 import 'package:sugo_app/features/technician/widgets/active_job_card.dart';
 import 'package:sugo_app/features/technician/widgets/incoming_offer_card.dart';
+import 'package:sugo_app/features/technician/widgets/technician_job_actions.dart';
 
 /// "Accept" and "Mark as complete" show that they are working (2026-09-29).
 ///
@@ -104,21 +105,55 @@ void main() {
     });
   });
 
-  group('Mark as complete', () {
-    ActiveJobCard card({required bool busy, required bool completing}) =>
-        ActiveJobCard(
-          job: job,
-          isBusy: busy,
-          isCompleting: completing,
-          onComplete: () {},
-          onTrack: () {},
-          onNeedsShop: () {},
-        );
+  group('the dashboard card', () {
+    testWidgets('is a summary with one way in: "View job"', (
+      WidgetTester tester,
+    ) async {
+      // The user's ask (2026-09-29): one button on the dashboard, the rest
+      // on the job's own screen.
+      int views = 0;
+      await tester.pumpWidget(
+        host(ActiveJobCard(job: job, onView: () => views++)),
+      );
+
+      expect(find.text('View job'), findsOneWidget);
+      expect(find.text('Mark as complete'), findsNothing);
+      expect(find.text('Trip to the client'), findsNothing);
+      expect(find.textContaining('take to shop'), findsNothing);
+
+      await tester.tap(find.text('View job'));
+      expect(views, 1);
+    });
+  });
+
+  group("the job's own screen", () {
+    // No pinned address on `job`, so no network map in these tests.
+    TechnicianJobActions actions({
+      bool completing = false,
+      bool moving = false,
+    }) => TechnicianJobActions(
+      job: job,
+      onTrip: () {},
+      onComplete: () {},
+      onNeedsShop: () {},
+      isCompleting: completing,
+      isMovingToShop: moving,
+    );
+
+    testWidgets('has everything the card used to', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(host(actions()));
+
+      expect(find.text('Trip to the client'), findsOneWidget);
+      expect(find.text('Mark as complete'), findsOneWidget);
+      expect(find.text('Cannot fix here - take to shop'), findsOneWidget);
+    });
 
     testWidgets('shows it is completing while the outcome is saved', (
       WidgetTester tester,
     ) async {
-      await tester.pumpWidget(host(card(busy: true, completing: true)));
+      await tester.pumpWidget(host(actions(completing: true)));
       await tester.pump();
 
       expect(find.text('Completing…'), findsOneWidget);
@@ -126,14 +161,14 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
 
-    testWidgets('at rest, it is just "Mark as complete"', (
+    testWidgets('and while it switches to the shop', (
       WidgetTester tester,
     ) async {
-      await tester.pumpWidget(host(card(busy: false, completing: false)));
+      await tester.pumpWidget(host(actions(moving: true)));
       await tester.pump();
 
-      expect(find.text('Mark as complete'), findsOneWidget);
-      expect(find.text('Completing…'), findsNothing);
+      expect(find.text('Switching…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
   });
 }

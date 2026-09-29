@@ -73,6 +73,7 @@ class ClientTripCard extends StatelessWidget {
               tracking: t.asClientTrip(),
               destination: workshop,
               destinationLabel: 'Your shop',
+              destinationIcon: Icons.storefront_rounded,
               height: 220,
               travellerIcon: Icons.person_rounded,
             )

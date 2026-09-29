@@ -186,16 +186,17 @@ void main() {
       expect(find.text('Location is off.'), findsOneWidget);
     });
 
-    testWidgets('"I\'ve arrived" ends the trip and stops sharing', (
+    testWidgets('back mid-trip shares again by itself; arriving stops it', (
       WidgetTester tester,
     ) async {
       final _FakeTracking service = _FakeTracking();
       await tester.pumpWidget(host(row(started: setOff), service));
+      await tester.pumpAndSettle();
 
       expect(find.text('On your way to the shop'), findsOneWidget);
-      await tester.tap(find.text('Share my location again'));
-      await tester.pumpAndSettle();
+      // No tap: a client who forgot is still on the map.
       expect(service.listening, isTrue);
+      expect(find.text('Share my location again'), findsNothing);
 
       await tester.tap(find.text("I've arrived"));
       await tester.pumpAndSettle();

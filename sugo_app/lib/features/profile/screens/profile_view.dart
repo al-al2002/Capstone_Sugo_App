@@ -348,48 +348,60 @@ class _Hero extends StatelessWidget {
             label: technician!.tier.label,
             // Elite is the only tier that gets the accent. A badge every
             // technician wears is not a badge.
-            highlight: technician!.tier == TechnicianTier.elite,
+            tone: technician!.tier == TechnicianTier.elite
+                ? _HeroChipTone.accent
+                : _HeroChipTone.brand,
           ),
         if (profile?.isVerified ?? false)
-          const _HeroChip(icon: Icons.verified_rounded, label: 'ID verified'),
+          const _HeroChip(
+            icon: Icons.verified_rounded,
+            label: 'ID verified',
+            tone: _HeroChipTone.success,
+          ),
       ],
     );
   }
 }
 
+/// How a badge under the name is tinted, now that it sits on a white card.
+enum _HeroChipTone { brand, accent, success }
+
 class _HeroChip extends StatelessWidget {
   const _HeroChip({
     required this.icon,
     required this.label,
-    this.highlight = false,
+    this.tone = _HeroChipTone.brand,
   });
 
   final IconData icon;
   final String label;
-  final bool highlight;
+  final _HeroChipTone tone;
 
   @override
   Widget build(BuildContext context) {
+    // A pale wash with the text shade on top: each pair is AA on its wash.
+    final (Color wash, Color ink) = switch (tone) {
+      _HeroChipTone.brand => (AppColors.primarySofter, AppColors.primary),
+      _HeroChipTone.accent => (AppColors.accentSoft, AppColors.accentDark),
+      _HeroChipTone.success => (AppColors.successSoft, AppColors.success),
+    };
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: 5),
       decoration: BoxDecoration(
-        color: highlight
-            ? AppColors.accent
-            : Colors.white.withValues(alpha: 0.16),
+        color: wash,
         borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 12, color: Colors.white),
+          Icon(icon, size: 13, color: ink),
           const SizedBox(width: 5),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
+            style: AppTextStyles.micro.copyWith(
               fontWeight: FontWeight.w700,
-              color: Colors.white,
+              color: ink,
             ),
           ),
         ],

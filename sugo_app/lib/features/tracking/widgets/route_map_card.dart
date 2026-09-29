@@ -7,6 +7,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../screens/in_app_route_screen.dart';
+import '../../../core/widgets/sugo_map.dart';
 
 /// A destination on a map, with a way to actually get there.
 ///
@@ -40,7 +41,12 @@ class RouteMapCard extends StatelessWidget {
     required this.title,
     this.address,
     this.height = 180,
+    this.icon = Icons.home_rounded,
   });
+
+  /// The pin's icon: a house for a client's address (the default), a shop
+  /// for the workshop.
+  final IconData icon;
 
   /// The job whose destination this is. Routing is resolved from it.
   final String jobId;
@@ -143,19 +149,15 @@ class RouteMapCard extends StatelessWidget {
         ),
       ),
       children: <Widget>[
-        TileLayer(
-          urlTemplate: AppEnv.mapTilerTileUrl,
-          userAgentPackageName: 'com.example.sugo_app',
-          maxZoom: 18,
-        ),
+        const SugoMapTiles(),
         MarkerLayer(
           markers: <Marker>[
             Marker(
               point: _point,
-              width: 40,
-              height: 40,
+              width: SugoMapPin.markerWidth,
+              height: SugoMapPin.markerHeight(labelled: false),
               alignment: Alignment.topCenter,
-              child: const _DestinationPin(),
+              child: SugoMapPin(icon: icon, color: AppColors.accentDark),
             ),
           ],
         ),
@@ -182,25 +184,6 @@ class RouteMapCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _DestinationPin extends StatelessWidget {
-  const _DestinationPin();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.primary,
-        boxShadow: <BoxShadow>[
-          BoxShadow(color: Color(0x40000000), blurRadius: 8),
-        ],
-      ),
-      padding: const EdgeInsets.all(7),
-      child: const Icon(Icons.place_rounded, size: 18, color: Colors.white),
     );
   }
 }

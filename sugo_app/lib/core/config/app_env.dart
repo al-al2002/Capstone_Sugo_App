@@ -75,18 +75,24 @@ class AppEnv {
 
   static bool get hasMapTilerKey => mapTilerKey.isNotEmpty;
 
-  /// Map style slug. `streets-v2` reads well for a location picker; swap for
-  /// `basic-v2` if you want a quieter background under markers.
+  /// Map style slug. `dataviz` since 2026-09-29: pale land, soft water and
+  /// readable street names, so the navy routes and orange pins drawn on top
+  /// stand out. It replaced `streets-v2`, whose saturated roads and icons
+  /// competed with them. Any MapTiler raster style works here.
   static const String mapTilerStyle = String.fromEnvironment(
     'MAPTILER_STYLE',
-    defaultValue: 'streets-v2',
+    defaultValue: 'dataviz',
   );
 
   /// XYZ template `flutter_map` expects. Empty when no key is configured, so
   /// callers should gate on [hasMapTilerKey] first.
+  ///
+  /// `{r}` becomes "@2x" when the tile layer runs in retina mode (see
+  /// `SugoMapTiles`), so a high-density phone gets tiles drawn for it rather
+  /// than 256-pixel ones stretched and blurred.
   static String get mapTilerTileUrl {
     if (!hasMapTilerKey) return '';
-    return 'https://api.maptiler.com/maps/$mapTilerStyle/{z}/{x}/{y}.png'
+    return 'https://api.maptiler.com/maps/$mapTilerStyle/{z}/{x}/{y}{r}.png'
         '?key=$mapTilerKey';
   }
 

@@ -14,6 +14,7 @@ import '../../../core/widgets/sugo_icon_button.dart';
 import '../../../core/widgets/sugo_sheet.dart';
 import '../../../core/widgets/sugo_status_badge.dart';
 import '../../../core/widgets/sugo_timeline.dart';
+import '../../../core/widgets/sugo_truck_drive.dart';
 import '../../chat/screens/chat_thread_screen.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/technician.dart';
@@ -355,6 +356,9 @@ class _LiveTracking extends StatelessWidget {
             tracking: tracking,
             destination: destination,
             destinationLabel: destinationLabel,
+            destinationIcon: tracking.stage.headsToClient
+                ? Icons.home_rounded
+                : Icons.storefront_rounded,
             height: double.infinity,
             rounded: false,
             bottomInset: MediaQuery.sizeOf(context).height * 0.42,
@@ -426,7 +430,16 @@ class _LiveTracking extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         _StageHeader(tracking: tracking, journey: journey),
-                        const SizedBox(height: AppSizes.lg),
+                        const SizedBox(height: AppSizes.md),
+                        // The truck on its way - driving only while the
+                        // position is live (2026-09-29).
+                        SugoTruckDrive(
+                          moving: tracking.isLive,
+                          destinationIcon: tracking.stage.headsToClient
+                              ? Icons.home_rounded
+                              : Icons.storefront_rounded,
+                        ),
+                        const SizedBox(height: AppSizes.md),
                         _LiveFacts(
                           eta: _etaLabel,
                           distanceKm: _distanceKm,
@@ -1035,6 +1048,7 @@ class _ReadyForCollectionState extends State<_ReadyForCollection> {
           if (hasShop) ...<Widget>[
             const SizedBox(height: AppSizes.lg),
             RouteMapCard(
+              icon: Icons.storefront_rounded,
               jobId: widget.jobId,
               latitude: profile!.shopLatitude!,
               longitude: profile.shopLongitude!,

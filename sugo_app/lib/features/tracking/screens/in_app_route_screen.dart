@@ -14,6 +14,7 @@ import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../models/route_result.dart';
 import '../services/tracking_service.dart';
+import '../../../core/widgets/sugo_map.dart';
 
 /// Routes the user to a job's destination without leaving SUGO.
 ///
@@ -311,11 +312,7 @@ class _InAppRouteScreenState extends State<InAppRouteScreen> {
             },
           ),
           children: <Widget>[
-            TileLayer(
-              urlTemplate: AppEnv.mapTilerTileUrl,
-              userAgentPackageName: 'com.example.sugo_app',
-              maxZoom: 18,
-            ),
+            const SugoMapTiles(),
             if (route != null && route.available)
               PolylineLayer<Object>(
                 polylines: <Polyline<Object>>[

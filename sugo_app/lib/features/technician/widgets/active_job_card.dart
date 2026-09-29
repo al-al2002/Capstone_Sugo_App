@@ -2,99 +2,32 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
-import '../../tracking/widgets/route_map_card.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/sugo_button.dart';
 import '../../../core/widgets/sugo_card.dart';
-import '../../../core/widgets/sugo_loading.dart';
 import '../../../core/widgets/sugo_pill.dart';
 import '../../../core/widgets/sugo_route_line.dart';
 import '../../bookings/models/booking_route.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
 
-/// The job this technician is currently on, with the completion action.
+/// The job this technician is currently on, as a summary with one way in.
 ///
-/// Once accepted they *are* assigned, so `jobs_technician_select_assigned`
-/// opens up the real row: full description, photos and the exact coordinates
-/// they now need to actually get there.
+/// ## Why one button (2026-09-29)
+///
+/// This card used to carry the whole job: a map, the address twice, the
+/// description, and four buttons - trip, complete, take to shop, route - on
+/// the dashboard itself. At the user's request it is now a summary, and every
+/// action lives on the job's own screen ([JobDetailScreen], via "View job"),
+/// where each one has room to explain itself and a stray tap on a crowded
+/// home screen cannot close a job.
 class ActiveJobCard extends StatelessWidget {
-  const ActiveJobCard({
-    super.key,
-    required this.job,
-    required this.onComplete,
-    required this.onTrack,
-    required this.onNeedsShop,
-    this.isBusy = false,
-    this.isCompleting = false,
-  });
+  const ActiveJobCard({super.key, required this.job, required this.onView});
 
   final Job job;
-  final VoidCallback onComplete;
 
-  /// Opens the trip screen: the drive to a home visit, or the pickup and
-  /// delivery of a rerouted job.
-  final VoidCallback onTrack;
-
-  /// The on-site repair cannot be finished here, so the unit goes to the
-  /// workshop. Only offered while the job is still a home service - once it is
-  /// a pickup there is nothing left to switch.
-  final VoidCallback onNeedsShop;
-
-  final bool isBusy;
-
-  /// "Mark as complete" is the action in flight: its button shows a spinner.
-  final bool isCompleting;
-
-  /// A pickup job travels twice, so it needs the tracking controls. An on-site
-  /// repair never leaves the client's home and has nothing to share.
-  bool get _needsTracking => job.servicePath == ServicePath.pickup;
-
-  /// Only a home visit involves the technician travelling to the client.
-  ///
-  /// Distinct from `!_needsTracking`, which also catches `it_community` - a
-  /// group diagnosis posted to the technician community, where nobody goes
-  /// anywhere. Showing that a route map to the client's address would invite a
-  /// drive nobody agreed to.
-  bool get _isHomeVisit => job.servicePath == ServicePath.homeService;
-
-  /// "Mark as complete", filled when it is the card's main action and
-  /// outlined when a trip button sits above it.
-  ///
-  /// While the completion is saving it keeps its own colours with a spinner
-  /// and "Completing…": it is disabled either way, but grey would read as
-  /// "not allowed" rather than "working on it".
-  Widget _completeButton({required bool filled}) {
-    const Widget icon = Icon(Icons.check_circle_outline_rounded, size: 18);
-    const Widget label = Text('Mark as complete');
-    const Widget progress = SugoButtonProgress(label: 'Completing…');
-    final VoidCallback? onPressed = isBusy ? null : onComplete;
-
-    if (filled) {
-      final ButtonStyle style = ElevatedButton.styleFrom(
-        disabledBackgroundColor: isCompleting ? AppColors.primary : null,
-        disabledForegroundColor: isCompleting ? Colors.white : null,
-      );
-      return isCompleting
-          ? ElevatedButton(onPressed: null, style: style, child: progress)
-          : ElevatedButton.icon(
-              onPressed: onPressed,
-              style: style,
-              icon: icon,
-              label: label,
-            );
-    }
-
-    final ButtonStyle style = OutlinedButton.styleFrom(
-      disabledForegroundColor: isCompleting ? AppColors.primary : null,
-    );
-    return isCompleting
-        ? OutlinedButton(onPressed: null, style: style, child: progress)
-        : OutlinedButton.icon(
-            onPressed: onPressed,
-            style: style,
-            icon: icon,
-            label: label,
-          );
-  }
+  /// Opens the job, where the trip, completion and shop actions are.
+  final VoidCallback onView;
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +54,6 @@ class ActiveJobCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSizes.md),
-
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -147,12 +79,7 @@ class ActiveJobCard extends StatelessWidget {
                       job.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                        height: 1.25,
-                      ),
+                      style: AppTextStyles.titleSmall,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -160,10 +87,7 @@ class ActiveJobCard extends StatelessWidget {
                         if (job.servicePath != null) job.servicePath!.label,
                         job.budgetLabel,
                       ].join('  •  '),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
+                      style: AppTextStyles.caption,
                     ),
                   ],
                 ),
@@ -172,140 +96,40 @@ class ActiveJobCard extends StatelessWidget {
           ),
 
           // The booking's route, the same drawing the client sees on their
-          // home card: both sides of a job watch one trip. Placed from
-          // `jobs.status` - accepted sits at "Booked", work under way on the
-          // leg towards "Fixed".
+          // home card: both sides of a job watch one trip.
           if (BookingRoute.forStatus(job.status) case final SugoRoutePosition at)
             ...<Widget>[
               const SizedBox(height: AppSizes.lg),
               SugoRouteLine(stops: BookingRoute.stops, position: at),
             ],
 
-          // A home-service job means the technician has to drive to the client.
-          // The address alone is not enough to act on, so the destination gets
-          // a map and a handoff to a real navigation app.
-          //
-          // A pickup job is excluded: it has the full `TrackingMap` on the
-          // delivery screen, which shows the live leg rather than a static pin.
-          if (job.hasLocation && _isHomeVisit) ...<Widget>[
-            const SizedBox(height: AppSizes.md),
-            RouteMapCard(
-              jobId: job.id,
-              latitude: job.latitude!,
-              longitude: job.longitude!,
-              title: 'Client address',
-              address: job.addressText,
-            ),
-          ],
-
           if (job.hasLocation) ...<Widget>[
             const SizedBox(height: AppSizes.md),
-            Container(
-              padding: const EdgeInsets.all(AppSizes.md),
-              decoration: BoxDecoration(
-                color: AppColors.primarySofter,
-                borderRadius: BorderRadius.circular(AppSizes.md),
-              ),
-              child: Row(
-                children: <Widget>[
-                  const Icon(
-                    Icons.place_rounded,
-                    size: 16,
-                    color: AppColors.accent,
+            Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.place_rounded,
+                  size: 16,
+                  color: AppColors.accentDark,
+                ),
+                const SizedBox(width: AppSizes.sm),
+                Expanded(
+                  child: Text(
+                    job.locationLabel,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption,
                   ),
-                  const SizedBox(width: AppSizes.sm),
-                  Expanded(
-                    child: Text(
-                      job.locationLabel,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          if (job.description != null) ...<Widget>[
-            const SizedBox(height: AppSizes.md),
-            Text(
-              job.description!,
-              style: const TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: AppColors.textSecondary,
-              ),
+                ),
+              ],
             ),
           ],
 
           const SizedBox(height: AppSizes.lg),
-          if (_needsTracking) ...<Widget>[
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: isBusy ? null : onTrack,
-                icon: const Icon(Icons.navigation_rounded, size: 18),
-                label: const Text('Pickup and delivery'),
-              ),
-            ),
-            const SizedBox(height: AppSizes.sm),
-            SizedBox(
-              width: double.infinity,
-              child: _completeButton(filled: false),
-            ),
-          ] else ...<Widget>[
-            // Since 2026-09-29 the drive to a home visit is tracked too: the
-            // client follows it on a map and hears if it runs late.
-            if (_isHomeVisit) ...<Widget>[
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: isBusy ? null : onTrack,
-                  icon: const Icon(Icons.navigation_rounded, size: 18),
-                  label: const Text('Trip to the client'),
-                ),
-              ),
-              const SizedBox(height: AppSizes.sm),
-            ],
-            SizedBox(
-              width: double.infinity,
-              child: _completeButton(filled: !_isHomeVisit),
-            ),
-            const SizedBox(height: AppSizes.sm),
-            // The escape hatch, and the reason the offer screen no longer asks
-            // about the shop. A technician can only honestly answer "can this
-            // be fixed here?" once they are standing in front of it.
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: isBusy ? null : onNeedsShop,
-                icon: const Icon(Icons.store_mall_directory_outlined, size: 18),
-                label: Text(
-                  _isHomeVisit
-                      ? 'Cannot fix here - take to shop'
-                      : 'Needs shop repair',
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: AppSizes.sm),
-          Text(
-            _needsTracking
-                ? 'Share your location from the pickup screen so the client '
-                      'can see where their appliance is.'
-                // TODO(evidence): photo evidence at arrival and completion is
-                // still outstanding.
-                : _isHomeVisit
-                ? 'Start the trip when you set off, so the client can follow '
-                      'you and knows if you are running late.'
-                : 'If it turns out this cannot be repaired on site, switch it '
-                      'to a shop pickup and the client gets a live map.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          SugoButton(
+            label: 'View job',
+            icon: Icons.arrow_forward_rounded,
+            onPressed: onView,
           ),
         ],
       ),

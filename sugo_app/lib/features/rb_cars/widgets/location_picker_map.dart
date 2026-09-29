@@ -10,6 +10,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../onboarding/models/client_onboarding_models.dart';
 import '../../onboarding/services/geocoding_service.dart';
 import '../services/rb_cars_service.dart';
+import '../../../core/widgets/sugo_map.dart';
 
 /// Tap-to-place location picker backed by MapTiler tiles.
 ///
@@ -211,11 +212,7 @@ class _LocationPickerMapState extends State<LocationPickerMap> {
             onTap: (TapPosition _, LatLng point) => _placeAndResolve(point),
           ),
           children: <Widget>[
-            TileLayer(
-              urlTemplate: AppEnv.mapTilerTileUrl,
-              userAgentPackageName: 'com.example.sugo_app',
-              maxZoom: 18,
-            ),
+            const SugoMapTiles(),
             MarkerLayer(
               markers: <Marker>[
                 Marker(

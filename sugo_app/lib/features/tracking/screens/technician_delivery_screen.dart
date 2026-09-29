@@ -14,6 +14,7 @@ import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
+import '../../../core/widgets/sugo_truck_drive.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/job_tracking.dart';
@@ -21,6 +22,7 @@ import '../services/delay_alerts.dart';
 import '../services/tracking_service.dart';
 import '../widgets/client_trip_card.dart';
 import '../widgets/delay_alert_dialog.dart';
+import '../widgets/location_feedback.dart';
 import '../widgets/return_method_card.dart';
 import '../widgets/route_map_card.dart';
 
@@ -29,9 +31,14 @@ import '../widgets/route_map_card.dart';
 /// Two responsibilities, deliberately separate:
 ///
 /// * **Sharing position.** A toggle starts a `geolocator` stream and pushes
-///   each fix to `job_tracking`. It is opt-in per trip rather than always-on,
+///   each fix to `job_tracking`. It is tied to the trip rather than always-on,
 ///   because continuous background location is a serious thing to take from
 ///   someone and they should be able to see exactly when it is running.
+///
+///   Since 2026-09-29 it switches itself on when it should: tapping a stage
+///   that travels ("Start the delivery") turns it on first, and opening this
+///   screen on a travelling stage resumes it. A forgotten switch used to mean
+///   a client watching a map with nothing moving on it.
 /// * **Advancing the stage.** One button moves the job to the next stage, which
 ///   is what the client's timeline reads.
 ///
@@ -39,9 +46,12 @@ import '../widgets/route_map_card.dart';
 /// off, so leaving this screen stops the tracking rather than quietly draining
 /// the battery for the rest of the day.
 class TechnicianDeliveryScreen extends StatefulWidget {
-  const TechnicianDeliveryScreen({super.key, required this.job});
+  const TechnicianDeliveryScreen({super.key, required this.job, this.service});
 
   final Job job;
+
+  /// Tests pass a fake. The app uses the real service.
+  final TrackingService? service;
 
   @override
   State<TechnicianDeliveryScreen> createState() =>
@@ -49,7 +59,7 @@ class TechnicianDeliveryScreen extends StatefulWidget {
 }
 
 class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
-  final TrackingService _service = TrackingService();
+  late final TrackingService _service = widget.service ?? TrackingService();
 
   StreamSubscription<Position>? _positions;
 
@@ -120,6 +130,11 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
         _isLoading = false;
       });
       _followClientTrip(tracking.stage);
+      // Opened on a leg that travels: share straight away rather than waiting
+      // for someone to remember the switch.
+      if (tracking.stage.showsMap && !tracking.stage.isFinished) {
+        unawaited(_toggleSharing(true));
+      }
     } on RbCarsFailure catch (failure) {
       if (!mounted) return;
       setState(() {
@@ -141,7 +156,7 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
     if (!mounted) return;
 
     if (!readiness.isReady) {
-      UiFeedback.showError(context, readiness.reason!);
+      showLocationBlocked(context, readiness);
       return;
     }
 
@@ -189,6 +204,15 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
     final JobTracking? current = _tracking;
     if (current == null || _isBusy) return;
     if (!current.stage.nextOptions.contains(next)) return;
+
+    // A stage that travels needs the client to see it moving, so location
+    // comes on first - permission, and the "Turn on location?" dialog if the
+    // phone's is off. If it still cannot, the stage waits: "on the way" with
+    // nothing on the map reads as a stalled technician.
+    if (next.showsMap && !_isSharing) {
+      await _toggleSharing(true);
+      if (!mounted || !_isSharing) return;
+    }
 
     setState(() => _isBusy = true);
 
@@ -345,6 +369,16 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
       ),
       children: <Widget>[
         _JourneyCard(stage: stage),
+        // On a leg that travels, the truck drives while it is being shared.
+        if (stage.showsMap && !stage.isFinished) ...<Widget>[
+          const SizedBox(height: AppSizes.md),
+          SugoTruckDrive(
+            moving: _isSharing,
+            destinationIcon: stage.headsToClient
+                ? Icons.home_rounded
+                : Icons.storefront_rounded,
+          ),
+        ],
         const SizedBox(height: AppSizes.lg),
 
         // What happens after the bench, and who said so. Shown from the
@@ -443,16 +477,16 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
             Container(
               padding: const EdgeInsets.all(AppSizes.md),
               decoration: BoxDecoration(
-                color: AppColors.warningSoft,
+                color: AppColors.primarySofter,
                 borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-                border: Border.all(color: AppColors.warning),
+                border: Border.all(color: AppColors.primarySoft),
               ),
               child: Row(
                 children: <Widget>[
                   const Icon(
-                    Icons.location_off_rounded,
+                    Icons.my_location_rounded,
                     size: 18,
-                    color: AppColors.warning,
+                    color: AppColors.primary,
                   ),
                   const SizedBox(width: AppSizes.sm),
                   Expanded(
@@ -462,8 +496,8 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
                       // own choice, so a technician whose client is collecting
                       // the unit never sees a location warning about a trip
                       // they are not making.
-                      'Turn on your location first. The client needs to see '
-                      'where their appliance is once you mark this stage.',
+                      'Your location turns on when you tap below, so the '
+                      'client can see where their appliance is.',
                       style: AppTextStyles.caption.copyWith(
                         fontSize: 12,
                         height: 1.35,
@@ -487,18 +521,14 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
               PrimaryButton(
                 label: _actionLabel(options[i]),
                 isLoading: _isBusy,
-                onPressed: (options[i].showsMap && !_isSharing)
-                    ? null
-                    : () => _advance(options[i]),
+                onPressed: () => _advance(options[i]),
               )
             else
               SizedBox(
                 width: double.infinity,
                 height: AppSizes.buttonHeight,
                 child: OutlinedButton(
-                  onPressed: _isBusy || (options[i].showsMap && !_isSharing)
-                      ? null
-                      : () => _advance(options[i]),
+                  onPressed: _isBusy ? null : () => _advance(options[i]),
                   child: Text(_actionLabel(options[i])),
                 ),
               ),

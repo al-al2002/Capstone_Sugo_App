@@ -11,6 +11,7 @@ import '../../../core/widgets/sugo_button.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/job_tracking.dart';
 import '../services/tracking_service.dart';
+import 'location_feedback.dart';
 
 /// The client's side of collecting a repaired unit from the workshop.
 ///
@@ -57,6 +58,18 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
   bool get _isSharing => _positions != null;
 
   @override
+  void initState() {
+    super.initState();
+    // Back on the screen mid-trip: share again without a tap, so a client who
+    // forgot cannot leave the technician watching a frozen pin.
+    if (widget.tracking.clientOnTheWay) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resume();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _positions?.cancel();
     super.dispose();
@@ -66,7 +79,7 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
     final LocationReadiness readiness = await _service.prepareLocation();
     if (!mounted) return false;
     if (!readiness.isReady) {
-      UiFeedback.showError(context, readiness.reason!);
+      showLocationBlocked(context, readiness);
       return false;
     }
     return true;

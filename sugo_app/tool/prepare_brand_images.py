@@ -43,8 +43,6 @@ rounded square, throws the white away, and writes:
 * `assets/images/brand_emblem.png` - the emblem alone (house, wrench, swoosh,
   van) centred on the icon's navy, wordmark painted out. The app's small
   logo mark and the disc at the centre of the matching screen.
-* `assets/images/profile_cover.png` - a wide crop around the emblem, the
-  cover photo on the Profile tab.
 * `assets/images/brand_header.jpg` - the whole lockup, the login header.
 
 The splash's button is a picture of a button: it cannot be pressed, cannot
@@ -77,15 +75,15 @@ ICON_SOURCE = SOURCES / "icon 2.png"
 SPLASH_SOURCE = SOURCES / "splash 2.png"
 
 ICON_DIR = ROOT / "assets" / "icon"
-COVER = IMAGES / "profile_cover.png"
 EMBLEM = IMAGES / "brand_emblem.png"
 HEADER = IMAGES / "brand_header.jpg"
 SPLASH_ART = IMAGES / "splash_art.jpg"
 BANNER = IMAGES / "banner_technician.jpg"
 
-# Retired outputs of the paper-plane brand, removed so they cannot be loaded
-# by mistake.
-RETIRED = (IMAGES / "matching_plane.png",)
+# Retired outputs, removed so they cannot be loaded by mistake: the
+# paper-plane brand's matching disc, and the profile cover - drawn in code
+# since 2026-09-29, because the emblem behind the avatar fought with it.
+RETIRED = (IMAGES / "matching_plane.png", IMAGES / "profile_cover.png")
 
 # The poster's drawn button, glow included, in its 941x1672 pixels: every row
 # from BUTTON_TOP to BUTTON_BOTTOM is rebuilt. Measured by scanning for the
@@ -214,12 +212,7 @@ def icon_outputs() -> list[Path]:
         ICON_DIR / "app_icon_adaptive.png", optimize=True
     )
 
-    # ---- profile cover: a wide band around the emblem
     w, h = full_img.size
-    cover = full_img.crop((0, int(h * 0.10), w, int(h * 0.57)))
-    scale = 1200 / cover.width
-    cover = cover.resize((1200, round(cover.height * scale)), Image.LANCZOS)
-    cover.save(COVER, optimize=True)
 
     # ---- the emblem alone, wordmark painted out, padded so a circle round
     # it never runs off the image
@@ -248,7 +241,6 @@ def icon_outputs() -> list[Path]:
         ICON_DIR / "app_icon_full.png",
         ICON_DIR / "app_icon_adaptive.png",
         EMBLEM,
-        COVER,
         HEADER,
     ]
 

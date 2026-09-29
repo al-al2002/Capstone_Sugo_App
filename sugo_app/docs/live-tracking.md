@@ -109,6 +109,73 @@ pointed the other way.
 - **Privacy.** The client's position exists only during the trip. Arriving
   clears it, and so does any stage change. Nothing keeps a history.
 
+## Location switches itself on
+
+Every trip button does the location work for the person (2026-09-29):
+"Start trip", "I'm on my way", and any pickup stage that travels, such as
+"Start the delivery".
+
+1. **Permission** is requested on the spot.
+2. **If the phone's location is off, on Android**, one position is requested.
+   Google Play services answers with its own "Turn on location?" dialog inside
+   the app, so one tap is enough and nobody has to go to Settings.
+3. **What cannot be fixed from inside the app** gets an error with a
+   **Settings** button to the right page:
+   - the dialog was declined;
+   - permission was refused for good;
+   - iOS or the web, where an app cannot switch location on.
+4. **Opening a trip screen mid-trip resumes sharing without a tap.** This
+   covers the technician on the way or delivering, and the client coming to
+   collect. A forgotten switch no longer leaves the other person watching a
+   frozen pin.
+
+A pickup stage that travels still will not start until location is on. "On the
+way" with nothing on the map would read as a stalled technician. The difference
+is that the button now turns location on itself instead of waiting for someone
+to remember the switch.
+
+## The route on the map
+
+The tracking maps draw the **road route** of the leg in progress (`job-route`,
+live mode). The person watching sees the streets being driven: the client
+following a technician, or a technician waiting for a collecting client.
+
+- **The origin is not sent by the app.** The server takes it from the
+  traveller's last position in `job_tracking` and resolves the destination the
+  same way the ETA does (`leg_destination.ts`). Either person on the job may
+  ask, but only while a leg is moving.
+- **It is fetched sparingly** (`TrackingMap`):
+  - once when the map opens;
+  - when the stage changes;
+  - when the traveller is more than 200 m off the drawn route, and then at most
+    once a minute.
+- **Between fetches the line is trimmed** to start at the moving marker
+  (`routeAhead`), so it shrinks as they drive without another request.
+- **With no route** (no road between the points, or the provider is down), it
+  falls back to the dotted straight line.
+
+The maps themselves share `lib/core/widgets/sugo_map.dart`:
+
+- `@2x` tiles on high-density phones, which removes the blur;
+- the calmer `dataviz` style, so the navy route and orange pins stand out;
+- one destination pin with a label;
+- one travelling marker, which pulses only while the position is live.
+
+## The truck
+
+`SugoTruckDrive` shows a truck driving along a road. It appears:
+
+- on the client's tracking sheet;
+- on the technician's trip screens (home visit, and the travelling pickup
+  legs).
+
+The map marker for every technician leg is a truck too.
+
+The truck stays in place while the road runs beneath it. That says "moving"
+without claiming "how far"; the map and the arrival time answer that from real
+data. It drives only while the position is live. A stale position parks and
+greys the truck, and reduced motion makes it a still picture.
+
 ## How "late" is decided
 
 - **The promise.** The first ETA of a leg is frozen as `expected_arrival_at`.
@@ -174,7 +241,12 @@ its columns:
 cd sugo_app
 npx supabase db push
 npx supabase functions deploy tracking-eta tracking-eta-sweep job-weather notify-event --use-api
+npx supabase functions deploy job-route --use-api
 ```
+
+- **`job-route`** has the live mode for the road route on the tracking maps
+  (added later on 2026-09-29). Until it is deployed, the maps show the dotted
+  straight line.
 
 - **`20260929000001_client_collection_trip`** adds the client columns, the three
   functions, and the reworked guard trigger.

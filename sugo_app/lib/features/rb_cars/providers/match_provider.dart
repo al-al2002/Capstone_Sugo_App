@@ -79,6 +79,10 @@ class MatchProvider extends ChangeNotifier {
   }
 
   /// Loads the job and its offers. Safe to call repeatedly.
+  /// Deletes this job while nobody has taken it. The server re-checks that
+  /// (`handleDeleteJob`) and refuses otherwise; the error is the caller's.
+  Future<JobResponseOutcome> deleteJob() => _service.deleteJob(jobId);
+
   Future<void> load() async {
     _isLoading = true;
     _error = null;

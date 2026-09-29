@@ -53,7 +53,6 @@ full-size originals (about 8 MB with the retired artwork) never reach the APK.
 | `assets/icon/app_icon_{rounded,full,adaptive}.png` | `dart run flutter_launcher_icons`, which covers Android (adaptive included), iOS, web, Windows and macOS |
 | `brand_emblem.png` | `SugoLogoMark`, the matching screen's disc, and the admin panel (`public/images/brand-emblem.png`, plus its favicon) |
 | `brand_header.jpg` | the login and register header |
-| `profile_cover.png` | the Profile cover |
 | `splash_art.jpg` | the splash: the poster with its *drawn* "Get Started" button painted out |
 | `banner_technician.jpg` | the home screen's "Need a tech fix?" banner |
 
