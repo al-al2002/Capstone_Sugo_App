@@ -82,32 +82,32 @@ showing an "update password" screen.
 
 ## Screen structure
 
-Login and registration are one screen, `AuthScreen`, with a segmented switcher
-rather than two routes:
+Login and registration are one screen, `AuthScreen`. Since the 2026-09-28
+redesign there is no tab switcher: one form shows at a time, and the line
+under it ("Don't have an account? Register" / "Already have an account? Log
+in") swaps to the other.
 
 ```
 AuthScreen                       features/auth/presentation/screens/
-  AuthHeader                     widgets/auth_header.dart   (banner per tab)
-  AuthTabSwitcher                widgets/auth_tab_switcher.dart
+  AuthHeader                     widgets/auth_header.dart   (the SUGO lockup)
   LoginForm | RegisterForm       widgets/login_form.dart, register_form.dart
+  AuthFooterPrompt               widgets/auth_footer_prompt.dart
 ```
 
-Each tab has its own banner from `assets/images/`, sized from the artwork:
+The header is `assets/images/brand_header.jpg`, the full lockup on navy, cut
+from the app icon by `tool/prepare_brand_images.py`. It is square and drawn
+as tall as it is wide (clamped), so its space is reserved before the image
+decodes and the form does not jump on first paint. If it cannot load, the
+header draws the lockup in code (`SugoLogoMark` and the wordmark) so the
+screen stays usable.
 
-| Tab | Asset | Pixels | Drawn at |
-| --- | --- | --- | --- |
-| Login | `login.png` | 1717x916 (1.87:1) | 208px, nothing cropped |
-| Register | `Register.png` | 1536x1024 (1.5:1) | 215px, biased up to trim the empty band below the figures |
-
-The heights are fixed so the space is reserved before the image decodes -
-without that the header collapses and the form jumps on first paint. Asset
-names are case-sensitive in the bundle, including the capital R in
-`Register.png`. If a banner cannot be loaded the header falls back to a widget
-version (`SugoLogo` + `ServiceChips`) so the screen stays usable.
+The per-tab banners that used to sit here (`login.png`, `Register.png`) went
+with the tab switcher. The originals are kept in `assets/source/`, which is
+not bundled.
 
 Both controllers (`LoginController`, `RegisterController`) are provided above
-the switcher, so a half-typed form survives a tab change and the switcher can
-lock itself while a request is in flight.
+the form, so a half-typed form survives the swap, and the prompt is disabled
+while a request is in flight.
 
 `/login` and `/register` both resolve to `AuthScreen`, the latter with
 `initialTab: AuthTab.register`, so existing links and deep links still work.

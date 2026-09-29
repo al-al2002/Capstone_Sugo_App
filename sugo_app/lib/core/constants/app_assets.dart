@@ -1,23 +1,11 @@
 /// Artwork bundled from `assets/images/` (declared in pubspec.yaml).
 ///
-/// Where a file is absent the auth header falls back to the illustration it
-/// paints in code, so a missing export never breaks the build.
+/// Every file here is cut from the full-size sources in `assets/source/` by
+/// `tool/prepare_brand_images.py`. The sources themselves are not bundled.
 class AppAssets {
   const AppAssets._();
 
   static const String _images = 'assets/images';
-
-  static const String logo = '$_images/sugo_logo.png';
-
-  /// Header banner for the login tab (1717x916). Carries the wordmark
-  /// and tagline, so no widget logo is drawn over it.
-  static const String loginHero = '$_images/login.png';
-
-  /// Header banner for the register tab (1536x1024). Carries the wordmark,
-  /// tagline and the Diagnose/Repair/Done chips. Note the capital R - asset
-  /// paths are case-sensitive in the bundle even on Windows.
-  static const String registerHero = '$_images/Register.png';
-  static const String googleLogo = '$_images/google.png';
 
   /// The splash poster (941x1672 JPEG): lockup, "From your home to our shop",
   /// the two service paths, the technician, the house, the shop and the van.

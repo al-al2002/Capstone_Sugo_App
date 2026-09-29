@@ -124,8 +124,9 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
 
-  # Optional artwork. The auth screens draw their illustration in code and fall
-  # back gracefully, so this folder may stay empty until the exports land.
+  # Only the files the app draws, all cut by tool/prepare_brand_images.py.
+  # The full-size source artwork is in assets/source/, deliberately NOT listed
+  # here, so it stays out of the APK.
   assets:
     - assets/images/
 
@@ -191,7 +192,7 @@ flutter:
 #
 # Regenerate after changing the artwork:
 #
-#   python tool/prepare_brand_images.py   # cleans assets/images/app icon.png
+#   python tool/prepare_brand_images.py   # cleans assets/source/icon 2.png
 #   dart run flutter_launcher_icons       # writes it into every platform
 #
 # The source export has the transparency checkerboard painted into its

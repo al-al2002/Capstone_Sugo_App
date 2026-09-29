@@ -40,8 +40,11 @@ accessible, a trust blue and a safety orange.
 The paper-plane logo was retired on 2026-09-29, because the client found it
 read as Telegram's. The new artwork has two sources:
 
-* `assets/images/icon 2.png`: a house with a wrench, a swoosh and a service van.
-* `assets/images/splash 2.png`: the poster.
+* `assets/source/icon 2.png`: a house with a wrench, a swoosh and a service van.
+* `assets/source/splash 2.png`: the poster.
+
+Both sit in `assets/source/`, which pubspec does not declare, so the
+full-size originals (about 8 MB with the retired artwork) never reach the APK.
 
 `tool/prepare_brand_images.py` cuts every file the apps use from those two:
 

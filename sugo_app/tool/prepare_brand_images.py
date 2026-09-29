@@ -9,10 +9,16 @@ Needs Pillow, NumPy and SciPy (`pip install pillow numpy scipy`).
 
 ## The sources (2026-09-29 brand)
 
-* `assets/images/icon 2.png` - the app icon: a house with a wrench, a swoosh
+Both live in `assets/source/`, which pubspec.yaml does not declare: they are
+kept in the repository but never bundled into the app. At about 1.3 MB each
+they would otherwise ride along in every APK beside the small files cut from
+them. (That folder also keeps the retired artwork - the paper-plane icon, the
+old splash and the login/register banners - for the record.)
+
+* `assets/source/icon 2.png` - the app icon: a house with a wrench, a swoosh
   and a service van over the SUGO wordmark and tagline, on a navy rounded
   square. It replaced the paper-plane icon, which read as Telegram's.
-* `assets/images/splash 2.png` - the splash poster, with a "Get Started"
+* `assets/source/splash 2.png` - the splash poster, with a "Get Started"
   button drawn into the picture.
 
 ## Why neither can be used as it is
@@ -66,8 +72,9 @@ from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGES = ROOT / "assets" / "images"
-ICON_SOURCE = IMAGES / "icon 2.png"
-SPLASH_SOURCE = IMAGES / "splash 2.png"
+SOURCES = ROOT / "assets" / "source"
+ICON_SOURCE = SOURCES / "icon 2.png"
+SPLASH_SOURCE = SOURCES / "splash 2.png"
 
 ICON_DIR = ROOT / "assets" / "icon"
 COVER = IMAGES / "profile_cover.png"
