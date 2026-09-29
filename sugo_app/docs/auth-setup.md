@@ -173,13 +173,12 @@ machine, regenerate with `flutter test --update-goldens`.
 
 No screen references these any more; they are kept in case the designs return.
 
-- `widgets/auth_hero.dart` and `widgets/hero_figures.dart` - the painted
-  courier scene, superseded by the banner artwork.
 - `widgets/terms_agreement.dart` - the Terms of Service checkbox, dropped when
   the sign-up form was reduced.
-- `widgets/or_divider.dart` and `widgets/social_auth_buttons.dart` - the
-  "or continue with" block. `LoginController.loginWithGoogle` and
-  `loginWithFacebook` still work, so restoring it is a matter of putting these
-  two widgets back in `login_form.dart`.
-- `widgets/auth_footer_prompt.dart` - the "Already have an account?" /
-  "Don't have an account?" prompts that used to sit under each form.
+- `widgets/auth_card.dart` - the white sheet that held a form before the
+  2026-09-28 layout built its own.
+
+Deleted on 2026-09-29: `auth_hero.dart` and `hero_figures.dart` (the painted
+courier scene, superseded twice over - by the banners, then by the brand
+header) and `service_chips.dart` (the header's old fallback). The "or continue
+with" block went earlier, with Google and Facebook sign-in.
