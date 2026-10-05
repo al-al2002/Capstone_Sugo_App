@@ -338,74 +338,27 @@ class _Hero extends StatelessWidget {
       avatarUrl: profile?.avatarUrl,
       verified: isTechnician && (profile?.isVerified ?? false),
       badges: <Widget>[
-        _HeroChip(
+        ProfileBadge(
           icon: isTechnician ? Icons.engineering_rounded : Icons.person_rounded,
           label: isTechnician ? 'Technician' : 'Client',
         ),
         if (isTechnician && technician != null)
-          _HeroChip(
+          ProfileBadge(
             icon: Icons.workspace_premium_rounded,
             label: technician!.tier.label,
             // Elite is the only tier that gets the accent. A badge every
             // technician wears is not a badge.
             tone: technician!.tier == TechnicianTier.elite
-                ? _HeroChipTone.accent
-                : _HeroChipTone.brand,
+                ? ProfileBadgeTone.accent
+                : ProfileBadgeTone.brand,
           ),
         if (profile?.isVerified ?? false)
-          const _HeroChip(
+          const ProfileBadge(
             icon: Icons.verified_rounded,
             label: 'ID verified',
-            tone: _HeroChipTone.success,
+            tone: ProfileBadgeTone.success,
           ),
       ],
-    );
-  }
-}
-
-/// How a badge under the name is tinted, now that it sits on a white card.
-enum _HeroChipTone { brand, accent, success }
-
-class _HeroChip extends StatelessWidget {
-  const _HeroChip({
-    required this.icon,
-    required this.label,
-    this.tone = _HeroChipTone.brand,
-  });
-
-  final IconData icon;
-  final String label;
-  final _HeroChipTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    // A pale wash with the text shade on top: each pair is AA on its wash.
-    final (Color wash, Color ink) = switch (tone) {
-      _HeroChipTone.brand => (AppColors.primarySofter, AppColors.primary),
-      _HeroChipTone.accent => (AppColors.accentSoft, AppColors.accentDark),
-      _HeroChipTone.success => (AppColors.successSoft, AppColors.success),
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: 5),
-      decoration: BoxDecoration(
-        color: wash,
-        borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 13, color: ink),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: AppTextStyles.micro.copyWith(
-              fontWeight: FontWeight.w700,
-              color: ink,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

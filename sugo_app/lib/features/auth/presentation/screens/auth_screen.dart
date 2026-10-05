@@ -6,6 +6,7 @@ import 'package:provider/single_child_widget.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/theme/app_motion.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../controllers/login_controller.dart';
@@ -61,8 +62,45 @@ class _AuthView extends StatefulWidget {
   State<_AuthView> createState() => _AuthViewState();
 }
 
-class _AuthViewState extends State<_AuthView> {
+class _AuthViewState extends State<_AuthView>
+    with SingleTickerProviderStateMixin {
   static const Duration _switchDuration = Duration(milliseconds: 280);
+
+  /// The entrance (2026-09-29): the SUGO lockup settles in and the white
+  /// sheet pops up from below with a small overshoot, like a sheet being
+  /// handed to you - the answer to "Get started" on the splash, rather than a
+  /// plain cross-fade into a form.
+  ///
+  /// Plays once each time sign-in appears: after the splash, and after a
+  /// sign-out. Not on switching between log in and register - that has its
+  /// own sideways transition. A still frame under reduced motion.
+  late final AnimationController _enter;
+
+  @override
+  void initState() {
+    super.initState();
+    _enter = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_enter.isAnimating || _enter.isCompleted) return;
+    if (AppMotion.reduced(context)) {
+      _enter.value = 1;
+    } else {
+      _enter.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    super.dispose();
+  }
 
   late AuthTab _tab = widget.initialTab;
 
@@ -120,21 +158,57 @@ class _AuthViewState extends State<_AuthView> {
                   final double headerHeight = AuthHeader.heightFor(
                     box.maxWidth,
                   );
-                  return Stack(
-                    children: <Widget>[
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: AuthHeader(height: headerHeight),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.only(
-                          top: headerHeight - AuthHeader.sheetOverlap,
-                        ),
-                        child: _sheet(isBusy),
-                      ),
-                    ],
+                  return AnimatedBuilder(
+                    animation: _enter,
+                    // Built once and moved, not rebuilt on every frame.
+                    child: _sheet(isBusy),
+                    builder: (BuildContext context, Widget? sheet) {
+                      final double t = _enter.value;
+                      // The lockup takes the first half; the sheet rises over
+                      // the whole, overshooting a touch at the top.
+                      final double header = AppMotion.standard.transform(
+                        (t / 0.55).clamp(0.0, 1.0),
+                      );
+                      final double rise = AppMotion.playful.transform(t);
+                      final double drop =
+                          (1 - rise) * MediaQuery.sizeOf(context).height * 0.45;
+                      return Stack(
+                        children: <Widget>[
+                          // Navy behind the sheet, seen only while it is on
+                          // its way up: once it lands, the header and the
+                          // sheet cover every pixel of it. Without it the
+                          // white sheet would rise over a white page and the
+                          // entrance would be invisible.
+                          const Positioned.fill(
+                            child: ColoredBox(color: AppColors.navy),
+                          ),
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: Opacity(
+                              opacity: header,
+                              child: Transform.scale(
+                                scale: 0.94 + 0.06 * header,
+                                child: AuthHeader(height: headerHeight),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.only(
+                              top: headerHeight - AuthHeader.sheetOverlap,
+                            ),
+                            child: Transform.translate(
+                              offset: Offset(0, drop),
+                              child: Opacity(
+                                opacity: (t / 0.3).clamp(0.0, 1.0),
+                                child: sheet,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
               ),

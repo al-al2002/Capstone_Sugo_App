@@ -385,6 +385,7 @@ class _ClientReviewView extends StatelessWidget {
   /// Both at once would put a spinner on top of a spinner.
   String? _busyLabel(MatchProvider matching) {
     if (matching.isResponding) return 'Sending your request...';
+    if (matching.isCheckingTechnician) return 'Checking their schedule...';
     if (matching.isLoading && matching.matches.isNotEmpty) {
       return 'Finding more technicians...';
     }
@@ -754,25 +755,69 @@ class _ClientReviewView extends StatelessWidget {
     final String name =
         match.technician?.displayName.split(' ').first ?? 'this technician';
 
+    // On another job? Asked live, because the card's label is from when the
+    // job was matched (2026-09-29). They can still be requested: the client
+    // is told, and chooses to wait or to pick someone else. The technician
+    // cannot accept until their current job is done - the server holds that.
+    final bool busy = await matching.technicianBusy(match.id);
+    if (!context.mounted) return;
+
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text('Book $name?'),
-        content: Text(
-          'We will send your job to $name and let the other two options go. '
-          'They still need to accept before it is confirmed.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep looking'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Send request'),
-          ),
-        ],
-      ),
+      builder: (BuildContext dialogContext) => busy
+          ? AlertDialog(
+              // Centred, or the dialog's icon slot stretches the tile.
+              icon: Center(
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: AppColors.warningSoft,
+                    borderRadius: BorderRadius.circular(AppSizes.radius),
+                  ),
+                  child: const Icon(
+                    Icons.handyman_rounded,
+                    size: 28,
+                    color: AppColors.warning,
+                  ),
+                ),
+              ),
+              title: Text('$name is on another job'),
+              content: Text(
+                '$name is finishing a repair for someone else, so they can '
+                'only accept yours once that one is done. You can send the '
+                'request now and wait, or choose someone else.\n\n'
+                'Sending it lets the other two options go.',
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Choose someone else'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Send and wait'),
+                ),
+              ],
+            )
+          : AlertDialog(
+              title: Text('Book $name?'),
+              content: Text(
+                'We will send your job to $name and let the other two '
+                'options go. They still need to accept before it is '
+                'confirmed.',
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Keep looking'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Send request'),
+                ),
+              ],
+            ),
     );
 
     if (confirmed != true || !context.mounted) return;

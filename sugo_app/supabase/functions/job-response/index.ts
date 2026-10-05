@@ -5,6 +5,7 @@
  * POST /functions/v1/job-response
  * { "match_id": "uuid", "action": "accept" | "reroute" | "decline" }
  * { "job_id": "uuid", "action": "update_job", "job": { ...edited fields } }
+ * { "match_id": "uuid", "action": "technician_status" }
  * { "job_id": "uuid", "action": "complete",
  *   "diagnosis_correct": true, "rerouted_mid_job": false, "final_rating": 4.5 }
  * ```
@@ -54,6 +55,9 @@ type Action =
   | "needs_shop"
   // The client removing a job nobody has taken. See handleDeleteJob.
   | "delete_job"
+  // The client asking whether a technician is free before requesting them.
+  // See handleTechnicianStatus.
+  | "technician_status"
   // The client editing a job nobody has taken. See handleUpdateJob.
   | "update_job";
 
@@ -112,6 +116,10 @@ Deno.serve(async (req: Request) => {
       return await handleUpdateJob(db, uid, body);
     }
 
+    if (action === "technician_status") {
+      return await handleTechnicianStatus(db, uid, body);
+    }
+
     // ------------------------------------------- accept / reroute / decline
     const matchId = body.match_id;
     if (!matchId) return fail("match_id is required", 422);
@@ -152,6 +160,16 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "accept" || action === "reroute") {
+      // One job at a time (2026-09-29): a technician with an unfinished job
+      // cannot take another. The client may still have requested them - they
+      // were told the technician was busy and chose to wait - so the offer
+      // stays open, and can be accepted the moment the current one is done.
+      if (await activeJobOf(db, uid, job.id)) {
+        return fail(
+          "Finish your current job before accepting another one.",
+          409,
+        );
+      }
       return await handleAccept(db, match, job, action);
     }
     return await handleDecline(db, match, job);
@@ -314,6 +332,69 @@ async function handleClientSelect(
  * be filled in honestly, and that in turn discounts the technician's diagnosis
  * accuracy in `scoring/accuracy.ts`. Getting the path wrong has a cost.
  */
+/**
+ * The technician's unfinished job, if they have one: confirmed or in progress
+ * and assigned to them - other than [exceptJobId].
+ *
+ * Read from `jobs`, not `technicians.current_workload`. The counter is a
+ * ranking signal nudged on accept and complete; this is a rule, and a rule
+ * needs the record itself.
+ */
+async function activeJobOf(
+  db: SupabaseClient,
+  technicianId: string,
+  exceptJobId?: string,
+): Promise<{ id: string } | null> {
+  let query = db
+    .from("jobs")
+    .select("id")
+    .eq("assigned_technician_id", technicianId)
+    .in("status", ["confirmed", "in_progress"]);
+  if (exceptJobId) query = query.neq("id", exceptJobId);
+  const { data } = await query.limit(1).maybeSingle<{ id: string }>();
+  return data ?? null;
+}
+
+/**
+ * Whether the technician behind a match is busy with another job, for the
+ * client about to request them (2026-09-29).
+ *
+ * The client is told before they send, and may still send: "they are on
+ * another job - wait for them, or choose someone else". Answered live because
+ * the match card's snapshot is from when the job was matched, and a
+ * technician may have taken or finished a job since.
+ *
+ * Only the job's own client may ask, and only a yes or no comes back - never
+ * which job, or whose.
+ */
+async function handleTechnicianStatus(
+  db: SupabaseClient,
+  uid: string,
+  body: ResponseRequest,
+): Promise<Response> {
+  const matchId = body.match_id;
+  if (!matchId) return fail("match_id is required", 422);
+
+  const { data: match } = await db
+    .from("job_matches")
+    .select("id, job_id, technician_id")
+    .eq("id", matchId)
+    .maybeSingle<{ id: string; job_id: string; technician_id: string }>();
+  if (!match) return fail("Match not found", 404);
+
+  const { data: job } = await db
+    .from("jobs")
+    .select("id, client_id")
+    .eq("id", match.job_id)
+    .maybeSingle<{ id: string; client_id: string }>();
+  if (!job || job.client_id !== uid) {
+    return fail("This job belongs to someone else", 403);
+  }
+
+  const busy = (await activeJobOf(db, match.technician_id, job.id)) !== null;
+  return json({ busy });
+}
+
 async function handleAccept(
   db: SupabaseClient,
   match: MatchRow,

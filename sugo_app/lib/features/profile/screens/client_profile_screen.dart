@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/widgets/sugo_avatar.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
@@ -14,6 +13,7 @@ import '../../rb_cars/models/job_party.dart';
 import '../../rb_cars/models/technician_profile_details.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../rb_cars/widgets/review_card.dart';
+import '../widgets/profile_cover_header.dart';
 
 /// A client's public profile.
 ///
@@ -229,6 +229,9 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 }
 
+/// The client's identity, drawn the same way as every profile in the app -
+/// the drawn cover, the ringed avatar, the name and tinted badges - rather
+/// than a navy block of its own (2026-09-29).
 class _Hero extends StatelessWidget {
   const _Hero({
     required this.name,
@@ -244,93 +247,24 @@ class _Hero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SugoCard(
-      padding: const EdgeInsets.all(AppSizes.xl),
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: <Color>[AppColors.primary, AppColors.navy],
-      ),
-      elevation: SugoElevation.lg,
-      child: Column(
-        children: <Widget>[
-          SugoAvatar(
-            name: name,
-            imageUrl: avatarUrl,
-            size: 84,
-            ringColor: Colors.white.withValues(alpha: 0.35),
-            verified: idVerified,
+    return ProfileCoverHeader(
+      name: name,
+      avatarUrl: avatarUrl,
+      verified: idVerified,
+      badges: <Widget>[
+        const ProfileBadge(icon: Icons.person_rounded, label: 'Client'),
+        if (idVerified)
+          const ProfileBadge(
+            icon: Icons.verified_rounded,
+            label: 'ID verified',
+            tone: ProfileBadgeTone.success,
           ),
-          const SizedBox(height: AppSizes.md),
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.display.copyWith(
-              color: Colors.white,
-              fontSize: 20,
-            ),
+        if (memberSince != null)
+          ProfileBadge(
+            icon: Icons.calendar_month_rounded,
+            label: 'Since ${DateFormat('MMM yyyy').format(memberSince!)}',
           ),
-          const SizedBox(height: AppSizes.sm),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: AppSizes.sm,
-            runSpacing: AppSizes.xs,
-            children: <Widget>[
-              const _HeroChip(icon: Icons.person_rounded, label: 'Client'),
-              if (idVerified)
-                const _HeroChip(
-                  icon: Icons.verified_rounded,
-                  label: 'ID verified',
-                ),
-              if (memberSince != null)
-                _HeroChip(
-                  icon: Icons.calendar_month_rounded,
-                  label: 'Since ${DateFormat('MMM yyyy').format(memberSince!)}',
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroChip extends StatelessWidget {
-  const _HeroChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 12, color: Colors.white),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }

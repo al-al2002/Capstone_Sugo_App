@@ -43,7 +43,11 @@ void main() {
     return repository;
   }
 
+  // Each helper lets the entrance land first: since 2026-09-29 the sheet pops
+  // up from below when sign-in appears, and a tap in its first frames would
+  // aim at where the button is going to be.
   Future<void> tapButton(WidgetTester tester, String label) async {
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text(label));
     await tester.tap(find.text(label));
     await tester.pumpAndSettle();
@@ -51,6 +55,7 @@ void main() {
 
   /// The full-width submit button.
   Future<void> tapSubmit(WidgetTester tester) async {
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.byType(ElevatedButton));
     await tester.tap(find.byType(ElevatedButton));
     await tester.pumpAndSettle();
@@ -59,6 +64,7 @@ void main() {
   /// The footer link that moves to the other form - the only way across,
   /// since the reference design has no tab switcher.
   Future<void> tapFooter(WidgetTester tester, String label) async {
+    await tester.pumpAndSettle();
     final Finder link = find.widgetWithText(TextButton, label);
     await tester.ensureVisible(link);
     await tester.tap(link);

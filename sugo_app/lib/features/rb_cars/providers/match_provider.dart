@@ -26,6 +26,7 @@ class MatchProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isMatching = false;
   bool _isResponding = false;
+  bool _isCheckingTechnician = false;
   String? _error;
 
   /// Seeded from the posting flow when the first run found nobody, so the
@@ -49,6 +50,23 @@ class MatchProvider extends ChangeNotifier {
   /// so only the first gets the analysis screen.
   bool get isMatching => _isMatching;
   bool get isResponding => _isResponding;
+
+  /// True while asking whether a technician is on another job, before the
+  /// client is shown the request dialog.
+  bool get isCheckingTechnician => _isCheckingTechnician;
+
+  /// Whether the technician behind [matchId] is on another job right now.
+  /// See `RbCarsService.technicianIsBusy`.
+  Future<bool> technicianBusy(String matchId) async {
+    _isCheckingTechnician = true;
+    notifyListeners();
+    try {
+      return await _service.technicianIsBusy(matchId);
+    } finally {
+      _isCheckingTechnician = false;
+      notifyListeners();
+    }
+  }
   String? get error => _error;
 
   /// Transient message after an action, e.g. "Rank 1 declined, showing rank 2".

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -7,10 +5,15 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_elevation.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/sugo_avatar.dart';
+import '../../../core/widgets/sugo_brand_cover.dart';
 import '../../../core/widgets/sugo_card.dart';
 
 /// A profile's identity panel: a cover, the avatar straddling its lower edge,
-/// then the name and a row of badges.
+/// then the name, an optional line under it, and a row of badges.
+///
+/// Used for your own profile and for other people's - a client's public
+/// profile, and a technician's reached from "More technicians" - so every
+/// profile in the app reads the same way.
 ///
 /// ## The redesign (2026-09-29)
 ///
@@ -20,11 +23,10 @@ import '../../../core/widgets/sugo_card.dart';
 /// and neither read; the panel under it was navy too, which made a light
 /// avatar look pasted on. ("Mura mn lain tan-awon.")
 ///
-/// Now the cover is drawn, not a picture: the brand gradient, two soft rings,
-/// and the dashed route with a van at its end - the same route line the app
-/// draws for every booking. It is quiet in the middle, where the avatar sits,
-/// so the face is the only thing there. The panel below is white like every
-/// other card, the avatar has a white ring, and the badges are tinted pills.
+/// Now the cover is drawn ([SugoBrandCover]): the brand gradient and the
+/// dashed route to a van, quiet in the middle where the avatar sits. The panel
+/// below is white like every other card, the avatar has a white ring, and the
+/// badges are tinted pills ([ProfileBadge]).
 ///
 /// ## Why the avatar overlaps the cover
 ///
@@ -37,6 +39,7 @@ class ProfileCoverHeader extends StatelessWidget {
     required this.name,
     this.avatarUrl,
     this.verified = false,
+    this.subtitle,
     this.badges = const <Widget>[],
   });
 
@@ -45,6 +48,9 @@ class ProfileCoverHeader extends StatelessWidget {
 
   /// Shows the verified tick on the avatar.
   final bool verified;
+
+  /// One line under the name - a specialism and a distance, say.
+  final String? subtitle;
 
   /// Small chips under the name - role, tier, ID status.
   final List<Widget> badges;
@@ -78,23 +84,14 @@ class ProfileCoverHeader extends StatelessWidget {
                   child: const SizedBox(
                     height: coverHeight,
                     width: double.infinity,
-                    child: _Cover(),
+                    child: SugoBrandCover(),
                   ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(_ringWidth),
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                  shape: BoxShape.circle,
-                  boxShadow: AppElevation.sm,
-                ),
-                child: SugoAvatar(
-                  name: name,
-                  imageUrl: avatarUrl,
-                  size: AppSizes.avatarLg,
-                  verified: verified,
-                ),
+              ProfileAvatar(
+                name: name,
+                avatarUrl: avatarUrl,
+                verified: verified,
               ),
             ],
           ),
@@ -114,6 +111,16 @@ class ProfileCoverHeader extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: AppTextStyles.title,
                 ),
+                if (subtitle != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption,
+                  ),
+                ],
                 if (badges.isNotEmpty) ...<Widget>[
                   const SizedBox(height: AppSizes.sm),
                   Wrap(
@@ -132,110 +139,89 @@ class ProfileCoverHeader extends StatelessWidget {
   }
 }
 
-/// The drawn cover: gradient, rings, and the route to the van.
-class _Cover extends StatelessWidget {
-  const _Cover();
+/// The avatar with its white ring, as it sits on a cover.
+class ProfileAvatar extends StatelessWidget {
+  const ProfileAvatar({
+    super.key,
+    required this.name,
+    this.avatarUrl,
+    this.verified = false,
+    this.size = AppSizes.avatarLg,
+  });
 
-  /// Where the van sits, from the top-right corner.
-  static const double _vanRight = 22;
-  static const double _vanTop = 20;
-  static const double _vanSize = 26;
+  final String name;
+  final String? avatarUrl;
+  final bool verified;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    return const ExcludeSemantics(
-      child: Stack(
-        fit: StackFit.expand,
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        shape: BoxShape.circle,
+        boxShadow: AppElevation.sm,
+      ),
+      child: SugoAvatar(
+        name: name,
+        imageUrl: avatarUrl,
+        size: size,
+        verified: verified,
+      ),
+    );
+  }
+}
+
+/// How a profile badge is tinted.
+enum ProfileBadgeTone { brand, accent, success }
+
+/// A badge under a profile's name: a pale wash with the text shade on top,
+/// each pair AA on its wash.
+class ProfileBadge extends StatelessWidget {
+  const ProfileBadge({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.tone = ProfileBadgeTone.brand,
+  });
+
+  final IconData icon;
+  final String label;
+  final ProfileBadgeTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color wash, Color ink) = switch (tone) {
+      ProfileBadgeTone.brand => (AppColors.primarySofter, AppColors.primary),
+      ProfileBadgeTone.accent => (AppColors.accentSoft, AppColors.accentDark),
+      ProfileBadgeTone.success => (AppColors.successSoft, AppColors.success),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: 5),
+      decoration: BoxDecoration(
+        color: wash,
+        borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          CustomPaint(painter: _CoverPainter()),
-          Positioned(
-            right: _vanRight,
-            top: _vanTop,
-            child: Icon(
-              Icons.local_shipping_rounded,
-              size: _vanSize,
-              color: Color(0xE6FFFFFF),
+          Icon(icon, size: 13, color: ink),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.micro.copyWith(
+                fontWeight: FontWeight.w700,
+                color: ink,
+              ),
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _CoverPainter extends CustomPainter {
-  const _CoverPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Rect all = Offset.zero & size;
-
-    // The brand gradient, navy to SUGO blue, corner to corner.
-    canvas.drawRect(
-      all,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.bottomLeft,
-          end: Alignment.topRight,
-          colors: <Color>[AppColors.navy, AppColors.primary, AppColors.secondary],
-          stops: <double>[0, 0.55, 1],
-        ).createShader(all),
-    );
-
-    // Two soft rings for depth, kept to the corners.
-    canvas.drawCircle(
-      Offset(size.width * 0.92, -size.height * 0.15),
-      size.height * 0.95,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 18
-        ..color = Colors.white.withValues(alpha: 0.06),
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.02, size.height * 1.05),
-      size.height * 0.62,
-      Paint()..color = Colors.white.withValues(alpha: 0.05),
-    );
-
-    // The route: from a start dot low on the left, curving up to the van at
-    // the top right. It stays high across the middle, clear of the avatar.
-    final Offset start = Offset(size.width * 0.07, size.height * 0.72);
-    final Offset end = Offset(
-      size.width - _Cover._vanRight - _Cover._vanSize - 6,
-      _Cover._vanTop + _Cover._vanSize * 0.62,
-    );
-    final Path route = Path()
-      ..moveTo(start.dx, start.dy)
-      ..cubicTo(
-        size.width * 0.28,
-        size.height * 0.18,
-        size.width * 0.58,
-        size.height * 0.62,
-        end.dx,
-        end.dy,
-      );
-
-    final Paint dash = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(alpha: 0.45);
-    for (final metric in route.computeMetrics()) {
-      const double on = 7;
-      const double off = 6;
-      for (double d = 0; d < metric.length; d += on + off) {
-        canvas.drawPath(
-          metric.extractPath(d, math.min(d + on, metric.length)),
-          dash,
-        );
-      }
-    }
-
-    // The stop where the trip began.
-    canvas.drawCircle(start, 6, Paint()..color = Colors.white);
-    canvas.drawCircle(start, 3, Paint()..color = AppColors.secondary);
-  }
-
-  @override
-  bool shouldRepaint(covariant _CoverPainter oldDelegate) => false;
 }

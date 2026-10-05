@@ -8,6 +8,7 @@ import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
+import '../../../core/widgets/sugo_timeline.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../controllers/registration_flow_controller.dart';
 import '../models/registration_status.dart';
@@ -243,6 +244,16 @@ class _ErrorBanner extends StatelessWidget {
 /// landed on a screen with no button at all and no way back to the login
 /// page. Defaulting to [AuthController.signOut] means a new call site cannot
 /// reintroduce that.
+///
+/// ## The redesign (2026-09-29)
+///
+/// It was a glyph, two lines and a note, floating in the middle of an empty
+/// page - fine as an error state, thin as the last screen of a registration
+/// someone has just put ten minutes into. Now it shows what happens next the
+/// way the rest of the app shows a booking's progress: three honest steps,
+/// the current one lit, with the notification promise where it belongs, on
+/// the last step. The whole page scrolls, so a small phone or large text
+/// never pushes "Back to login" off the screen.
 class PendingReviewScreen extends StatelessWidget {
   const PendingReviewScreen({
     super.key,
@@ -268,113 +279,181 @@ class PendingReviewScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.screenPadding),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              // A haloed glyph, matching `SugoEmptyState`. This screen is the
-              // last thing a technician sees before a wait of hours, so it
-              // gets the same care as any other terminal state in the app.
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0.8, end: 1),
-                duration: AppMotion.slow,
-                curve: AppMotion.playful,
-                builder:
-                    (BuildContext context, double scale, Widget? child) =>
-                        Transform.scale(scale: scale, child: child),
-                child: Container(
-                  width: 104,
-                  height: 104,
-                  decoration: BoxDecoration(
-                    color:
-                        (rejected
-                                ? AppColors.errorSoft
-                                : AppColors.warningSoft)
-                            .withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      color: rejected
-                          ? AppColors.errorSoft
-                          : AppColors.warningSoft,
-                      shape: BoxShape.circle,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSizes.screenPadding),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: box.maxHeight - AppSizes.screenPadding * 2,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Center(child: _StatusHalo(status: status)),
+                    const SizedBox(height: AppSizes.xl),
+                    Text(
+                      rejected
+                          ? 'We could not verify your ID'
+                          : 'Thanks — you are all set',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.headline,
                     ),
-                    child: Icon(status.icon, size: 36, color: status.tone),
-                  ),
+                    const SizedBox(height: AppSizes.sm),
+                    Text(
+                      rejectionReason ?? status.blurb,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.subtitle,
+                    ),
+                    const SizedBox(height: AppSizes.xl),
+
+                    if (rejected && onRetake != null)
+                      PrimaryButton(
+                        label: 'Retake my photos',
+                        onPressed: onRetake,
+                      )
+                    else if (!rejected)
+                      const _WhatHappensNext(),
+
+                    const SizedBox(height: AppSizes.xl),
+                    SizedBox(
+                      height: AppSizes.buttonHeight,
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            onSignOut ??
+                            () => context.read<AuthController>().signOut(),
+                        icon: const Icon(Icons.logout_rounded, size: 18),
+                        label: const Text('Back to login'),
+                      ),
+                    ),
+                    const SizedBox(height: AppSizes.sm),
+                    // Signing out does not withdraw the application, and
+                    // saying so matters: without it, "back to login" reads as
+                    // "cancel", and someone waiting on review will sit on this
+                    // screen rather than risk losing their place.
+                    const Text(
+                      'Your application stays in the queue while you are '
+                      'signed out.',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.caption,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: AppSizes.xl),
-              Text(
-                rejected
-                    ? 'We could not verify your ID'
-                    : 'Thanks — you are all set',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.headline,
-              ),
-              const SizedBox(height: AppSizes.md),
-              Text(
-                rejectionReason ?? status.blurb,
-                textAlign: TextAlign.center,
-                style: AppTextStyles.subtitle,
-              ),
-              const SizedBox(height: AppSizes.xxl),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
 
-              if (rejected && onRetake != null)
-                PrimaryButton(label: 'Retake my photos', onPressed: onRetake)
-              else
-                Container(
-                  padding: const EdgeInsets.all(AppSizes.lg),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Row(
-                    children: <Widget>[
-                      Icon(
-                        Icons.notifications_active_outlined,
-                        size: 18,
-                        color: AppColors.primary,
-                      ),
-                      SizedBox(width: AppSizes.md),
-                      Expanded(
-                        child: Text(
-                          'We will notify you as soon as your account is '
-                          'approved. You can close the app in the meantime.',
-                          style: AppTextStyles.caption,
-                        ),
-                      ),
-                    ],
-                  ),
+/// The status glyph in two soft rings. Scales in once, and the outer ring
+/// breathes out a single time behind it - an arrival, not a loop, because
+/// the wait that follows can be hours and a spinner would say "stuck".
+class _StatusHalo extends StatelessWidget {
+  const _StatusHalo({required this.status});
+
+  final RegistrationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool rejected = status == RegistrationStatus.rejected;
+    final Color wash = rejected ? AppColors.errorSoft : AppColors.warningSoft;
+    final bool still = AppMotion.reduced(context);
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: still ? 1 : 0, end: 1),
+      duration: still ? Duration.zero : const Duration(milliseconds: 900),
+      curve: Curves.easeOutCubic,
+      builder: (BuildContext context, double t, Widget? glyph) {
+        // The glyph lands in the first half; the ring widens after it.
+        final double pop = AppMotion.playful.transform((t * 2).clamp(0, 1));
+        final double ring = ((t - 0.3) / 0.7).clamp(0, 1);
+        return SizedBox(
+          width: 128,
+          height: 128,
+          child: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              Container(
+                width: 88 + 40 * ring,
+                height: 88 + 40 * ring,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: wash.withValues(alpha: 0.55 * ring),
                 ),
-
-              const SizedBox(height: AppSizes.lg),
-
-              // Signing out does not withdraw the application, and saying so
-              // matters: without it, "back to login" reads as "cancel", and
-              // someone waiting on review will sit on this screen rather than
-              // risk losing their place.
-              const Text(
-                'Your application stays in the queue while you are signed out.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.caption,
               ),
-              const SizedBox(height: AppSizes.md),
+              Transform.scale(scale: 0.6 + 0.4 * pop, child: glyph),
+            ],
+          ),
+        );
+      },
+      child: Container(
+        width: 84,
+        height: 84,
+        decoration: BoxDecoration(
+          color: wash,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.surface, width: 4),
+          boxShadow: AppElevation.sm,
+        ),
+        child: Icon(status.icon, size: 38, color: status.tone),
+      ),
+    );
+  }
+}
 
-              OutlinedButton.icon(
-                onPressed:
-                    onSignOut ?? () => context.read<AuthController>().signOut(),
-                icon: const Icon(Icons.logout_rounded, size: 17),
-                label: const Text('Back to login'),
+/// Registered, being reviewed, live - with the promise to notify on the step
+/// it belongs to.
+class _WhatHappensNext extends StatelessWidget {
+  const _WhatHappensNext();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.lg),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text('What happens next', style: AppTextStyles.sectionTitle),
+          const SizedBox(height: AppSizes.md),
+          // Not compact: compact hides every subtitle but the current one,
+          // and the last step's "we will notify you" is the promise people
+          // need before they close the app.
+          const SugoTimeline(
+            steps: <SugoTimelineStep>[
+              SugoTimelineStep(
+                title: 'Registration sent',
+                subtitle: 'Your details and ID photos are in.',
+                icon: Icons.assignment_turned_in_rounded,
+                state: SugoStepState.done,
+              ),
+              SugoTimelineStep(
+                title: 'ID review',
+                subtitle:
+                    'A member of the SUGO team checks your ID. This usually '
+                    'takes under a day.',
+                icon: Icons.fact_check_rounded,
+                state: SugoStepState.current,
+              ),
+              SugoTimelineStep(
+                title: 'Account goes live',
+                subtitle:
+                    'We will notify you as soon as it is approved. You can '
+                    'close the app in the meantime.',
+                icon: Icons.notifications_active_rounded,
+                state: SugoStepState.upcoming,
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }

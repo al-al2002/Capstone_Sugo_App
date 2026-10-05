@@ -11,7 +11,8 @@ import '../models/technician_specialization.dart';
 import '../services/rb_cars_service.dart';
 import '../services/technician_directory_service.dart';
 import '../widgets/review_card.dart';
-import '../widgets/technician_avatar.dart';
+import '../../profile/widgets/profile_cover_header.dart';
+import '../models/job_enums.dart';
 
 /// The profile behind a card tap, from either listing.
 ///
@@ -310,6 +311,9 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
 // Header
 // ---------------------------------------------------------------------------
 
+/// The technician's identity: the same drawn cover, ringed avatar and tinted
+/// badges as every profile in the app (2026-09-29), then the three figures a
+/// client weighs first.
 class _Header extends StatelessWidget {
   const _Header({required this.technician, this.details});
 
@@ -318,87 +322,47 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: AppColors.surface,
+    return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSizes.screenPadding,
-        AppSizes.lg,
+        AppSizes.md,
         AppSizes.screenPadding,
-        AppSizes.xl,
+        AppSizes.lg,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              TechnicianAvatar(technician: technician, size: 68),
-              const SizedBox(width: AppSizes.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Flexible(
-                          child: Text(
-                            technician.displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (technician.isVerified) ...<Widget>[
-                          const SizedBox(width: 5),
-                          const Icon(
-                            Icons.verified_rounded,
-                            size: 16,
-                            color: AppColors.primary,
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      technician.specializationLabel,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    if (technician.distanceAwayLabel != null) ...<Widget>[
-                      const SizedBox(height: 5),
-                      Row(
-                        children: <Widget>[
-                          const Icon(
-                            Icons.place_rounded,
-                            size: 12,
-                            color: AppColors.hint,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            technician.distanceAwayLabel!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
+          ProfileCoverHeader(
+            name: technician.displayName,
+            avatarUrl: technician.avatarUrl,
+            verified: technician.isVerified,
+            subtitle: <String>[
+              technician.specializationLabel,
+              if (technician.distanceAwayLabel != null)
+                technician.distanceAwayLabel!,
+            ].join('  ·  '),
+            badges: <Widget>[
+              const ProfileBadge(
+                icon: Icons.engineering_rounded,
+                label: 'Technician',
               ),
+              ProfileBadge(
+                icon: Icons.workspace_premium_rounded,
+                label: technician.tier.label,
+                // Elite is the only tier that gets the accent.
+                tone: technician.tier == TechnicianTier.elite
+                    ? ProfileBadgeTone.accent
+                    : ProfileBadgeTone.brand,
+              ),
+              if (technician.isVerified)
+                const ProfileBadge(
+                  icon: Icons.verified_rounded,
+                  label: 'ID verified',
+                  tone: ProfileBadgeTone.success,
+                ),
             ],
           ),
-          const SizedBox(height: AppSizes.lg),
+          const SizedBox(height: AppSizes.md),
           Row(
             children: <Widget>[
               _Stat(
@@ -407,10 +371,12 @@ class _Header extends StatelessWidget {
                     : '—',
                 label: 'Rating',
               ),
+              const SizedBox(width: AppSizes.sm),
               _Stat(
                 value: '${technician.totalJobs}',
                 label: 'Jobs done',
               ),
+              const SizedBox(width: AppSizes.sm),
               _Stat(
                 value: '${details?.reviewCount ?? technician.reviewCount}',
                 label: 'Reviews',
@@ -434,10 +400,10 @@ class _Stat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        margin: const EdgeInsets.only(right: AppSizes.sm),
         padding: const EdgeInsets.symmetric(vertical: AppSizes.md),
         decoration: BoxDecoration(
-          color: AppColors.primarySofter,
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
           borderRadius: BorderRadius.circular(AppSizes.tileRadius),
         ),
         child: Column(

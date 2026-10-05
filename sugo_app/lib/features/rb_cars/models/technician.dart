@@ -177,6 +177,13 @@ class Technician {
   }
 
   /// `On vacation until Sep 27`, or null when working.
+  /// On another job when this snapshot was taken (`current_workload`).
+  ///
+  /// A label for the match card only. It can be out of date - the snapshot is
+  /// from when the job was matched - so booking asks the server again, and
+  /// the one-job-at-a-time rule is enforced when the technician accepts.
+  bool get isBusy => currentWorkload > 0;
+
   String? get awayLabel =>
       isAway ? 'On vacation until ${DateFormat('MMM d').format(awayUntil!)}' : null;
 

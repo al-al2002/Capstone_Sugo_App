@@ -331,6 +331,24 @@ class RbCarsService {
     return _respond(<String, dynamic>{'match_id': matchId, 'action': 'select'});
   }
 
+  /// Whether the technician behind [matchId] is busy with another, unfinished
+  /// job right now (`job-response`, `technician_status`, 2026-09-29).
+  ///
+  /// Never throws: a failed check reads as "free". It only decides whether the
+  /// client is warned; the rule itself - one job at a time - is enforced when
+  /// the technician accepts.
+  Future<bool> technicianIsBusy(String matchId) async {
+    try {
+      final Map<String, dynamic> data = await _invoke(
+        _responseFunction,
+        <String, dynamic>{'match_id': matchId, 'action': 'technician_status'},
+      );
+      return data['busy'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Technician accepts an offer and will fix it on site.
   Future<JobResponseOutcome> acceptOffer(String matchId) {
     return _respond(<String, dynamic>{'match_id': matchId, 'action': 'accept'});

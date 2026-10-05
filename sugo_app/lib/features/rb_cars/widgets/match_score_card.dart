@@ -101,6 +101,15 @@ class MatchScoreCard extends StatelessWidget {
                     icon: Icons.beach_access_rounded,
                     tint: AppColors.accentSofter,
                     foreground: AppColors.accentDark,
+                  )
+                // Still bookable - the client can wait for them - but they
+                // should know before they choose (2026-09-29).
+                else if (technician?.isBusy ?? false)
+                  SugoPill.badge(
+                    label: 'On a job now',
+                    icon: Icons.handyman_rounded,
+                    tint: AppColors.warningSoft,
+                    foreground: AppColors.warning,
                   ),
               ],
             ),

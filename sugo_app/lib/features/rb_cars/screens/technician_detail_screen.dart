@@ -22,6 +22,8 @@ import '../widgets/review_card.dart';
 import '../widgets/score_breakdown_sheet.dart';
 import '../widgets/stat_chip.dart';
 import 'job_posting_screen.dart';
+import '../../../core/widgets/sugo_brand_cover.dart';
+import '../../profile/widgets/profile_cover_header.dart';
 
 /// Technician profile: hero photo, stat chips, tabs, sticky booking bar.
 ///
@@ -312,7 +314,20 @@ class _TechnicianDetailScreenState extends State<TechnicianDetailScreen>
   }
 }
 
-/// Large photo header with the back and bookmark buttons floating over it.
+/// The profile's header: the drawn brand cover with the technician's photo in
+/// a ring at its centre, their name and standing beneath it, and the back and
+/// bookmark buttons floating over the top.
+///
+/// ## Why not their photo, full width (2026-09-29)
+///
+/// It used to be exactly that. An avatar is a small square, so stretched
+/// across a phone it came out soft and cropped - and most accounts have no
+/// photo at all, which left faint giant initials on blue. Now the cover is
+/// [SugoBrandCover], the same one on every profile in the app, and the photo
+/// is shown at the size it was taken for.
+///
+/// It still collapses: scrolled up, the header folds into a navy bar with the
+/// name in it, so the back button never scrolls away with the cover.
 class _HeroHeader extends StatelessWidget {
   const _HeroHeader({
     required this.technician,
@@ -324,12 +339,27 @@ class _HeroHeader extends StatelessWidget {
   final bool isFavourite;
   final VoidCallback onFavourite;
 
+  /// Room for the avatar, the name, one line under it and the badge, below
+  /// the status bar and the toolbar. Grows with the text size, so large text
+  /// does not push the name into the toolbar.
+  static double _expandedHeight(BuildContext context) {
+    final double text = MediaQuery.textScalerOf(context).scale(14) / 14;
+    return MediaQuery.paddingOf(context).top +
+        kToolbarHeight +
+        AppSizes.avatarLg +
+        8 +
+        112 * text;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final double expanded = _expandedHeight(context);
+    final double top = MediaQuery.paddingOf(context).top;
+
     return SliverAppBar(
-      expandedHeight: AppSizes.technicianHeroHeight,
+      expandedHeight: expanded,
       pinned: true,
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.navy,
       foregroundColor: Colors.white,
       leading: Padding(
         padding: const EdgeInsets.all(AppSizes.sm),
@@ -346,124 +376,113 @@ class _HeroHeader extends StatelessWidget {
                 ? Icons.bookmark_rounded
                 : Icons.bookmark_border_rounded,
             onTap: onFavourite,
-            tint: isFavourite ? AppColors.accent : null,
+            tint: isFavourite ? AppColors.accentDark : null,
           ),
         ),
       ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            _HeroImage(technician: technician),
-            // Scrim so the white chrome stays legible over any photo.
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    Color(0x66000000),
-                    Color(0x00000000),
-                    Color(0x99000000),
-                  ],
-                  stops: <double>[0, 0.45, 1],
+      flexibleSpace: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final double collapsed = top + kToolbarHeight;
+          // 1 fully open, 0 folded into the bar.
+          final double open =
+              ((box.maxHeight - collapsed) / (expanded - collapsed)).clamp(
+                0.0,
+                1.0,
+              );
+
+          return ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                SugoBrandCover(topInset: collapsed - 20),
+                Positioned(
+                  left: AppSizes.screenPadding,
+                  right: AppSizes.screenPadding,
+                  bottom: AppSizes.lg,
+                  child: Opacity(
+                    opacity: Curves.easeIn.transform(open),
+                    child: _Identity(technician: technician),
+                  ),
                 ),
-              ),
-            ),
-            Positioned(
-              left: AppSizes.screenPadding,
-              right: AppSizes.screenPadding,
-              bottom: AppSizes.xl,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SugoPill.badge(
-                    label: technician.badgeLabel,
-                    icon: technician.isVerified
-                        ? Icons.verified_rounded
-                        : Icons.person_outline_rounded,
-                    // White words need the text orange: 5.0:1, where the
-                    // bright orange gave 2.1:1.
-                    tint: AppColors.accentDark,
-                    foreground: Colors.white,
-                  ),
-                  const SizedBox(height: AppSizes.sm),
-                  Text(
-                    technician.displayName,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: -0.3,
+                // The name in the bar, once the header has folded.
+                Positioned(
+                  left: 64,
+                  right: 64,
+                  top: top,
+                  height: kToolbarHeight,
+                  child: Opacity(
+                    opacity: (1 - open * 3).clamp(0.0, 1.0),
+                    child: Center(
+                      child: Text(
+                        technician.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
-                  Text(
-                    <String>[
-                      technician.headline,
-                      if (technician.distanceLabel != null)
-                        '${technician.distanceLabel} away',
-                      if (technician.memberSinceLabel != null)
-                        'On SUGO since ${technician.memberSinceLabel}',
-                    ].join('  •  '),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _HeroImage extends StatelessWidget {
-  const _HeroImage({required this.technician});
+/// The photo in its ring, the name, one line of standing, and the badge.
+class _Identity extends StatelessWidget {
+  const _Identity({required this.technician});
 
   final Technician technician;
 
   @override
   Widget build(BuildContext context) {
-    final String? url = technician.avatarUrl;
-
-    if (url == null || url.isEmpty) return _fallback();
-
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => _fallback(),
-      loadingBuilder:
-          (BuildContext context, Widget child, ImageChunkEvent? chunk) =>
-              chunk == null ? child : _fallback(),
-    );
-  }
-
-  /// Brand gradient with oversized initials. Most seeded accounts have no
-  /// photo, so this is the common case, not a rare error state.
-  Widget _fallback() {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[AppColors.primary, AppColors.navy],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        ProfileAvatar(
+          name: technician.displayName,
+          avatarUrl: technician.avatarUrl,
+          verified: technician.isVerified,
         ),
-      ),
-      child: Center(
-        child: Text(
-          technician.initials,
-          // A graphic, not text: faint initials filling the hero when there
-          // is no photo. The one size outside the type scale, on purpose.
-          style: const TextStyle(
-            fontSize: 72,
-            fontWeight: FontWeight.w700,
-            color: Colors.white24,
-          ),
+        const SizedBox(height: AppSizes.md),
+        Text(
+          technician.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.title.copyWith(color: Colors.white),
         ),
-      ),
+        const SizedBox(height: 2),
+        Text(
+          <String>[
+            technician.headline,
+            if (technician.distanceLabel != null)
+              '${technician.distanceLabel} away',
+            if (technician.memberSinceLabel != null)
+              'On SUGO since ${technician.memberSinceLabel}',
+          ].join('  ·  '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.caption.copyWith(color: Colors.white70),
+        ),
+        const SizedBox(height: AppSizes.sm),
+        SugoPill.badge(
+          label: technician.badgeLabel,
+          icon: technician.isVerified
+              ? Icons.verified_rounded
+              : Icons.person_outline_rounded,
+          // White words need the text orange: 5.0:1, where the bright orange
+          // gave 2.1:1.
+          tint: AppColors.accentDark,
+          foreground: Colors.white,
+        ),
+      ],
     );
   }
 }
@@ -620,16 +639,17 @@ class _ContactRow extends StatelessWidget {
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            // The name is already in the header above; repeating it here
+            // read as a second, smaller profile. This row is about reaching
+            // them.
             children: <Widget>[
+              Text('Get in touch', style: AppTextStyles.titleSmall),
               Text(
-                technician.displayName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
+                unlocked
+                    ? 'Message or call ${technician.displayName.split(' ').first}.'
+                    : 'Calling opens once they accept your booking.',
+                style: AppTextStyles.caption,
               ),
-              Text(technician.headline, style: AppTextStyles.caption),
             ],
           ),
         ),
@@ -699,8 +719,13 @@ class _Tabs extends StatelessWidget {
       indicatorColor: AppColors.primary,
       indicatorSize: TabBarIndicatorSize.label,
       dividerColor: AppColors.divider,
-      labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-      unselectedLabelStyle: const TextStyle(
+      // From AppTextStyles, which names the family: a bare TextStyle here
+      // replaced the theme's and the tabs fell back to the phone's font.
+      labelStyle: AppTextStyles.label.copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+      unselectedLabelStyle: AppTextStyles.label.copyWith(
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),

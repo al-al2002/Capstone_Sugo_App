@@ -5,6 +5,10 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/sugo_card.dart';
+import '../../../core/widgets/sugo_status_badge.dart';
+import '../../../core/widgets/sugo_timeline.dart';
 import '../../../core/widgets/id_document_picker.dart';
 import '../models/identity_verification.dart';
 
@@ -433,6 +437,14 @@ class _RejectionNotice extends StatelessWidget {
 /// Two states, and the difference matters to the user: `pending` means a
 /// reviewer has not looked yet, `approved` means identity is settled and only
 /// the remaining steps stand between them and a live account.
+///
+/// ## The redesign (2026-09-29)
+///
+/// It was a tinted block with a clock and two sentences, and read like a
+/// warning. Now it says where the review stands the way the rest of the app
+/// says where a booking stands: a card with the status, when the photos went
+/// in, and three honest steps - received, checked, live - with the current
+/// one lit. The "you do not have to wait" note stays, because it is the point.
 class _SubmissionPanel extends StatelessWidget {
   const _SubmissionPanel({required this.submission});
 
@@ -441,75 +453,250 @@ class _SubmissionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool approved = submission.isApproved;
+    final Color tone = approved ? AppColors.success : AppColors.warning;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSizes.xl),
-          decoration: BoxDecoration(
-            color: approved ? AppColors.successSoft : AppColors.warningSoft,
-            borderRadius: BorderRadius.circular(AppSizes.panelRadius),
-          ),
+        SugoCard(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Icon(
-                approved ? Icons.verified_rounded : Icons.schedule_rounded,
-                size: 34,
-                color: approved ? AppColors.success : AppColors.warning,
+              Row(
+                children: <Widget>[
+                  _ReviewBadge(approved: approved),
+                  const SizedBox(width: AppSizes.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        SugoStatusBadge(
+                          label: approved ? 'Approved' : 'Pending review',
+                          icon: approved
+                              ? Icons.verified_rounded
+                              : Icons.schedule_rounded,
+                          tone: approved ? SugoTone.success : SugoTone.warning,
+                          dense: true,
+                        ),
+                        const SizedBox(height: AppSizes.xs),
+                        Text(
+                          approved
+                              ? 'Your ID has been approved'
+                              : 'Your ID is being reviewed',
+                          style: AppTextStyles.titleSmall,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Sent · ${Fmt.relative(submission.submittedAt)}',
+                          style: AppTextStyles.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSizes.md),
-              Text(
-                approved
-                    ? 'Your ID has been approved'
-                    : 'Your ID is being reviewed',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: AppSizes.sm),
-              Text(
-                approved
-                    ? 'Identity confirmed. Finish the remaining steps and your '
-                          'account goes live straight away.'
-                    : 'A member of the SUGO team is checking your documents. '
-                          'This usually takes less than a day.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.subtitle,
+              const SizedBox(height: AppSizes.lg),
+              Divider(height: 1, color: tone.withValues(alpha: 0.15)),
+              const SizedBox(height: AppSizes.lg),
+              SugoTimeline(
+                compact: true,
+                steps: <SugoTimelineStep>[
+                  const SugoTimelineStep(
+                    title: 'Photos received',
+                    subtitle: 'Your ID and selfie are safely with us.',
+                    icon: Icons.photo_library_rounded,
+                    state: SugoStepState.done,
+                  ),
+                  SugoTimelineStep(
+                    title: approved ? 'ID checked' : 'ID check',
+                    subtitle: approved
+                        ? 'The SUGO team confirmed your identity.'
+                        : 'The SUGO team is checking it. This usually takes '
+                              'less than a day.',
+                    icon: Icons.fact_check_rounded,
+                    state: approved
+                        ? SugoStepState.done
+                        : SugoStepState.current,
+                  ),
+                  SugoTimelineStep(
+                    title: 'Account goes live',
+                    subtitle: approved
+                        ? 'As soon as you finish the remaining steps.'
+                        : 'Once the review and the remaining steps are done.',
+                    icon: Icons.rocket_launch_rounded,
+                    state: approved
+                        ? SugoStepState.current
+                        : SugoStepState.upcoming,
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: AppSizes.lg),
+        const SizedBox(height: AppSizes.md),
 
         // The point of the whole panel: review runs in parallel, so the flow
         // is not blocked. The Continue button below is live - hiding it while
         // making this promise is what stranded people on this screen.
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Icon(
-              Icons.arrow_forward_rounded,
-              size: 15,
-              color: AppColors.primary,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                approved
-                    ? 'Tap Continue to carry on with the rest of your '
-                          'registration.'
-                    : 'You do not have to wait. Tap Continue and carry on with '
-                          'the remaining steps while we review.',
-                style: AppTextStyles.caption,
+        Container(
+          padding: const EdgeInsets.all(AppSizes.md),
+          decoration: BoxDecoration(
+            color: AppColors.primarySofter,
+            borderRadius: BorderRadius.circular(AppSizes.tileRadius),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Icon(
+                Icons.arrow_forward_rounded,
+                size: 18,
+                color: AppColors.primary,
               ),
-            ),
-          ],
+              const SizedBox(width: AppSizes.sm),
+              Expanded(
+                child: Text(
+                  approved
+                      ? 'Tap Continue to carry on with the rest of your '
+                            'registration.'
+                      : 'You do not have to wait. Tap Continue and carry on '
+                            'with the remaining steps while we review.',
+                  style: AppTextStyles.bodyStrong.copyWith(
+                    color: AppColors.primary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+}
+
+/// The ID card, with a line sweeping over it while it is checked, or a tick
+/// once it has been.
+///
+/// The sweep runs three passes and stops - it marks the moment of "we are
+/// looking at it", and a loop that never ends would read as a stuck spinner
+/// on a wait that can last hours. Still under reduced motion.
+class _ReviewBadge extends StatefulWidget {
+  const _ReviewBadge({required this.approved});
+
+  final bool approved;
+
+  @override
+  State<_ReviewBadge> createState() => _ReviewBadgeState();
+}
+
+class _ReviewBadgeState extends State<_ReviewBadge>
+    with SingleTickerProviderStateMixin {
+  static const int _passes = 3;
+  static const double _size = 64;
+
+  // Assigned in initState, never lazily - see the `late final` trap in
+  // docs/design-system.md.
+  late final AnimationController _sweep;
+
+  @override
+  void initState() {
+    super.initState();
+    _sweep = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400 * _passes),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.approved && !AppMotion.reduced(context) && !_sweep.isCompleted) {
+      _sweep.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sweep.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool approved = widget.approved;
+    final Color tone = approved ? AppColors.success : AppColors.warning;
+    final Color wash = approved ? AppColors.successSoft : AppColors.warningSoft;
+
+    return SizedBox(
+      width: _size,
+      height: _size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Container(
+            width: _size,
+            height: _size,
+            decoration: BoxDecoration(
+              color: wash,
+              borderRadius: BorderRadius.circular(AppSizes.radius),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                Icon(Icons.badge_rounded, size: 32, color: tone),
+                if (!approved)
+                  AnimatedBuilder(
+                    animation: _sweep,
+                    builder: (BuildContext context, Widget? _) {
+                      if (_sweep.value == 0 || _sweep.isCompleted) {
+                        return const SizedBox.shrink();
+                      }
+                      // A triangle wave: down and back, [_passes] times.
+                      final double pass = (_sweep.value * _passes) % 1;
+                      final double y = pass < 0.5 ? pass * 2 : (1 - pass) * 2;
+                      return Positioned(
+                        left: 8,
+                        right: 8,
+                        top: 10 + y * (_size - 22),
+                        child: Container(
+                          height: 2,
+                          decoration: BoxDecoration(
+                            color: tone,
+                            borderRadius: BorderRadius.circular(2),
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: tone.withValues(alpha: 0.5),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+          if (approved)
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: AppColors.surface,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  size: 22,
+                  color: AppColors.success,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
