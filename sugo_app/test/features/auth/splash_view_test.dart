@@ -4,8 +4,7 @@ import 'package:sugo_app/core/theme/app_theme.dart';
 import 'package:sugo_app/features/auth/presentation/screens/splash_view.dart';
 import 'package:sugo_app/features/auth/presentation/widgets/splash_loader.dart';
 
-/// The 2026-09-29 splash: the poster, a loading animation, then "Get started"
-/// for someone signed out - and straight through for someone signed in.
+/// The splash: the poster and loading animation, then automatic handover.
 void main() {
   setUp(SplashView.debugReset);
 
@@ -38,7 +37,7 @@ void main() {
     }
   }
 
-  testWidgets('signed out: the loader, then "Get started", which hands over', (
+  testWidgets('signed out: the loader, then automatic handover', (
     WidgetTester tester,
   ) async {
     int finished = 0;
@@ -50,14 +49,10 @@ void main() {
     expect(find.text('Get started'), findsNothing);
 
     await pastTheFloor(tester);
-    expect(find.byType(SplashLoader), findsNothing);
-    expect(find.text('Get started'), findsOneWidget);
-    expect(finished, 0, reason: 'a signed-out user decides when to go on');
-
-    await tester.tap(find.text('Get started'));
     await tester.pump();
     expect(finished, 1);
     expect(SplashView.hasPlayed, isTrue);
+    expect(find.text('Get started'), findsNothing);
   });
 
   testWidgets('the loader stays while the session is still restoring', (
@@ -72,9 +67,7 @@ void main() {
     expect(find.text('Get started'), findsNothing);
   });
 
-  testWidgets('signed in: straight through, no button to press', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('signed in: automatic handover', (WidgetTester tester) async {
     int finished = 0;
     await tester.pumpWidget(
       host(ready: true, signedIn: true, onFinished: () => finished++),
@@ -101,7 +94,12 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      host(ready: false, signedIn: false, onFinished: () {}, reduceMotion: true),
+      host(
+        ready: false,
+        signedIn: false,
+        onFinished: () {},
+        reduceMotion: true,
+      ),
     );
     await tester.pump();
     // The only thing still ticking is the 1.5s floor timer, not an

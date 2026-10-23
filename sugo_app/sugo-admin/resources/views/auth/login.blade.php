@@ -99,18 +99,29 @@
         </div>
 
         {{-- Form --}}
-        <div class="flex w-full items-center justify-center p-6 lg:w-1/2">
-            <div class="w-full max-w-sm">
-                <div class="mb-8 lg:hidden">
-                    <div class="flex items-center gap-2">
+        <div class="relative flex w-full items-center justify-center overflow-hidden p-5 sm:p-8 lg:w-1/2">
+            <div class="absolute -right-24 top-1/4 h-72 w-72 rounded-full bg-brand-soft/70 blur-3xl"></div>
+            <div class="absolute -bottom-24 left-1/4 h-64 w-64 rounded-full bg-accent-soft/60 blur-3xl"></div>
+
+            <div class="relative w-full max-w-md rounded-3xl border border-line bg-white p-6 shadow-[0_24px_70px_rgba(6,43,92,0.10)] sm:p-9">
+                <div class="mb-8 flex items-center justify-between">
+                    <div class="flex items-center gap-3 lg:hidden">
                         <img src="{{ asset('images/brand-emblem.png') }}" alt=""
-                             class="h-9 w-9 rounded-lg object-cover">
-                        <span class="text-lg font-extrabold text-navy">SUGO</span>
+                             class="h-10 w-10 rounded-xl object-cover ring-1 ring-brand/10">
+                        <div>
+                            <div class="text-base font-extrabold leading-none text-navy">SUGO</div>
+                            <div class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Admin console</div>
+                        </div>
+                    </div>
+                    <div class="ml-auto flex items-center gap-1.5 rounded-full bg-brand-softer px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-brand">
+                        <span class="h-1.5 w-1.5 rounded-full bg-ok"></span>
+                        Secure access
                     </div>
                 </div>
 
+                <p class="mb-2 text-xs font-extrabold uppercase tracking-[0.18em] text-brand">Welcome back</p>
                 <h1 class="text-2xl font-extrabold text-navy">Sign in</h1>
-                <p class="mt-1 text-sm text-ink-muted">Administrator accounts only.</p>
+                <p class="mt-2 text-sm leading-relaxed text-ink-muted">Access verification, operations, and support tools for the SUGO team.</p>
 
                 @if (session('error'))
                     <div class="mt-5 rounded-xl border border-bad/25 bg-bad-soft px-4 py-3">
@@ -131,7 +142,7 @@
                         <label for="email" class="mb-1.5 block text-xs font-bold text-ink">Email</label>
                         <input id="email" name="email" type="email" required autofocus
                             value="{{ old('email') }}" autocomplete="username"
-                            class="w-full rounded-xl border border-line bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                            class="w-full rounded-xl border border-line bg-canvas px-4 py-3 text-sm outline-none transition placeholder:text-ink-muted/60 focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
                             placeholder="admin@sugo.ph">
                         @error('email')
                             <p class="mt-1.5 text-xs font-semibold text-bad">{{ $message }}</p>
@@ -140,26 +151,59 @@
 
                     <div>
                         <label for="password" class="mb-1.5 block text-xs font-bold text-ink">Password</label>
-                        <input id="password" name="password" type="password" required autocomplete="current-password"
-                            class="w-full rounded-xl border border-line bg-white px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+                        <div class="relative">
+                            <input id="password" name="password" type="password" required autocomplete="current-password"
+                            class="w-full rounded-xl border border-line bg-canvas px-4 py-3 pr-12 text-sm outline-none transition placeholder:text-ink-muted/60 focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
                             placeholder="••••••••">
+                            <button type="button" id="toggle-password" aria-label="Show password"
+                                class="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-ink-muted transition hover:text-brand focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand/20">
+                                <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6S2.25 12 2.25 12Z" />
+                                    <circle cx="12" cy="12" r="2.5" />
+                                </svg>
+                                <svg id="eye-closed" xmlns="http://www.w3.org/2000/svg" class="hidden h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m3 3 18 18M10.6 6.2A10.7 10.7 0 0 1 12 6c6.25 0 9.75 6 9.75 6a17.7 17.7 0 0 1-3.1 3.8M6.2 6.2C3.7 7.8 2.25 12 2.25 12a17.7 17.7 0 0 0 5.5 4.9A10.6 10.6 0 0 0 12 18c1.2 0 2.3-.2 3.3-.6" />
+                                </svg>
+                            </button>
+                        </div>
                         @error('password')
                             <p class="mt-1.5 text-xs font-semibold text-bad">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <button type="submit" data-loading-text="Signing in…"
-                        class="w-full rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white transition hover:bg-brand-dark focus:outline-none focus:ring-2 focus:ring-brand/40">
+                        class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:-translate-y-0.5 hover:bg-brand-dark hover:shadow-brand/30 focus:outline-none focus:ring-2 focus:ring-brand/40 active:translate-y-0">
                         Sign in
                     </button>
                 </form>
 
+                <div class="mt-8 flex items-center gap-3 border-t border-line pt-5 text-xs leading-relaxed text-ink-muted">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-ok" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4" />
+                    </svg>
+                    <span>Protected workspace for authorized SUGO administrators.</span>
+                </div>
 
             </div>
         </div>
     </div>
 
     @include('partials.loading')
+    <script>
+        const password = document.getElementById('password');
+        const togglePassword = document.getElementById('toggle-password');
+        const eyeOpen = document.getElementById('eye-open');
+        const eyeClosed = document.getElementById('eye-closed');
+
+        togglePassword?.addEventListener('click', () => {
+            const isHidden = password.type === 'password';
+            password.type = isHidden ? 'text' : 'password';
+            eyeOpen.classList.toggle('hidden', isHidden);
+            eyeClosed.classList.toggle('hidden', !isHidden);
+            togglePassword.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        });
+    </script>
 </body>
 
 </html>

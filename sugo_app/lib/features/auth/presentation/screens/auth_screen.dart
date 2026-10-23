@@ -283,6 +283,8 @@ class _AuthViewState extends State<_AuthView>
                   style: AppTextStyles.subtitle,
                 ),
                 const SizedBox(height: AppSizes.xl),
+                _AuthTrustNote(login: login),
+                const SizedBox(height: AppSizes.xl),
                 if (login)
                   LoginForm(
                     key: const ValueKey<String>('login-form'),
@@ -301,14 +303,63 @@ class _AuthViewState extends State<_AuthView>
                       : AppStrings.loginCta,
                   onAction: isBusy
                       ? null
-                      : () => _switchTo(
-                          login ? AuthTab.register : AuthTab.login,
-                        ),
+                      : () =>
+                            _switchTo(login ? AuthTab.register : AuthTab.login),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AuthTrustNote extends StatelessWidget {
+  const _AuthTrustNote({required this.login});
+
+  final bool login;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.md,
+        vertical: AppSizes.sm + 2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primarySofter,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.primarySoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            decoration: const BoxDecoration(
+              color: AppColors.secondarySoft,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.verified_user_outlined,
+              color: AppColors.secondaryDark,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppSizes.sm + 2),
+          Expanded(
+            child: Text(
+              login
+                  ? 'Your trusted home-service marketplace.'
+                  : 'Join a safer way to get things fixed at home.',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

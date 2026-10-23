@@ -6,14 +6,10 @@ import 'package:flutter/services.dart';
 import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
-import '../../../../core/theme/app_elevation.dart';
-import '../../../../core/theme/app_motion.dart';
-import '../../../../core/theme/app_text_styles.dart';
 import '../widgets/splash_artwork.dart';
 import '../widgets/splash_loader.dart';
 
-/// The launch screen: the SUGO poster, a loading animation, then "Get
-/// started".
+/// The launch screen: the SUGO poster, a loading animation, then the app.
 ///
 /// ## What happens, in order (2026-09-29)
 ///
@@ -21,13 +17,8 @@ import '../widgets/splash_loader.dart';
 ///    [SplashLoader].
 /// 2. The loader stays until **both**: Supabase has restored (or rejected) the
 ///    saved session - [ready] - and [minimumLoading] has passed.
-/// 3. Then it depends on who is holding the phone:
-///    * **Signed in**: nothing to press. The splash hands over on its own and
-///      the gate opens their dashboard. Making someone who is already in tap
-///      "Get started" on every launch would be a toll, not a welcome.
-///    * **Signed out**: the loader gives way to a real "Get started" button,
-///      in the place the poster's drawn one used to be. Pressing it opens
-///      sign-in.
+/// 3. The splash hands over automatically. Signed-in users continue to their
+///    dashboard, while signed-out users continue to sign-in.
 ///
 /// ## Why there is a minimum, and what it costs
 ///
@@ -53,8 +44,7 @@ class SplashView extends StatefulWidget {
     this.signedIn = false,
   });
 
-  /// Called when the splash is done: on "Get started", or on its own for a
-  /// signed-in user once loading has finished.
+  /// Called when the splash is done once loading has finished.
   ///
   /// Null means "nobody is waiting for this" - the splash then shows the
   /// loader for as long as it is on screen, and whatever put it there decides
@@ -92,9 +82,6 @@ class _SplashViewState extends State<SplashView> {
 
   bool get _loading => !(widget.ready && _floorPassed);
 
-  bool get _offerStart =>
-      !_loading && !widget.signedIn && widget.onFinished != null;
-
   @override
   void initState() {
     super.initState();
@@ -124,9 +111,9 @@ class _SplashViewState extends State<SplashView> {
     _maybeHandOver();
   }
 
-  /// A signed-in user is let straight through once loading has finished.
+  /// Continue to the appropriate destination once loading has finished.
   void _maybeHandOver() {
-    if (_loading || !widget.signedIn || widget.onFinished == null) return;
+    if (_loading || widget.onFinished == null) return;
     // After this frame, never during a build.
     WidgetsBinding.instance.addPostFrameCallback((_) => _finish());
   }
@@ -146,8 +133,6 @@ class _SplashViewState extends State<SplashView> {
 
   @override
   Widget build(BuildContext context) {
-    final bool still = AppMotion.reduced(context);
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // The poster is dark blue edge to edge, so the status and navigation
       // icons have to be light to be visible at all.
@@ -172,35 +157,11 @@ class _SplashViewState extends State<SplashView> {
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 420),
                       child: SizedBox(
-                        // One height for both, so the button replaces the
-                        // loader without the poster above them moving.
+                        // Keep the loader anchored while the session restores.
                         height: 64,
-                        child: AnimatedSwitcher(
-                          duration: still ? Duration.zero : AppMotion.slow,
-                          switchInCurve: AppMotion.emphasized,
-                          switchOutCurve: AppMotion.exit,
-                          transitionBuilder:
-                              (Widget child, Animation<double> animation) {
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, 0.25),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
-                                  ),
-                                );
-                              },
-                          child: _offerStart
-                              ? _GetStartedButton(
-                                  key: const ValueKey<String>('start'),
-                                  onPressed: _finish,
-                                )
-                              : const Center(
-                                  key: ValueKey<String>('loading'),
-                                  child: SplashLoader(),
-                                ),
+                        child: const Center(
+                          key: ValueKey<String>('loading'),
+                          child: SplashLoader(),
                         ),
                       ),
                     ),
@@ -209,54 +170,6 @@ class _SplashViewState extends State<SplashView> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// "Get started", where the poster's drawn button used to be.
-///
-/// Pill-shaped, full width and cyan, like the one in the artwork - but with
-/// navy words where the artwork had white. White on that cyan is about 2:1
-/// and unreadable in sunlight; navy on it is 7.8:1. A darker blue fill was
-/// tried first and all but vanished into the poster's own blue. It floats over
-/// the poster, so it is the one control on the screen with a shadow.
-class _GetStartedButton extends StatelessWidget {
-  const _GetStartedButton({super.key, required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-          boxShadow: AppElevation.lg,
-        ),
-        child: SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton(
-            onPressed: onPressed,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.cyan,
-              foregroundColor: AppColors.navy,
-              shape: const StadiumBorder(),
-              // Names the family: a button's textStyle replaces the inherited
-              // one rather than merging with it.
-              textStyle: AppTextStyles.button.copyWith(fontSize: 16),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text('Get started'),
-                SizedBox(width: AppSizes.sm),
-                Icon(Icons.arrow_forward_rounded, size: 20),
-              ],
-            ),
-          ),
         ),
       ),
     );
