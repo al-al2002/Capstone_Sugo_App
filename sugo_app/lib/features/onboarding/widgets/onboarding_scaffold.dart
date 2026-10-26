@@ -254,7 +254,7 @@ class _ErrorBanner extends StatelessWidget {
 /// the current one lit, with the notification promise where it belongs, on
 /// the last step. The whole page scrolls, so a small phone or large text
 /// never pushes "Back to login" off the screen.
-class PendingReviewScreen extends StatelessWidget {
+class PendingReviewScreen extends StatefulWidget {
   const PendingReviewScreen({
     super.key,
     required this.status,
@@ -273,16 +273,49 @@ class PendingReviewScreen extends StatelessWidget {
   final String? rejectionReason;
 
   @override
+  State<PendingReviewScreen> createState() => _PendingReviewScreenState();
+}
+
+class _PendingReviewScreenState extends State<PendingReviewScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _exit = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 360),
+  );
+  bool _isLeaving = false;
+
+  Future<void> _backToLogin() async {
+    if (_isLeaving) return;
+    setState(() => _isLeaving = true);
+    final Future<void> signOut = widget.onSignOut != null
+        ? Future<void>.sync(widget.onSignOut!)
+        : context.read<AuthController>().signOut();
+    await _exit.forward();
+    await signOut;
+  }
+
+  @override
+  void dispose() {
+    _exit.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final bool rejected = status == RegistrationStatus.rejected;
+    final bool rejected = widget.status == RegistrationStatus.rejected;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints box) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSizes.screenPadding),
+            final Widget content = SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSizes.screenPadding,
+                AppSizes.screenPadding,
+                AppSizes.screenPadding,
+                AppSizes.screenPadding,
+              ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   minHeight: box.maxHeight - AppSizes.screenPadding * 2,
@@ -291,7 +324,7 @@ class PendingReviewScreen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Center(child: _StatusHalo(status: status)),
+                    Center(child: _StatusHalo(status: widget.status)),
                     const SizedBox(height: AppSizes.xl),
                     Text(
                       rejected
@@ -302,16 +335,16 @@ class PendingReviewScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSizes.sm),
                     Text(
-                      rejectionReason ?? status.blurb,
+                      widget.rejectionReason ?? widget.status.blurb,
                       textAlign: TextAlign.center,
                       style: AppTextStyles.subtitle,
                     ),
                     const SizedBox(height: AppSizes.xl),
 
-                    if (rejected && onRetake != null)
+                    if (rejected && widget.onRetake != null)
                       PrimaryButton(
                         label: 'Retake my photos',
-                        onPressed: onRetake,
+                        onPressed: _isLeaving ? null : widget.onRetake,
                       )
                     else if (!rejected)
                       const _WhatHappensNext(),
@@ -320,11 +353,33 @@ class PendingReviewScreen extends StatelessWidget {
                     SizedBox(
                       height: AppSizes.buttonHeight,
                       child: OutlinedButton.icon(
-                        onPressed:
-                            onSignOut ??
-                            () => context.read<AuthController>().signOut(),
-                        icon: const Icon(Icons.logout_rounded, size: 18),
-                        label: const Text('Back to login'),
+                        onPressed: _isLeaving ? null : _backToLogin,
+                        icon: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: _isLeaving
+                              ? const SizedBox(
+                                  key: ValueKey<String>('leaving'),
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.arrow_back_rounded,
+                                  key: ValueKey<String>('back'),
+                                  size: 18,
+                                ),
+                        ),
+                        label: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: Text(
+                            _isLeaving
+                                ? 'Returning to login...'
+                                : 'Back to login',
+                            key: ValueKey<bool>(_isLeaving),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSizes.sm),
@@ -341,6 +396,18 @@ class PendingReviewScreen extends StatelessWidget {
                   ],
                 ),
               ),
+            );
+
+            return AnimatedBuilder(
+              animation: _exit,
+              child: content,
+              builder: (BuildContext context, Widget? child) {
+                final double scale = 1 - (_exit.value * 0.035);
+                return Opacity(
+                  opacity: 1 - _exit.value,
+                  child: Transform.scale(scale: scale, child: child),
+                );
+              },
             );
           },
         ),
