@@ -30,6 +30,7 @@ class RegisterController extends ChangeNotifier {
     required String email,
     required String password,
     required String phone,
+    String? role,
   }) async {
     if (_isSubmitting) return null;
     _isSubmitting = true;
@@ -41,6 +42,7 @@ class RegisterController extends ChangeNotifier {
         password: password,
         fullName: fullName,
         phone: phone,
+        role: role,
       );
     } on AuthFailure catch (failure) {
       _errorMessage = failure.message;

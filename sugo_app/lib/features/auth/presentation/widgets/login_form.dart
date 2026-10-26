@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/routing/app_routes.dart';
+import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/utils/ui_feedback.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/widgets/app_text_field.dart';
@@ -29,6 +31,7 @@ class _LoginFormState extends State<LoginForm> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  bool _rememberMe = true;
 
   @override
   void dispose() {
@@ -103,16 +106,43 @@ class _LoginFormState extends State<LoginForm> {
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: AppSizes.xl),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: controller.isBusy
-                    ? null
-                    : () => Navigator.of(
-                        context,
-                      ).pushNamed(AppRoutes.forgotPassword),
-                child: const Text(AppStrings.forgotPassword),
-              ),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: Checkbox(
+                    value: _rememberMe,
+                    onChanged: controller.isBusy
+                        ? null
+                        : (bool? value) =>
+                              setState(() => _rememberMe = value ?? false),
+                    activeColor: AppColors.secondary,
+                  ),
+                ),
+                const SizedBox(width: AppSizes.sm),
+                Expanded(
+                  child: Text(
+                    'Remember me',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: controller.isBusy
+                          ? null
+                          : () => Navigator.of(
+                              context,
+                            ).pushNamed(AppRoutes.forgotPassword),
+                      child: const Text(AppStrings.forgotPassword),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           PrimaryButton(

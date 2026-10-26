@@ -38,6 +38,7 @@ abstract class AuthRepository {
     /// Philippine mobile number as typed; the implementation normalises it to
     /// E.164 before storing it in user metadata.
     required String phone,
+    String? role,
   });
 
   // Google and Facebook sign-in were removed on 2026-09-28 at the client's

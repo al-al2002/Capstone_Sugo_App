@@ -44,6 +44,7 @@ class FakeAuthRepository implements AuthRepository {
     required String password,
     required String fullName,
     String? phone,
+    String? role,
   }) async {
     calls.add('signUpWithEmail:$email:$fullName:$phone');
     final AuthFailure? error = failure;

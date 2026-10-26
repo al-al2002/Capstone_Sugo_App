@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/session/session_state.dart';
+import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/utils/ui_feedback.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/widgets/app_text_field.dart';
@@ -13,6 +16,7 @@ import '../../data/repositories/auth_repository.dart';
 import '../controllers/register_controller.dart';
 import 'auth_tab.dart';
 import 'password_requirements.dart';
+import 'terms_agreement.dart';
 
 /// Account creation: full name, email and password.
 class RegisterForm extends StatefulWidget {
@@ -31,6 +35,7 @@ class _RegisterFormState extends State<RegisterForm> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
+  UserRole _role = UserRole.client;
 
   @override
   void dispose() {
@@ -52,6 +57,7 @@ class _RegisterFormState extends State<RegisterForm> {
       email: _emailController.text,
       phone: _phoneController.text,
       password: _passwordController.text,
+      role: _role.wire,
     );
 
     if (!mounted) return;
@@ -176,12 +182,141 @@ class _RegisterFormState extends State<RegisterForm> {
               onSubmitted: (_) => _submit(),
             ),
           ),
+          _RoleChoice(
+            role: _role,
+            enabled: !controller.isSubmitting,
+            onChanged: (UserRole role) => setState(() => _role = role),
+          ),
+          const SizedBox(height: AppSizes.lg),
+          TermsAgreement(
+            value: controller.acceptedTerms,
+            onChanged: controller.setAcceptedTerms,
+          ),
+          const SizedBox(height: AppSizes.lg),
           PrimaryButton(
             label: AppStrings.registerCta,
             isLoading: controller.isSubmitting,
             onPressed: controller.isSubmitting ? null : _submit,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RoleChoice extends StatelessWidget {
+  const _RoleChoice({
+    required this.role,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final UserRole role;
+  final bool enabled;
+  final ValueChanged<UserRole> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('I want to register as', style: AppTextStyles.label),
+        const SizedBox(height: AppSizes.sm),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _RoleTile(
+                title: 'Client',
+                description: 'Book services and get help',
+                icon: Icons.person_rounded,
+                selected: role == UserRole.client,
+                enabled: enabled,
+                onTap: () => onChanged(UserRole.client),
+              ),
+            ),
+            const SizedBox(width: AppSizes.sm),
+            Expanded(
+              child: _RoleTile(
+                title: 'Service Provider',
+                description: 'Offer your skills and earn',
+                icon: Icons.engineering_rounded,
+                selected: role == UserRole.technician,
+                enabled: enabled,
+                onTap: () => onChanged(UserRole.technician),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _RoleTile extends StatelessWidget {
+  const _RoleTile({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color border = selected
+        ? AppColors.secondary
+        : AppColors.border;
+    final Color foreground = selected
+        ? AppColors.secondaryDark
+        : AppColors.textSecondary;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: title,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 82),
+          padding: const EdgeInsets.all(AppSizes.sm),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.secondarySoft : AppColors.fieldFill,
+            border: Border.all(
+              color: border,
+              width: selected ? 1.5 : 1,
+            ),
+            borderRadius: BorderRadius.circular(AppSizes.radius),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(icon, size: 22, color: foreground),
+              const SizedBox(height: AppSizes.xs),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.label.copyWith(color: foreground),
+              ),
+              Text(
+                description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.micro,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

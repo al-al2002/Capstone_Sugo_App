@@ -60,6 +60,7 @@ class SupabaseAuthRepository implements AuthRepository {
     required String password,
     required String fullName,
     required String phone,
+    String? role,
   }) async {
     try {
       final AuthResponse response = await _auth.signUp(
@@ -70,6 +71,7 @@ class SupabaseAuthRepository implements AuthRepository {
         data: <String, dynamic>{
           'full_name': fullName.trim(),
           'phone': Validators.normalizePhone(phone),
+          if (role != null) 'role': role,
         },
         emailRedirectTo: AppEnv.authRedirectUrl,
       );

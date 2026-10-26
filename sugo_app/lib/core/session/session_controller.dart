@@ -152,9 +152,7 @@ class SessionController extends ChangeNotifier {
         // would be a wasted round trip on every launch.
         technicianRow = await _client
             .from('technicians')
-            .select(
-              'id, is_verified, id_document_url, specialization',
-            )
+            .select('id, is_verified, id_document_url, specialization')
             .eq('id', user.id)
             .maybeSingle();
       }
@@ -169,7 +167,15 @@ class SessionController extends ChangeNotifier {
         phone: profileRow['phone'] as String?,
         hasTechnicianRow: technicianRow != null,
         isVerified: technicianRow?['is_verified'] as bool? ?? false,
-        roleChosenAt: _parseDate(profileRow['role_chosen_at']),
+        // A role chosen on the registration form is already authoritative:
+        // the signup trigger copies it from user metadata, while the
+        // onboarding completion timestamp is written later. Treat it as
+        // chosen here so the role screen is not shown a second time.
+        roleChosenAt:
+            _parseDate(profileRow['role_chosen_at']) ??
+            (user.userMetadata?['role'] is String
+                ? DateTime.now().toUtc()
+                : null),
         onboardingCompletedAt: _parseDate(
           profileRow['onboarding_completed_at'],
         ),
