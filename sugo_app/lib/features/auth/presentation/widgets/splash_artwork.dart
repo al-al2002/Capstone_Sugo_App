@@ -39,13 +39,19 @@ class SplashArtwork extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: <Color>[AppColors.primary, AppColors.navyLift],
+          colors: <Color>[
+            Color(0xFF0A3F8C),
+            AppColors.primary,
+            Color(0xFF1A64D6),
+          ],
+          stops: <double>[0.0, 0.45, 1.0],
         ),
       ),
       child: SizedBox.expand(
         child: Image.asset(
-          AppAssets.splash,
+          AppAssets.servicePartnerSplash,
           fit: BoxFit.cover,
+          alignment: Alignment.center,
           excludeFromSemantics: true,
           errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
               const SizedBox.shrink(),
@@ -60,11 +66,11 @@ class SplashArtwork extends StatelessWidget {
                 final bool shown = frame != null;
                 return AnimatedOpacity(
                   opacity: shown ? 1 : 0,
-                  duration: AppMotion.page,
+                  duration: const Duration(milliseconds: 1000),
                   curve: AppMotion.standard,
                   child: AnimatedScale(
-                    scale: shown ? 1 : 1.03,
-                    duration: AppMotion.page * 2,
+                    scale: shown ? 1 : 1.05,
+                    duration: const Duration(milliseconds: 1200),
                     curve: AppMotion.emphasized,
                     child: child,
                   ),

@@ -189,6 +189,102 @@ class _TechnicianDetailScreenState extends State<TechnicianDetailScreen>
     }
   }
 
+  Future<void> _confirmBooking() async {
+    final MatchResult? match = widget.match;
+    final String weather =
+        match?.breakdown.context.weatherLabel ?? 'Not available';
+    final String traffic =
+        match?.breakdown.context.trafficLabel ?? 'Not available';
+
+    final bool? proceed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(
+            AppSizes.xl,
+            AppSizes.xl,
+            AppSizes.xl,
+            AppSizes.sm,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(
+            AppSizes.xl,
+            0,
+            AppSizes.xl,
+            0,
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(
+            AppSizes.lg,
+            0,
+            AppSizes.lg,
+            AppSizes.lg,
+          ),
+          title: Text(
+            'Before you book',
+            style: AppTextStyles.title.copyWith(color: AppColors.textPrimary),
+          ),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Here is the live context for this service request.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSizes.lg),
+                _ContextStatusRow(
+                  icon: Icons.wb_sunny_outlined,
+                  label: 'Weather',
+                  value: weather,
+                ),
+                const SizedBox(height: AppSizes.sm),
+                _ContextStatusRow(
+                  icon: Icons.traffic_rounded,
+                  label: 'Traffic',
+                  value: traffic,
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+              ),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.lg,
+                  vertical: AppSizes.sm,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Proceed to book technician'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (proceed != true || !mounted) return;
+    _startBooking();
+  }
+
   void _startBooking() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -308,7 +404,7 @@ class _TechnicianDetailScreenState extends State<TechnicianDetailScreen>
       ),
       bottomNavigationBar: _BookingBar(
         technician: technician,
-        onBook: _startBooking,
+        onBook: _confirmBooking,
       ),
     );
   }
@@ -507,6 +603,58 @@ class _CircleButton extends StatelessWidget {
           height: 38,
           child: Icon(icon, size: 19, color: tint ?? AppColors.textPrimary),
         ),
+      ),
+    );
+  }
+}
+
+class _ContextStatusRow extends StatelessWidget {
+  const _ContextStatusRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.md),
+      decoration: BoxDecoration(
+        color: AppColors.fieldFill,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: AppSizes.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: AppTextStyles.micro.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

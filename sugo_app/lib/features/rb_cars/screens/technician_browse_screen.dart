@@ -63,6 +63,58 @@ class TechnicianBrowseScreen extends StatefulWidget {
   State<TechnicianBrowseScreen> createState() => _TechnicianBrowseScreenState();
 }
 
+class _ContextStatusRow extends StatelessWidget {
+  const _ContextStatusRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.md),
+      decoration: BoxDecoration(
+        color: AppColors.fieldFill,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: AppSizes.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: AppTextStyles.micro.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TechnicianBrowseScreenState extends State<TechnicianBrowseScreen> {
   late final TechnicianDirectoryService _directory =
       widget.directory ?? TechnicianDirectoryService();
@@ -150,7 +202,96 @@ class _TechnicianBrowseScreenState extends State<TechnicianBrowseScreen> {
     );
   }
 
-  void _book(Technician t) {
+  Future<void> _book(Technician t) async {
+    final bool? proceed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(
+            AppSizes.xl,
+            AppSizes.xl,
+            AppSizes.xl,
+            AppSizes.sm,
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(
+            AppSizes.xl,
+            0,
+            AppSizes.xl,
+            0,
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(
+            AppSizes.lg,
+            0,
+            AppSizes.lg,
+            AppSizes.lg,
+          ),
+          title: Text(
+            'Before you book',
+            style: AppTextStyles.title.copyWith(color: AppColors.textPrimary),
+          ),
+          content: const SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Here is the live context for this service request.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                SizedBox(height: AppSizes.lg),
+                _ContextStatusRow(
+                  icon: Icons.wb_sunny_outlined,
+                  label: 'Weather',
+                  value: 'Not available',
+                ),
+                SizedBox(height: AppSizes.sm),
+                _ContextStatusRow(
+                  icon: Icons.traffic_rounded,
+                  label: 'Traffic',
+                  value: 'Not available',
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+              ),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.lg,
+                  vertical: AppSizes.sm,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Proceed to book technician'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (proceed != true || !mounted) return;
+
+    if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => JobPostingScreen(preselectedTechnicianId: t.id),
@@ -203,19 +344,22 @@ class _TechnicianBrowseScreenState extends State<TechnicianBrowseScreen> {
       return true;
     }).toList();
 
-    filtered.sort((Technician a, Technician b) => switch (_sort) {
-      TechnicianSort.recommended => b.rating.compareTo(a.rating) != 0
-          ? b.rating.compareTo(a.rating)
-          : b.totalJobs.compareTo(a.totalJobs),
-      TechnicianSort.nearest =>
-        (a.distanceKm ?? double.infinity).compareTo(
+    filtered.sort(
+      (Technician a, Technician b) => switch (_sort) {
+        TechnicianSort.recommended =>
+          b.rating.compareTo(a.rating) != 0
+              ? b.rating.compareTo(a.rating)
+              : b.totalJobs.compareTo(a.totalJobs),
+        TechnicianSort.nearest => (a.distanceKm ?? double.infinity).compareTo(
           b.distanceKm ?? double.infinity,
         ),
-      TechnicianSort.rating => b.rating.compareTo(a.rating),
-      TechnicianSort.jobs => b.totalJobs.compareTo(a.totalJobs),
-      TechnicianSort.price =>
-        a.indicativeHourlyFee.compareTo(b.indicativeHourlyFee),
-    });
+        TechnicianSort.rating => b.rating.compareTo(a.rating),
+        TechnicianSort.jobs => b.totalJobs.compareTo(a.totalJobs),
+        TechnicianSort.price => a.indicativeHourlyFee.compareTo(
+          b.indicativeHourlyFee,
+        ),
+      },
+    );
 
     return filtered;
   }
@@ -227,7 +371,9 @@ class _TechnicianBrowseScreenState extends State<TechnicianBrowseScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: SugoAppBar(
-        title: _filters.favoritesOnly ? 'Favourite technicians' : 'Find a technician',
+        title: _filters.favoritesOnly
+            ? 'Favourite technicians'
+            : 'Find a technician',
       ),
       body: Column(
         children: <Widget>[

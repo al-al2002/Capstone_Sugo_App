@@ -42,43 +42,95 @@ class _TermsAgreementState extends State<TermsAgreement> {
     _termsRecognizer.onTap = widget.onTapTerms;
     _privacyRecognizer.onTap = widget.onTapPrivacy;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        SizedBox(
-          height: 24,
-          width: 24,
-          child: Checkbox(
-            value: widget.value,
-            onChanged: (bool? checked) => widget.onChanged(checked ?? false),
-          ),
-        ),
-        const SizedBox(width: AppSizes.sm),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text.rich(
-              TextSpan(
-                style: AppTextStyles.caption,
-                children: <InlineSpan>[
-                  const TextSpan(text: AppStrings.agreePrefix),
-                  TextSpan(
-                    text: AppStrings.terms,
-                    style: AppTextStyles.link,
-                    recognizer: _termsRecognizer,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = constraints.maxWidth < 300;
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: Checkbox(
+                      value: widget.value,
+                      onChanged: (bool? checked) => widget.onChanged(checked ?? false),
+                    ),
                   ),
-                  const TextSpan(text: AppStrings.agreeMiddle),
-                  TextSpan(
-                    text: AppStrings.privacy,
-                    style: AppTextStyles.link,
-                    recognizer: _privacyRecognizer,
+                  const SizedBox(width: AppSizes.sm),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text.rich(
+                        TextSpan(
+                          style: AppTextStyles.caption,
+                          children: <InlineSpan>[
+                            const TextSpan(text: AppStrings.agreePrefix),
+                            TextSpan(
+                              text: AppStrings.terms,
+                              style: AppTextStyles.link,
+                              recognizer: _termsRecognizer,
+                            ),
+                            const TextSpan(text: AppStrings.agreeMiddle),
+                            TextSpan(
+                              text: AppStrings.privacy,
+                              style: AppTextStyles.link,
+                              recognizer: _privacyRecognizer,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SizedBox(
+              height: 24,
+              width: 24,
+              child: Checkbox(
+                value: widget.value,
+                onChanged: (bool? checked) => widget.onChanged(checked ?? false),
+              ),
             ),
-          ),
-        ),
-      ],
+            const SizedBox(width: AppSizes.sm),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text.rich(
+                  TextSpan(
+                    style: AppTextStyles.caption,
+                    children: <InlineSpan>[
+                      const TextSpan(text: AppStrings.agreePrefix),
+                      TextSpan(
+                        text: AppStrings.terms,
+                        style: AppTextStyles.link,
+                        recognizer: _termsRecognizer,
+                      ),
+                      const TextSpan(text: AppStrings.agreeMiddle),
+                      TextSpan(
+                        text: AppStrings.privacy,
+                        style: AppTextStyles.link,
+                        recognizer: _privacyRecognizer,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -213,7 +213,106 @@ class _JobRequestDetails extends StatelessWidget {
           icon: Icons.check_rounded,
           onPressed: isBusy
               ? null
-              : () {
+              : () async {
+                  final bool? proceed = await showDialog<bool>(
+                    context: context,
+                    barrierDismissible: true,
+                    builder: (BuildContext dialogContext) {
+                      final String weather =
+                          match.breakdown.context.weatherLabel ??
+                          'Not available';
+                      final String traffic =
+                          match.breakdown.context.trafficLabel ??
+                          'Not available';
+
+                      return AlertDialog(
+                        backgroundColor: AppColors.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        titlePadding: const EdgeInsets.fromLTRB(
+                          AppSizes.xl,
+                          AppSizes.xl,
+                          AppSizes.xl,
+                          AppSizes.sm,
+                        ),
+                        contentPadding: const EdgeInsets.fromLTRB(
+                          AppSizes.xl,
+                          0,
+                          AppSizes.xl,
+                          0,
+                        ),
+                        actionsPadding: const EdgeInsets.fromLTRB(
+                          AppSizes.lg,
+                          0,
+                          AppSizes.lg,
+                          AppSizes.lg,
+                        ),
+                        title: Text(
+                          'Before you accept',
+                          style: AppTextStyles.title.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        content: SizedBox(
+                          width: 320,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'Here is the live context for this task.',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: AppSizes.lg),
+                              _ContextStatusRow(
+                                icon: Icons.wb_sunny_outlined,
+                                label: 'Weather',
+                                value: weather,
+                              ),
+                              const SizedBox(height: AppSizes.sm),
+                              _ContextStatusRow(
+                                icon: Icons.traffic_rounded,
+                                label: 'Traffic',
+                                value: traffic,
+                              ),
+                            ],
+                          ),
+                        ),
+                        actions: <Widget>[
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSizes.lg,
+                                vertical: AppSizes.sm,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text('Proceed to accept task'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+
+                  if (proceed != true) return;
+                  if (!context.mounted) return;
                   Navigator.of(context).pop();
                   onAccept();
                 },
@@ -247,6 +346,58 @@ class _JobRequestDetails extends StatelessWidget {
 }
 
 /// The budget, given the space it deserves.
+class _ContextStatusRow extends StatelessWidget {
+  const _ContextStatusRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.md),
+      decoration: BoxDecoration(
+        color: AppColors.fieldFill,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: AppColors.secondary),
+          const SizedBox(width: AppSizes.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: AppTextStyles.micro.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BudgetPanel extends StatelessWidget {
   const _BudgetPanel({required this.job});
 
@@ -393,11 +544,8 @@ class _PhotoStrip extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: AppSizes.sm),
         itemBuilder: (BuildContext context, int index) {
           return GestureDetector(
-            onTap: () => openSugoImageViewer(
-              context,
-              urls: urls,
-              initialIndex: index,
-            ),
+            onTap: () =>
+                openSugoImageViewer(context, urls: urls, initialIndex: index),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppSizes.sm + 2),
               child: Image.network(

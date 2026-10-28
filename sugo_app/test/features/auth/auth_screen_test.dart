@@ -72,18 +72,17 @@ void main() {
   }
 
   group('layout (2026-09-28 reference)', () {
-    testWidgets('brand header on top, one form, no tabs, no social', (
+    testWidgets('brand header on top, one form, no tabs, with social buttons', (
       WidgetTester tester,
     ) async {
       final FakeAuthRepository repository = newRepository(tester);
       await tester.pumpWidget(wrap(repository));
 
       expect(find.byType(AuthHeader), findsOneWidget);
-      expect(find.text('Welcome back'), findsOneWidget);
-      // Email and password only.
-      expect(find.textContaining('Google'), findsNothing);
-      expect(find.textContaining('Facebook'), findsNothing);
-      expect(find.textContaining('continue with'), findsNothing);
+      expect(find.text('Welcome Back!'), findsOneWidget);
+      expect(find.textContaining('Google'), findsOneWidget);
+      expect(find.textContaining('Apple'), findsOneWidget);
+      expect(find.textContaining('continue with'), findsOneWidget);
     });
 
     testWidgets('the register link switches the form and the title', (
@@ -95,7 +94,7 @@ void main() {
       expect(find.textContaining("Don't have an account?"), findsOneWidget);
       await tapFooter(tester, 'Register');
 
-      expect(find.text('Create your account'), findsOneWidget);
+      expect(find.text('Create Your Account'), findsOneWidget);
       expect(find.text('Create account'), findsOneWidget);
       expect(find.textContaining('Already have an account?'), findsOneWidget);
     });
@@ -190,6 +189,8 @@ void main() {
       await tester.enterText(fields.at(2), phone);
       await tester.enterText(fields.at(3), password);
       await tester.enterText(fields.at(4), confirm ?? password);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
     }
 
     testWidgets('has all five fields', (WidgetTester tester) async {
@@ -210,6 +211,8 @@ void main() {
     ) async {
       final FakeAuthRepository repository = newRepository(tester);
       await tester.pumpWidget(wrap(repository, tab: AuthTab.register));
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
       await tapButton(tester, 'Create account');
 
       expect(find.text('Full name is required'), findsOneWidget);
@@ -285,7 +288,7 @@ void main() {
       await fill(tester);
       await tapButton(tester, 'Create account');
 
-      expect(find.text('Welcome back'), findsOneWidget);
+      expect(find.text('Welcome Back!'), findsOneWidget);
       expect(find.text('Forgot password?'), findsOneWidget);
     });
   });
@@ -330,7 +333,7 @@ void main() {
 
       expect(find.byKey(registerForm), findsNothing);
       expect(find.byKey(loginForm), findsOneWidget);
-      expect(find.text('Welcome back'), findsOneWidget);
+      expect(find.text('Welcome Back!'), findsOneWidget);
     });
   });
 }

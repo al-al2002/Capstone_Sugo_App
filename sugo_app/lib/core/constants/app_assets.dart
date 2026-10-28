@@ -15,6 +15,11 @@ class AppAssets {
   /// real one in that space once it has finished loading.
   static const String splash = '$_images/splash_art.jpg';
 
+  /// The premium SUGO splash composition provided with the project assets.
+  /// This is the main visual reference and should remain the launch image.
+  static const String servicePartnerSplash =
+      '$_images/SUGO Service Partner Splash Screen.png';
+
   /// The emblem alone - house, wrench, swoosh and van - on the icon's navy
   /// (512x512). The app's small logo mark, and the disc at the centre of the
   /// matching screen. Cut from the app icon by `tool/prepare_brand_images.py`

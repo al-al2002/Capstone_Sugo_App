@@ -19,30 +19,53 @@ class AuthFooterPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A Wrap rather than a Row: on narrow phones (or at large text scales) the
-    // prompt and its action move onto separate lines instead of overflowing.
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        Text(message, style: AppTextStyles.caption),
-        // A TextButton, not a bare GestureDetector on the word: a 48dp target
-        // the word alone does not give, and a pressed state. Blue text shade,
-        // as in the reference - orange on white fails contrast.
-        TextButton(
-          onPressed: onAction,
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.secondaryDark,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            minimumSize: const Size(0, 44),
-            tapTargetSize: MaterialTapTargetSize.padded,
-          ),
-          child: Text(
-            actionLabel,
-            style: AppTextStyles.link,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = constraints.maxWidth < 300;
+
+        if (compact) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(message, style: AppTextStyles.caption),
+              TextButton(
+                onPressed: onAction,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.secondaryDark,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 44),
+                  tapTargetSize: MaterialTapTargetSize.padded,
+                ),
+                child: Text(
+                  actionLabel,
+                  style: AppTextStyles.link,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            Text(message, style: AppTextStyles.caption),
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.secondaryDark,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                minimumSize: const Size(0, 44),
+                tapTargetSize: MaterialTapTargetSize.padded,
+              ),
+              child: Text(
+                actionLabel,
+                style: AppTextStyles.link,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

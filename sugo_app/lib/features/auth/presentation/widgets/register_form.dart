@@ -49,9 +49,18 @@ class _RegisterFormState extends State<RegisterForm> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
+    final RegisterController controller = context.read<RegisterController>();
+
+    if (!controller.acceptedTerms) {
+      UiFeedback.showError(
+        context,
+        'Please accept the Terms of Service and Privacy Policy to continue.',
+      );
+      return;
+    }
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final RegisterController controller = context.read<RegisterController>();
     final SignUpResult? result = await controller.register(
       fullName: _nameController.text,
       email: _emailController.text,

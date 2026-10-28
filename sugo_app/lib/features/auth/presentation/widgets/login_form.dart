@@ -106,43 +106,93 @@ class _LoginFormState extends State<LoginForm> {
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: AppSizes.xl),
-            child: Row(
-              children: <Widget>[
-                SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: Checkbox(
-                    value: _rememberMe,
-                    onChanged: controller.isBusy
-                        ? null
-                        : (bool? value) =>
-                              setState(() => _rememberMe = value ?? false),
-                    activeColor: AppColors.secondary,
-                  ),
-                ),
-                const SizedBox(width: AppSizes.sm),
-                Expanded(
-                  child: Text(
-                    'Remember me',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textPrimary,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final bool compact = constraints.maxWidth < 300;
+
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: Checkbox(
+                              value: _rememberMe,
+                              onChanged: controller.isBusy
+                                  ? null
+                                  : (bool? value) =>
+                                        setState(() => _rememberMe = value ?? false),
+                              activeColor: AppColors.secondary,
+                            ),
+                          ),
+                          const SizedBox(width: AppSizes.sm),
+                          Expanded(
+                            child: Text(
+                              'Remember me',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: controller.isBusy
+                              ? null
+                              : () => Navigator.of(context).pushNamed(
+                                  AppRoutes.forgotPassword,
+                                ),
+                          child: const Text(AppStrings.forgotPassword),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: Checkbox(
+                            value: _rememberMe,
+                            onChanged: controller.isBusy
+                                ? null
+                                : (bool? value) =>
+                                      setState(() => _rememberMe = value ?? false),
+                            activeColor: AppColors.secondary,
+                          ),
+                        ),
+                        const SizedBox(width: AppSizes.sm),
+                        Text(
+                          'Remember me',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                Flexible(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
+                    const Spacer(),
+                    TextButton(
                       onPressed: controller.isBusy
                           ? null
-                          : () => Navigator.of(
-                              context,
-                            ).pushNamed(AppRoutes.forgotPassword),
+                          : () => Navigator.of(context).pushNamed(
+                              AppRoutes.forgotPassword,
+                            ),
                       child: const Text(AppStrings.forgotPassword),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
           PrimaryButton(
