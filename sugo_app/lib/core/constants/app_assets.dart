@@ -25,6 +25,9 @@ class AppAssets {
   /// Cut from the app icon by `tool/prepare_brand_images.py`.
   static const String brandHeader = '$_images/brand_header.jpg';
 
+  static const String loginHeader = '$_images/SUGO_login_header.png';
+  static const String registerHeader = '$_images/SUGO_register_header.png';
+
   /// The technician from the splash poster (520x520 JPEG), SUGO cap and all,
   /// for the home screen's "Need a tech fix?" banner.
   static const String bannerTechnician = '$_images/banner_technician.jpg';

@@ -30,15 +30,23 @@ import '../../../../core/widgets/sugo_logo.dart';
 /// crop is shared top and bottom and both margins are still larger than what
 /// they have to clear.
 class AuthHeader extends StatelessWidget {
-  const AuthHeader({super.key, required this.height});
+  const AuthHeader({
+    super.key,
+    required this.height,
+    this.register,
+    this.onBack,
+  });
 
   final double height;
+  final bool? register;
+  final VoidCallback? onBack;
 
   /// How far the white sheet rides up over the header's bottom edge.
   static const double sheetOverlap = 28;
 
   /// Header height for a given content width: square, within limits.
-  static double heightFor(double width) => width.clamp(280.0, 420.0);
+  static double heightFor(double width, {required bool register}) =>
+      register ? width * 0.72 : width * 643 / 887;
 
   @override
   Widget build(BuildContext context) {
@@ -48,39 +56,46 @@ class AuthHeader extends StatelessWidget {
       child: SizedBox(
         height: height,
         width: double.infinity,
-        child: DecoratedBox(
-          decoration: const BoxDecoration(gradient: AppColors.heroGradient),
-          child: Image.asset(
-            AppAssets.brandHeader,
-            fit: BoxFit.cover,
-            excludeFromSemantics: true,
-            // Never an empty header. This returned nothing at first, and on
-            // 2026-09-28 the running app's asset bundle simply did not have
-            // the file - it was added while `flutter run` was up, and a hot
-            // restart does not pick up new asset files - so the login screen
-            // showed a bare navy block. The logo drawn in code stands in.
-            errorBuilder:
-                (BuildContext context, Object error, StackTrace? stackTrace) {
-                  if (kDebugMode) {
-                    debugPrint(
-                      'AuthHeader: ${AppAssets.brandHeader} did not load '
-                      '($error). If the file exists, stop the app and '
-                      '`flutter run` again - new asset files are not '
-                      'picked up by hot reload or hot restart.',
-                    );
-                  }
-                  return const _DrawnLockup();
-                },
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            const ColoredBox(color: AppColors.navy),
+            Image.asset(
+              register == null
+                  ? AppAssets.brandHeader
+                  : register!
+                  ? AppAssets.registerHeader
+                  : AppAssets.loginHeader,
+              fit: BoxFit.contain,
+              excludeFromSemantics: true,
+              errorBuilder:
+                  (BuildContext context, Object error, StackTrace? stackTrace) {
+                    if (kDebugMode) {
+                      debugPrint(
+                        'AuthHeader: failed to load the header image ($error)',
+                      );
+                    }
+                    return const _DrawnLockup();
+                  },
+            ),
+            if (register == true)
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 8,
+                left: 12,
+                child: IconButton(
+                  onPressed: onBack,
+                  color: Colors.white,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: 'Back to login',
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// The lockup drawn in code - mark, wordmark, tagline - for when the artwork
-/// cannot be shown. Centred in the space below the status bar, so it sits
-/// where the artwork's logo would have been.
 class _DrawnLockup extends StatelessWidget {
   const _DrawnLockup();
 
@@ -88,20 +103,16 @@ class _DrawnLockup extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: Padding(
-        // Clear of the sheet that rides up over the bottom edge.
-        padding: const EdgeInsets.only(bottom: AuthHeader.sheetOverlap),
-        child: Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const <Widget>[
-                SugoLogoMark(size: 72, onDark: true),
-                SizedBox(height: 18),
-                SugoLogo(fontSize: 44, onDark: true),
-              ],
-            ),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const <Widget>[
+              SugoLogoMark(size: 72, onDark: true),
+              SizedBox(height: 18),
+              SugoLogo(fontSize: 44, onDark: true),
+            ],
           ),
         ),
       ),

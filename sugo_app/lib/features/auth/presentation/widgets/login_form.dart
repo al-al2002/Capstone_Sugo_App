@@ -80,7 +80,7 @@ class _LoginFormState extends State<LoginForm> {
             padding: const EdgeInsets.only(bottom: AppSizes.lg),
             child: AppTextField(
               label: AppStrings.email,
-              hint: AppStrings.emailHint,
+              hint: 'Email or Phone Number',
               controller: _emailController,
               icon: Icons.mail_outline_rounded,
               keyboardType: TextInputType.emailAddress,
@@ -150,7 +150,67 @@ class _LoginFormState extends State<LoginForm> {
             isLoading: controller.isSubmitting,
             onPressed: controller.isBusy ? null : _submit,
           ),
+          const SizedBox(height: AppSizes.xl),
+          Row(
+            children: <Widget>[
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
+                child: Text(
+                  'or continue with',
+                  style: AppTextStyles.caption.copyWith(color: AppColors.hint),
+                ),
+              ),
+              const Expanded(child: Divider()),
+            ],
+          ),
+          const SizedBox(height: AppSizes.md),
+          _SocialButton(
+            icon: const Text(
+              'G',
+              style: TextStyle(
+                color: Color(0xFF4285F4),
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            label: 'Continue with Google',
+          ),
+          const SizedBox(height: AppSizes.sm),
+          _SocialButton(
+            icon: const Icon(Icons.apple, size: 22, color: Colors.black),
+            label: 'Continue with Apple',
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({required this.icon, required this.label});
+
+  final Widget icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: AppSizes.socialButtonHeight,
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: null,
+        icon: icon,
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textPrimary,
+          disabledForegroundColor: AppColors.textPrimary,
+          side: const BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+          ),
+          textStyle: AppTextStyles.socialButton,
+        ),
       ),
     );
   }

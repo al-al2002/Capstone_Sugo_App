@@ -155,8 +155,10 @@ class _AuthViewState extends State<_AuthView>
               constraints: const BoxConstraints(maxWidth: 480),
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints box) {
+                  final bool register = _tab == AuthTab.register;
                   final double headerHeight = AuthHeader.heightFor(
                     box.maxWidth,
+                    register: register,
                   );
                   return AnimatedBuilder(
                     animation: _enter,
@@ -190,7 +192,11 @@ class _AuthViewState extends State<_AuthView>
                               opacity: header,
                               child: Transform.scale(
                                 scale: 0.94 + 0.06 * header,
-                                child: AuthHeader(height: headerHeight),
+                                child: AuthHeader(
+                                  height: headerHeight,
+                                  register: register,
+                                  onBack: () => _switchTo(AuthTab.login),
+                                ),
                               ),
                             ),
                           ),
@@ -228,7 +234,10 @@ class _AuthViewState extends State<_AuthView>
       constraints: BoxConstraints(
         minHeight:
             MediaQuery.sizeOf(context).height -
-            AuthHeader.heightFor(MediaQuery.sizeOf(context).width) +
+            AuthHeader.heightFor(
+              MediaQuery.sizeOf(context).width,
+              register: login ? false : true,
+            ) +
             AuthHeader.sheetOverlap,
       ),
       decoration: const BoxDecoration(
@@ -272,18 +281,16 @@ class _AuthViewState extends State<_AuthView>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
-                  login ? 'Welcome back' : 'Create your account',
-                  style: AppTextStyles.headline,
+                  login ? 'Welcome Back!' : 'Create Your Account',
+                  style: AppTextStyles.display.copyWith(fontSize: 24),
                 ),
                 const SizedBox(height: AppSizes.xs),
                 Text(
                   login
-                      ? 'Log in to book a trusted technician.'
-                      : 'Join SUGO and get matched with verified technicians.',
+                      ? 'Glad to see you again. Log in to continue your SUGO journey.'
+                      : 'Join SUGO and get fast, reliable onsite and errand services.',
                   style: AppTextStyles.subtitle,
                 ),
-                const SizedBox(height: AppSizes.xl),
-                _AuthTrustNote(login: login),
                 const SizedBox(height: AppSizes.xl),
                 if (login)
                   LoginForm(
@@ -306,6 +313,8 @@ class _AuthViewState extends State<_AuthView>
                       : () =>
                             _switchTo(login ? AuthTab.register : AuthTab.login),
                 ),
+                const SizedBox(height: AppSizes.xl),
+                const _AuthWave(),
               ],
             ),
           ),
@@ -315,52 +324,42 @@ class _AuthViewState extends State<_AuthView>
   }
 }
 
-class _AuthTrustNote extends StatelessWidget {
-  const _AuthTrustNote({required this.login});
-
-  final bool login;
-
+class _AuthWave extends StatelessWidget {
+  const _AuthWave();
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.md,
-        vertical: AppSizes.sm + 2,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primarySofter,
-        borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.primarySoft),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 32,
-            height: 32,
-            decoration: const BoxDecoration(
-              color: AppColors.secondarySoft,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.verified_user_outlined,
-              color: AppColors.secondaryDark,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: AppSizes.sm + 2),
-          Expanded(
-            child: Text(
-              login
-                  ? 'Your trusted home-service marketplace.'
-                  : 'Join a safer way to get things fixed at home.',
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
+    return SizedBox(
+      height: 28,
+      width: double.infinity,
+      child: CustomPaint(painter: _WavePainter()),
     );
   }
+}
+
+class _WavePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()..color = AppColors.secondary;
+    final Path path = Path()
+      ..moveTo(0, size.height * .45)
+      ..quadraticBezierTo(
+        size.width * .25,
+        -2,
+        size.width * .5,
+        size.height * .45,
+      )
+      ..quadraticBezierTo(
+        size.width * .75,
+        size.height + 2,
+        size.width,
+        size.height * .3,
+      )
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
