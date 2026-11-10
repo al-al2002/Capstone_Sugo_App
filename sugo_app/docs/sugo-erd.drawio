@@ -1,0 +1,334 @@
+<mxfile host="app.diagrams.net" modified="2026-11-10T14:00:00.000Z" agent="Copilot SDK in VS Code" version="24.7.17">
+  <diagram id="sugo-erd" name="SUGO ERD">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="SUGO Entity Relationship Diagram" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#17324d" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="600" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Supabase application schema with Laravel admin database shown separately. PK = primary key, FK = foreign key." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#52606d" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="950" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="person-concept" value="&lt;b&gt;PERSON (conceptual)&lt;/b&gt;&lt;hr&gt;Human actor in SUGO&lt;br&gt;roles: client, technician, admin&lt;br&gt;Persisted through profiles&lt;br&gt;&lt;i&gt;Not a physical database table&lt;/i&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;whiteSpace=wrap;fillColor=#fff4cc;strokeColor=#c99500;fontSize=11;fontStyle=1;align=center" vertex="1" parent="1">
+          <mxGeometry x="1260" y="20" width="220" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="supabase-box" value="SUPABASE / APPLICATION DATABASE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f7fbff;strokeColor=#6b9bd1;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontColor=#17324d;spacingTop=10;spacingLeft=10" vertex="1" parent="1">
+          <mxGeometry x="25" y="100" width="1520" height="1330" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin-box" value="LARAVEL ADMIN DATABASE (separate SQLite/MySQL connection)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffaf2;strokeColor=#d6a64f;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontColor=#6b4e16;spacingTop=10;spacingLeft=10" vertex="1" parent="1">
+          <mxGeometry x="25" y="1460" width="1520" height="280" as="geometry"/>
+        </mxCell>
+
+        <!-- Supabase entities -->
+        <mxCell id="auth.users" value="&lt;b&gt;auth.users&lt;/b&gt;&lt;hr&gt;PK id : uuid&lt;br&gt;email&lt;br&gt;phone&lt;br&gt;metadata" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#eef2f7;strokeColor=#718096;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#dbe4ef" vertex="1" parent="1">
+          <mxGeometry x="50" y="145" width="190" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="profiles" value="&lt;b&gt;profiles&lt;/b&gt;&lt;hr&gt;PK id : uuid&lt;br&gt;FK id -&gt; auth.users&lt;br&gt;role&lt;br&gt;full_name&lt;br&gt;phone&lt;br&gt;registration_status&lt;br&gt;created_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#cfe7fa" vertex="1" parent="1">
+          <mxGeometry x="270" y="145" width="210" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="technicians" value="&lt;b&gt;technicians&lt;/b&gt;&lt;hr&gt;PK/FK id -&gt; profiles&lt;br&gt;tier&lt;br&gt;specialization[]&lt;br&gt;is_verified&lt;br&gt;rating&lt;br&gt;is_available&lt;br&gt;location" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#cfe7fa" vertex="1" parent="1">
+          <mxGeometry x="510" y="145" width="210" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="jobs" value="&lt;b&gt;jobs&lt;/b&gt;&lt;hr&gt;PK id : uuid&lt;br&gt;FK client_id -&gt; profiles&lt;br&gt;FK assigned_technician_id -&gt; technicians&lt;br&gt;device_type&lt;br&gt;service_path&lt;br&gt;status&lt;br&gt;schedule / address" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#cfe7fa" vertex="1" parent="1">
+          <mxGeometry x="750" y="145" width="235" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="job_matches" value="&lt;b&gt;job_matches&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;rank&lt;br&gt;scores&lt;br&gt;status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#cfe7fa" vertex="1" parent="1">
+          <mxGeometry x="1015" y="145" width="210" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="job_outcomes" value="&lt;b&gt;job_outcomes&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;diagnosis_correct&lt;br&gt;final_rating" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#cfe7fa" vertex="1" parent="1">
+          <mxGeometry x="1255" y="145" width="210" height="130" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="job_tracking" value="&lt;b&gt;job_tracking&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs (unique)&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;stage&lt;br&gt;GPS / ETA&lt;br&gt;updated_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#d7f0df" vertex="1" parent="1">
+          <mxGeometry x="50" y="350" width="220" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="job_messages" value="&lt;b&gt;job_messages&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK sender_id -&gt; profiles&lt;br&gt;body&lt;br&gt;read_at&lt;br&gt;created_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#d7f0df" vertex="1" parent="1">
+          <mxGeometry x="300" y="350" width="220" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="job_reviews" value="&lt;b&gt;job_reviews&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;FK reviewer_id -&gt; profiles&lt;br&gt;stars / comment" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#d7f0df" vertex="1" parent="1">
+          <mxGeometry x="550" y="350" width="220" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="client_reviews" value="&lt;b&gt;client_reviews&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK client_id -&gt; profiles&lt;br&gt;FK technician_id -&gt; profiles&lt;br&gt;stars / comment" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#d7f0df" vertex="1" parent="1">
+          <mxGeometry x="800" y="350" width="220" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="job_disputes" value="&lt;b&gt;job_disputes&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK raised_by -&gt; profiles&lt;br&gt;FK resolved_by -&gt; profiles&lt;br&gt;reason&lt;br&gt;status / resolution" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#d7f0df" vertex="1" parent="1">
+          <mxGeometry x="1050" y="350" width="220" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="job_return_preferences" value="&lt;b&gt;job_return_preferences&lt;/b&gt;&lt;hr&gt;PK/FK job_id -&gt; jobs&lt;br&gt;method&lt;br&gt;chosen_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#d7f0df" vertex="1" parent="1">
+          <mxGeometry x="1300" y="350" width="190" height="115" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="technician_specializations" value="&lt;b&gt;technician_specializations&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;category / device_type / brand&lt;br&gt;skill_level&lt;br&gt;verified" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="50" y="540" width="230" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="technician_assessment_results" value="&lt;b&gt;technician_assessment_results&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;FK specialization_id -&gt; technician_specializations&lt;br&gt;score / passed&lt;br&gt;attempt_number" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="310" y="540" width="245" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="technician_assessments" value="&lt;b&gt;technician_assessments&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;specialization&lt;br&gt;answers / score&lt;br&gt;passed / suggested_tier" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="585" y="540" width="230" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="assessment_questions" value="&lt;b&gt;assessment_questions&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;specialization&lt;br&gt;question / choices&lt;br&gt;correct_choice_index" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="845" y="540" width="220" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="technician_portfolio" value="&lt;b&gt;technician_portfolio&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;photo_url&lt;br&gt;description" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="1095" y="540" width="205" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="technician_verification_documents" value="&lt;b&gt;technician_verification_documents&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;FK reviewed_by -&gt; profiles&lt;br&gt;doc_type / file_url&lt;br&gt;status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="1330" y="540" width="190" height="145" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="identity_verifications" value="&lt;b&gt;identity_verifications&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK user_id -&gt; profiles&lt;br&gt;FK reviewed_by -&gt; profiles&lt;br&gt;role&lt;br&gt;document / selfie&lt;br&gt;status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#f6edff;strokeColor=#9870c6;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#e6d8f6" vertex="1" parent="1">
+          <mxGeometry x="50" y="730" width="225" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="client_verification_status" value="&lt;b&gt;client_verification_status&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK client_id -&gt; profiles (unique)&lt;br&gt;phone_verified&lt;br&gt;no_show_count&lt;br&gt;status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#f6edff;strokeColor=#9870c6;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#e6d8f6" vertex="1" parent="1">
+          <mxGeometry x="325" y="730" width="225" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="client_saved_addresses" value="&lt;b&gt;client_saved_addresses&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK client_id -&gt; profiles&lt;br&gt;label&lt;br&gt;latitude / longitude&lt;br&gt;address_text / notes&lt;br&gt;is_default" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#f6edff;strokeColor=#9870c6;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#e6d8f6" vertex="1" parent="1">
+          <mxGeometry x="600" y="730" width="225" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="phone_verifications" value="&lt;b&gt;phone_verifications&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK user_id -&gt; profiles&lt;br&gt;phone / code&lt;br&gt;attempts / expires_at&lt;br&gt;consumed_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#f6edff;strokeColor=#9870c6;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#e6d8f6" vertex="1" parent="1">
+          <mxGeometry x="875" y="730" width="220" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="device_tokens" value="&lt;b&gt;device_tokens&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK user_id -&gt; profiles&lt;br&gt;token&lt;br&gt;platform&lt;br&gt;updated_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#f6edff;strokeColor=#9870c6;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#e6d8f6" vertex="1" parent="1">
+          <mxGeometry x="1145" y="730" width="190" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="community_last_seen" value="&lt;b&gt;community_last_seen&lt;/b&gt;&lt;hr&gt;PK/FK user_id -&gt; profiles&lt;br&gt;seen_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#f6edff;strokeColor=#9870c6;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#e6d8f6" vertex="1" parent="1">
+          <mxGeometry x="1385" y="730" width="140" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="community_posts" value="&lt;b&gt;community_posts&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK author_id -&gt; profiles&lt;br&gt;title / body&lt;br&gt;topic&lt;br&gt;comment_count&lt;br&gt;last_activity_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7d8dd" vertex="1" parent="1">
+          <mxGeometry x="50" y="920" width="220" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="community_comments" value="&lt;b&gt;community_comments&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK post_id -&gt; community_posts&lt;br&gt;FK author_id -&gt; profiles&lt;br&gt;body&lt;br&gt;author_role&lt;br&gt;helpful_count" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7d8dd" vertex="1" parent="1">
+          <mxGeometry x="315" y="920" width="230" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="community_votes" value="&lt;b&gt;community_votes&lt;/b&gt;&lt;hr&gt;PK (comment_id, voter_id)&lt;br&gt;FK comment_id -&gt; community_comments&lt;br&gt;FK voter_id -&gt; profiles&lt;br&gt;created_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7d8dd" vertex="1" parent="1">
+          <mxGeometry x="590" y="920" width="230" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="community_reputation" value="&lt;b&gt;community_reputation&lt;/b&gt;&lt;hr&gt;PK/FK technician_id -&gt; profiles&lt;br&gt;points&lt;br&gt;helpful_votes&lt;br&gt;answers&lt;br&gt;updated_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7d8dd" vertex="1" parent="1">
+          <mxGeometry x="865" y="920" width="210" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="technician_time_off" value="&lt;b&gt;technician_time_off&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;starts_on / ends_on&lt;br&gt;note&lt;br&gt;created_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f7e6bd" vertex="1" parent="1">
+          <mxGeometry x="1115" y="920" width="220" height="115" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="views-title" value="SUPABASE PUBLIC VIEWS (read models; not base tables)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#17324d" vertex="1" parent="1">
+          <mxGeometry x="50" y="1090" width="650" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="view1" value="&lt;b&gt;incomplete_signups&lt;/b&gt;&lt;br&gt;profiles + registration state" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="50" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view2" value="&lt;b&gt;identity_review_queue&lt;/b&gt;&lt;br&gt;identity verification queue" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="220" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view3" value="&lt;b&gt;admin_dashboard_stats&lt;/b&gt;&lt;br&gt;admin dashboard aggregates" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="390" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view4" value="&lt;b&gt;admin_verification_queue&lt;/b&gt;&lt;br&gt;verification queue" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="560" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view5" value="&lt;b&gt;admin_applicant_detail&lt;/b&gt;&lt;br&gt;applicant details" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="730" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view6" value="&lt;b&gt;technician_assessment_tracks&lt;/b&gt;&lt;br&gt;assessment tracks" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="900" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view7" value="&lt;b&gt;matching_candidates&lt;/b&gt;&lt;br&gt;technician matching inputs" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="1070" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view8" value="&lt;b&gt;job_client_trust&lt;/b&gt;&lt;br&gt;client trust summary" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="1240" y="1130" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view9" value="&lt;b&gt;orphan_document_queue&lt;/b&gt;&lt;br&gt;documents awaiting review" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="50" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view10" value="&lt;b&gt;job_conversations&lt;/b&gt;&lt;br&gt;job chat read model" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="220" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view11" value="&lt;b&gt;technician_review_stats&lt;/b&gt;&lt;br&gt;technician review aggregates" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="390" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view12" value="&lt;b&gt;community_feed&lt;/b&gt;&lt;br&gt;community post feed" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="560" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view13" value="&lt;b&gt;community_thread&lt;/b&gt;&lt;br&gt;community post thread" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="730" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view14" value="&lt;b&gt;client_job_technicians&lt;/b&gt;&lt;br&gt;client technician offers" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="900" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view15" value="&lt;b&gt;job_parties&lt;/b&gt;&lt;br&gt;client and technician parties" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="1070" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view16" value="&lt;b&gt;admin_jobs&lt;/b&gt;&lt;br&gt;admin job management view" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="1240" y="1210" width="150" height="60" as="geometry"/></mxCell>
+        <mxCell id="view17" value="&lt;b&gt;admin_disputes&lt;/b&gt;&lt;br&gt;admin dispute queue" style="shape=note;size=15;html=1;whiteSpace=wrap;fillColor=#f1f3f5;strokeColor=#868e96;fontSize=10" vertex="1" parent="1"><mxGeometry x="50" y="1290" width="150" height="60" as="geometry"/></mxCell>
+
+        <mxCell id="technician_time_off_edge" edge="1" parent="1" source="technician_time_off" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Relationships -->
+        <mxCell id="e1" edge="1" parent="1" source="profiles" target="auth.users" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERmany;startArrow=ERone;strokeColor=#718096"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="person-profiles" value="represented by" edge="1" parent="1" source="person-concept" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;endArrow=ERone;startArrow=ERone;strokeColor=#c99500;fontColor=#8a6500"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="technicians" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="jobs" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="jobs" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="job_matches" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="job_matches" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="job_outcomes" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="job_outcomes" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="job_tracking" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="job_tracking" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="job_messages" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="job_messages" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="job_reviews" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="job_reviews" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="job_reviews" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="client_reviews" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="client_reviews" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="job_disputes" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="job_disputes" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e20" edge="1" parent="1" source="job_return_preferences" target="jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e21" edge="1" parent="1" source="technician_specializations" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e22" edge="1" parent="1" source="technician_assessment_results" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e23" edge="1" parent="1" source="technician_assessment_results" target="technician_specializations" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e24" edge="1" parent="1" source="technician_assessments" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e25" edge="1" parent="1" source="technician_portfolio" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e26" edge="1" parent="1" source="technician_verification_documents" target="technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e27" edge="1" parent="1" source="technician_verification_documents" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e28" edge="1" parent="1" source="identity_verifications" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#9870c6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e29" edge="1" parent="1" source="client_verification_status" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#9870c6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e30" edge="1" parent="1" source="client_saved_addresses" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#9870c6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e31" edge="1" parent="1" source="phone_verifications" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#9870c6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e32" edge="1" parent="1" source="device_tokens" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#9870c6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e33" edge="1" parent="1" source="community_last_seen" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#9870c6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e34" edge="1" parent="1" source="community_posts" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e35" edge="1" parent="1" source="community_comments" target="community_posts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e36" edge="1" parent="1" source="community_comments" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e37" edge="1" parent="1" source="community_votes" target="community_comments" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e38" edge="1" parent="1" source="community_votes" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e39" edge="1" parent="1" source="community_reputation" target="profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Admin database entities -->
+        <mxCell id="admin_users" value="&lt;b&gt;admin.users&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;name&lt;br&gt;email (unique)&lt;br&gt;password&lt;br&gt;timestamps" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff4d8;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f6df9f" vertex="1" parent="1">
+          <mxGeometry x="50" y="1500" width="220" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_sessions" value="&lt;b&gt;admin.sessions&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK user_id -&gt; admin.users (nullable)&lt;br&gt;ip_address&lt;br&gt;payload&lt;br&gt;last_activity" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff4d8;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f6df9f" vertex="1" parent="1">
+          <mxGeometry x="320" y="1500" width="240" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_password_reset_tokens" value="&lt;b&gt;admin.password_reset_tokens&lt;/b&gt;&lt;hr&gt;PK email&lt;br&gt;token&lt;br&gt;created_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff4d8;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f6df9f" vertex="1" parent="1">
+          <mxGeometry x="610" y="1500" width="240" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_jobs" value="&lt;b&gt;admin.jobs&lt;/b&gt; (queue)&lt;hr&gt;PK id&lt;br&gt;queue&lt;br&gt;payload&lt;br&gt;attempts&lt;br&gt;available_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff4d8;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f6df9f" vertex="1" parent="1">
+          <mxGeometry x="900" y="1500" width="210" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_job_batches" value="&lt;b&gt;admin.job_batches&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;name&lt;br&gt;total_jobs / pending_jobs&lt;br&gt;failed_jobs&lt;br&gt;timestamps" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff4d8;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f6df9f" vertex="1" parent="1">
+          <mxGeometry x="1160" y="1500" width="220" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_failed_jobs" value="&lt;b&gt;admin.failed_jobs&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;uuid (unique)&lt;br&gt;connection / queue&lt;br&gt;payload / exception&lt;br&gt;failed_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=28;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff4d8;strokeColor=#d6a64f;fontSize=11;align=left;spacingLeft=8;swimlaneFillColor=#f6df9f" vertex="1" parent="1">
+          <mxGeometry x="1430" y="1500" width="100" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="admin_e1" edge="1" parent="1" source="admin_sessions" target="admin_users" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;&lt;br&gt;Blue = identity, users, jobs&lt;br&gt;Green = job lifecycle&lt;br&gt;Gold = technician onboarding&lt;br&gt;Purple = verification and devices&lt;br&gt;Red = community&lt;br&gt;Dashed boxes = separate database boundaries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9aa5b1;fontSize=11;align=left;spacing=8" vertex="1" parent="1">
+          <mxGeometry x="1120" y="1080" width="300" height="115" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="sugo-important-erd" name="Important Tables Only">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="important-0"/>
+        <mxCell id="important-1" parent="important-0"/>
+        <mxCell id="important-title" value="SUGO CORE ERD - IMPORTANT TABLES" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#17324d" vertex="1" parent="important-1">
+          <mxGeometry x="40" y="25" width="650" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-subtitle" value="Main user and service workflow: person -&gt; job -&gt; match -&gt; tracking -&gt; review" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#52606d" vertex="1" parent="important-1">
+          <mxGeometry x="40" y="65" width="800" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-person" value="&lt;b&gt;PERSON&lt;/b&gt;&lt;hr&gt;Conceptual actor&lt;br&gt;client | technician | admin&lt;br&gt;&lt;i&gt;represented by profiles&lt;/i&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;whiteSpace=wrap;fillColor=#fff4cc;strokeColor=#c99500;fontSize=12;fontStyle=1;align=center" vertex="1" parent="important-1">
+          <mxGeometry x="40" y="140" width="190" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-profiles" value="&lt;b&gt;profiles&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;role&lt;br&gt;full_name&lt;br&gt;phone&lt;br&gt;registration_status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#cfe7fa" vertex="1" parent="important-1">
+          <mxGeometry x="300" y="140" width="205" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-technicians" value="&lt;b&gt;technicians&lt;/b&gt;&lt;hr&gt;PK/FK id -&gt; profiles&lt;br&gt;tier&lt;br&gt;specialization&lt;br&gt;rating&lt;br&gt;availability" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#cfe7fa" vertex="1" parent="important-1">
+          <mxGeometry x="575" y="140" width="220" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-jobs" value="&lt;b&gt;jobs&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK client_id -&gt; profiles&lt;br&gt;FK assigned_technician_id&lt;br&gt;device_type&lt;br&gt;service_path&lt;br&gt;status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#cfe7fa" vertex="1" parent="important-1">
+          <mxGeometry x="865" y="140" width="245" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-matches" value="&lt;b&gt;job_matches&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK technician_id -&gt; technicians&lt;br&gt;rank / scores&lt;br&gt;status" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#f7e6bd" vertex="1" parent="important-1">
+          <mxGeometry x="40" y="375" width="230" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-tracking" value="&lt;b&gt;job_tracking&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs (unique)&lt;br&gt;FK technician_id&lt;br&gt;stage&lt;br&gt;GPS / ETA" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#d7f0df" vertex="1" parent="important-1">
+          <mxGeometry x="330" y="375" width="230" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-messages" value="&lt;b&gt;job_messages&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK sender_id -&gt; profiles&lt;br&gt;body&lt;br&gt;read_at" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#edf9f1;strokeColor=#58a876;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#d7f0df" vertex="1" parent="important-1">
+          <mxGeometry x="620" y="375" width="230" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-reviews" value="&lt;b&gt;job_reviews&lt;/b&gt;&lt;hr&gt;PK id&lt;br&gt;FK job_id -&gt; jobs&lt;br&gt;FK technician_id&lt;br&gt;FK reviewer_id&lt;br&gt;stars / comment" style="shape=swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=0;html=1;whiteSpace=wrap;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=12;align=left;spacingLeft=10;swimlaneFillColor=#f7d8dd" vertex="1" parent="important-1">
+          <mxGeometry x="910" y="375" width="230" height="135" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-flow" value="&lt;b&gt;CORE WORKFLOW&lt;/b&gt;&lt;br&gt;1. Person registers&lt;br&gt;2. Client creates a job&lt;br&gt;3. System matches a technician&lt;br&gt;4. Technician handles the job&lt;br&gt;5. Client leaves a review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9aa5b1;fontSize=13;align=left;spacing=12" vertex="1" parent="important-1">
+          <mxGeometry x="40" y="600" width="500" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-legend" value="&lt;b&gt;Legend&lt;/b&gt;&lt;br&gt;Blue: identity and core users&lt;br&gt;Gold: matching&lt;br&gt;Green: active job communication and tracking&lt;br&gt;Red: reviews&lt;br&gt;Dashed line: conceptual relationship" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9aa5b1;fontSize=12;align=left;spacing=10" vertex="1" parent="important-1">
+          <mxGeometry x="620" y="600" width="520" height="125" as="geometry"/>
+        </mxCell>
+        <mxCell id="important-e1" value="represented by" edge="1" parent="important-1" source="important-person" target="important-profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=ERone;startArrow=ERone;strokeColor=#c99500;fontColor=#8a6500"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e2" edge="1" parent="important-1" source="important-technicians" target="important-profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e3" edge="1" parent="important-1" source="important-jobs" target="important-profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e4" edge="1" parent="important-1" source="important-jobs" target="important-technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#4b89c8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e5" edge="1" parent="important-1" source="important-matches" target="important-jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e6" edge="1" parent="important-1" source="important-matches" target="important-technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#d6a64f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e7" edge="1" parent="important-1" source="important-tracking" target="important-jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERone;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e8" edge="1" parent="important-1" source="important-messages" target="important-jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e9" edge="1" parent="important-1" source="important-messages" target="important-profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#58a876"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e10" edge="1" parent="important-1" source="important-reviews" target="important-jobs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e11" edge="1" parent="important-1" source="important-reviews" target="important-technicians" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="important-e12" edge="1" parent="important-1" source="important-reviews" target="important-profiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=ERone;startArrow=ERmany;strokeColor=#cc6f7a"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="sugo-use-cases" name="SUGO Use Case Diagram">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="usecase-0"/>
+        <mxCell id="usecase-1" parent="usecase-0"/>
+        <mxCell id="usecase-title" value="SUGO - SYSTEM USE CASE DIAGRAM" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#17324d" vertex="1" parent="usecase-1">
+          <mxGeometry x="390" y="20" width="600" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="usecase-boundary" value="SUGO MOBILE APPLICATION" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;verticalAlign=top;align=center;fontStyle=1;fontColor=#17324d;strokeColor=#52606d;fillColor=none;spacingTop=12" vertex="1" parent="usecase-1">
+          <mxGeometry x="250" y="80" width="920" height="790" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="actor-client" value="Client" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#17324d;fontSize=13;align=center" vertex="1" parent="usecase-1">
+          <mxGeometry x="65" y="265" width="90" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="actor-technician" value="Technician" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#17324d;fontSize=13;align=center" vertex="1" parent="usecase-1">
+          <mxGeometry x="65" y="555" width="90" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="actor-admin" value="Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#17324d;fontSize=13;align=center" vertex="1" parent="usecase-1">
+          <mxGeometry x="1220" y="425" width="90" height="115" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc-register" value="Register / Login" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="330" y="125" width="190" height="55" as="geometry"/></mxCell>
+        <mxCell id="uc-profile" value="Manage Profile" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="600" y="125" width="190" height="55" as="geometry"/></mxCell>
+        <mxCell id="uc-job" value="Create Repair Job" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e8f4ff;strokeColor=#4b89c8;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="870" y="125" width="190" height="55" as="geometry"/></mxCell>
+
+        <mxCell id="uc-match" value="View Technician Matches" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="330" y="255" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-book" value="Accept Technician Offer" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff7e6;strokeColor=#d6a64f;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="620" y="255" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-status" value="Track Repair Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#edf9f1;strokeColor=#58a876;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="910" y="255" width="220" height="58" as="geometry"/></mxCell>
+
+        <mxCell id="uc-chat" value="Chat About Job" style="ellipse;whiteSpace=wrap;html=1;fillColor=#edf9f1;strokeColor=#58a876;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="330" y="390" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-community" value="Use Community Q&amp;A" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="620" y="390" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-review" value="Submit Review" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffeef0;strokeColor=#cc6f7a;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="910" y="390" width="220" height="58" as="geometry"/></mxCell>
+
+        <mxCell id="uc-specialization" value="Manage Specializations" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f6edff;strokeColor=#9870c6;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="330" y="525" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-assessment" value="Take Skills Assessment" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f6edff;strokeColor=#9870c6;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="620" y="525" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-job-tech" value="Accept and Update Job" style="ellipse;whiteSpace=wrap;html=1;fillColor=#edf9f1;strokeColor=#58a876;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="910" y="525" width="220" height="58" as="geometry"/></mxCell>
+
+        <mxCell id="uc-verify" value="Review Verifications" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f6edff;strokeColor=#9870c6;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="330" y="660" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-monitor" value="Monitor Jobs and Disputes" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f6edff;strokeColor=#9870c6;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="620" y="660" width="220" height="58" as="geometry"/></mxCell>
+        <mxCell id="uc-manage" value="Manage Users and Reports" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f6edff;strokeColor=#9870c6;fontSize=12" vertex="1" parent="usecase-1"><mxGeometry x="910" y="660" width="220" height="58" as="geometry"/></mxCell>
+
+        <mxCell id="uc-legend" value="&lt;b&gt;Actors&lt;/b&gt;&lt;br&gt;Client: requests repair services&lt;br&gt;Technician: provides repair services&lt;br&gt;Admin: manages and reviews the platform&lt;br&gt;&lt;br&gt;&lt;b&gt;Use-case colors&lt;/b&gt;&lt;br&gt;Blue: account and jobs&lt;br&gt;Gold: matching and booking&lt;br&gt;Green: active service&lt;br&gt;Purple: administration and verification&lt;br&gt;Red: community and reviews" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9aa5b1;fontSize=11;align=left;spacing=10" vertex="1" parent="usecase-1">
+          <mxGeometry x="30" y="730" width="190" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a-client-1" edge="1" parent="usecase-1" source="actor-client" target="uc-register" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-2" edge="1" parent="usecase-1" source="actor-client" target="uc-profile" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-3" edge="1" parent="usecase-1" source="actor-client" target="uc-job" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-4" edge="1" parent="usecase-1" source="actor-client" target="uc-match" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-5" edge="1" parent="usecase-1" source="actor-client" target="uc-book" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-6" edge="1" parent="usecase-1" source="actor-client" target="uc-status" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-7" edge="1" parent="usecase-1" source="actor-client" target="uc-chat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-8" edge="1" parent="usecase-1" source="actor-client" target="uc-community" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-client-9" edge="1" parent="usecase-1" source="actor-client" target="uc-review" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-1" edge="1" parent="usecase-1" source="actor-technician" target="uc-register" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-2" edge="1" parent="usecase-1" source="actor-technician" target="uc-specialization" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-3" edge="1" parent="usecase-1" source="actor-technician" target="uc-assessment" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-4" edge="1" parent="usecase-1" source="actor-technician" target="uc-job-tech" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-5" edge="1" parent="usecase-1" source="actor-technician" target="uc-chat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-6" edge="1" parent="usecase-1" source="actor-technician" target="uc-community" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-tech-7" edge="1" parent="usecase-1" source="actor-technician" target="uc-review" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-admin-1" edge="1" parent="usecase-1" source="actor-admin" target="uc-verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-admin-2" edge="1" parent="usecase-1" source="actor-admin" target="uc-monitor" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a-admin-3" edge="1" parent="usecase-1" source="actor-admin" target="uc-manage" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#52606d"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
