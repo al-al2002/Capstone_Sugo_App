@@ -15,7 +15,11 @@ import '../../bookings/models/booking_route.dart';
 import '../../bookings/screens/bookings_list_view.dart';
 import '../../bookings/screens/job_detail_screen.dart';
 import '../models/job.dart';
+import '../models/job_enums.dart';
+import '../models/labor_price_catalog.dart';
+import '../models/match_result.dart';
 import '../models/technician.dart';
+import '../widgets/score_indicator.dart';
 
 /// Shown the moment a client picks their technician.
 ///
@@ -38,6 +42,7 @@ class BookingSuccessScreen extends StatelessWidget {
     super.key,
     required this.job,
     required this.technician,
+    this.match,
   });
 
   final Job job;
@@ -45,6 +50,7 @@ class BookingSuccessScreen extends StatelessWidget {
   /// The technician the request went to. Null only if the snapshot was
   /// missing, in which case the screen still works without the name.
   final Technician? technician;
+  final MatchResult? match;
 
   /// Opens this screen in place of the whole booking flow.
   ///
@@ -58,10 +64,15 @@ class BookingSuccessScreen extends StatelessWidget {
     BuildContext context, {
     required Job job,
     Technician? technician,
+    MatchResult? match,
   }) {
     return Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => BookingSuccessScreen(job: job, technician: technician),
+        builder: (_) => BookingSuccessScreen(
+          job: job,
+          technician: technician,
+          match: match,
+        ),
       ),
       (Route<dynamic> route) => route.isFirst,
     );
@@ -74,6 +85,22 @@ class BookingSuccessScreen extends StatelessWidget {
   String get _firstNameStart {
     final String name = _firstName;
     return '${name[0].toUpperCase()}${name.substring(1)}';
+  }
+
+  LaborPrice? get _laborPrice => LaborPriceCatalog.forJob(
+    deviceType: job.deviceType,
+    symptomCode: job.problemSymptom,
+  );
+
+  double? get _distanceKm => job.servicePath == ServicePath.homeService
+      ? technician?.distanceKm
+      : null;
+
+  int? get _travelFee {
+    final double? distance = _distanceKm;
+    if (distance == null) return null;
+    if (distance <= 3) return 50;
+    return 50 + ((distance - 3).ceil() * 15);
   }
 
   @override
@@ -107,7 +134,19 @@ class BookingSuccessScreen extends StatelessWidget {
                     style: AppTextStyles.subtitle,
                   ),
                   const SizedBox(height: AppSizes.xl),
-                  _SummaryCard(job: job, technician: technician),
+                  _SummaryCard(job: job, technician: technician, match: match),
+                  if (match != null) ...<Widget>[
+                    const SizedBox(height: AppSizes.lg),
+                    _MatchAcceptanceCard(match: match!),
+                  ],
+                  if (_laborPrice != null) ...<Widget>[
+                    const SizedBox(height: AppSizes.lg),
+                    _PriceEstimateCard(
+                      labor: _laborPrice!,
+                      distanceKm: _distanceKm,
+                      travelFee: _travelFee,
+                    ),
+                  ],
                   const SizedBox(height: AppSizes.lg),
                   SugoCard(
                     child: Column(
@@ -205,6 +244,88 @@ class BookingSuccessScreen extends StatelessWidget {
   }
 }
 
+class _PriceEstimateCard extends StatelessWidget {
+  const _PriceEstimateCard({
+    required this.labor,
+    required this.distanceKm,
+    required this.travelFee,
+  });
+
+  final LaborPrice labor;
+  final double? distanceKm;
+  final int? travelFee;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasTravel = distanceKm != null && travelFee != null;
+    return SugoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const SectionHeader(title: 'Price'),
+          const SizedBox(height: AppSizes.md),
+          _PriceRow(label: 'Labor fee', value: labor.fee),
+          if (hasTravel) ...<Widget>[
+            const SizedBox(height: AppSizes.sm),
+            _PriceRow(
+              label: 'Travel fee (${distanceKm!.toStringAsFixed(1)} km)',
+              value: '₱$travelFee',
+            ),
+            const SizedBox(height: AppSizes.sm),
+            const Divider(height: 1),
+            const SizedBox(height: AppSizes.sm),
+            _PriceRow(
+              label: 'Estimated total',
+              value: _totalLabel(labor.fee, travelFee!),
+              bold: true,
+            ),
+          ],
+          const SizedBox(height: AppSizes.sm),
+          const Text(
+            'Estimate only. Parts and complex repairs may cost extra.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _totalLabel(String laborFee, int travelFee) {
+    final String digits = laborFee.replaceAll(RegExp(r'[^0-9]'), '');
+    final int? amount = int.tryParse(digits);
+    if (amount == null || laborFee.contains('/')) {
+      return 'See labor fee + ₱$travelFee';
+    }
+    return '₱${amount + travelFee}';
+  }
+}
+
+class _PriceRow extends StatelessWidget {
+  const _PriceRow({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle style = TextStyle(
+      fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+      color: AppColors.textPrimary,
+    );
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(label, style: style)),
+        Text(value, style: style),
+      ],
+    );
+  }
+}
+
 /// The tick. Scales in once, with the one curve allowed to overshoot.
 class _SuccessMark extends StatefulWidget {
   const _SuccessMark();
@@ -276,11 +397,46 @@ class _SuccessMarkState extends State<_SuccessMark>
   }
 }
 
+class _MatchAcceptanceCard extends StatelessWidget {
+  const _MatchAcceptanceCard({required this.match});
+
+  final MatchResult match;
+
+  @override
+  Widget build(BuildContext context) {
+    return SugoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text('Match quality', style: AppTextStyles.overline),
+          const SizedBox(height: AppSizes.md),
+          ScoreIndicator(
+            label: 'Match',
+            percent: match.suitabilityPercent,
+            qualifier: suitabilityQualifier(match.suitabilityPercent),
+          ),
+          const SizedBox(height: AppSizes.sm),
+          ScoreIndicator(
+            label: 'Acceptance',
+            percent: match.acceptancePercent,
+            qualifier: acceptanceQualifier(match.acceptancePercent),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.job, required this.technician});
+  const _SummaryCard({
+    required this.job,
+    required this.technician,
+    required this.match,
+  });
 
   final Job job;
   final Technician? technician;
+  final MatchResult? match;
 
   @override
   Widget build(BuildContext context) {
@@ -354,6 +510,19 @@ class _SummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSizes.md),
+            _Row(
+              label: 'Skills',
+              value: tech.skillTags.isEmpty
+                  ? tech.specializationLabel
+                  : tech.skillTags
+                        .map(Technician.labelForSkill)
+                        .take(3)
+                        .join(', '),
+            ),
+            _Row(
+              label: 'Location',
+              value: tech.distanceAwayLabel ?? 'Location unavailable',
+            ),
           ],
           _Row(label: 'Service', value: job.title),
           if (job.servicePath != null)
@@ -368,7 +537,6 @@ class _SummaryCard extends StatelessWidget {
             label: 'Where',
             value: job.hasLocation ? job.locationLabel : 'Not pinned',
           ),
-          _Row(label: 'Budget', value: job.budgetLabel),
         ],
       ),
     );
@@ -388,10 +556,7 @@ class _Row extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SizedBox(
-            width: 96,
-            child: Text(label, style: AppTextStyles.caption),
-          ),
+          SizedBox(width: 96, child: Text(label, style: AppTextStyles.caption)),
           Expanded(
             child: Text(
               value,

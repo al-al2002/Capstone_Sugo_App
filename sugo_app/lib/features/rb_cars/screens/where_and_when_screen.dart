@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../providers/job_posting_provider.dart';
 import '../theme/posting_text.dart';
-import '../widgets/budget_range_field.dart';
 import '../widgets/location_picker_map.dart';
 import '../widgets/posting_field.dart';
 import '../widgets/posting_scaffold.dart';
@@ -13,11 +12,8 @@ import '../../../core/constants/app_colors.dart';
 
 /// Step 4 of 5: where the job is, how soon it is needed, what it is worth.
 ///
-/// Every field here is a scoring input, and the captions say so. Location
-/// drives proximity and the traffic and weather lookups; the schedule choice
-/// flips the urgency-path table; budget feeds the Stage 2 fit score. A client
-/// who understands why a field matters fills it in properly, which is worth
-/// more to the matcher than a field they filled in to get past it.
+/// Location drives proximity and the traffic and weather lookups; the schedule
+/// choice flips the urgency-path table.
 ///
 /// The map pin is the one required answer in the whole flow - without
 /// coordinates there is no distance, no travel time and no ranking.
@@ -61,12 +57,8 @@ class WhereAndWhenScreen extends StatelessWidget {
         LocationPickerMap(
           latitude: posting.draft.latitude,
           longitude: posting.draft.longitude,
-          onChanged: (double lat, double lon, String? address) =>
-              posting.setLocation(
-                latitude: lat,
-                longitude: lon,
-                label: address,
-              ),
+          onChanged: (double lat, double lon, String? address) => posting
+              .setLocation(latitude: lat, longitude: lon, label: address),
         ),
         const SizedBox(height: AppSizes.sm),
         _LocationReadout(posting: posting),
@@ -77,16 +69,6 @@ class WhereAndWhenScreen extends StatelessWidget {
         ScheduleSelector(
           value: posting.schedulePreference,
           onChanged: posting.setSchedulePreference,
-        ),
-
-        const SizedBox(height: AppSizes.xl),
-        const PostingLabel('Budget range'),
-        const SizedBox(height: AppSizes.md),
-        BudgetRangeField(
-          min: posting.draft.budgetMin,
-          max: posting.draft.budgetMax,
-          onChanged: (double? min, double? max) =>
-              posting.setBudget(min: min, max: max),
         ),
       ],
     );

@@ -9,7 +9,7 @@ import 'job_enums.dart';
 /// **suggestion vocabulary**, not a column: it says what the rule base thinks
 /// should happen, and [servicePath] is how that gets written down.
 ///
-/// Two routes collapse onto `it_community`, and the pair is still
+/// Two routes collapse onto `it_community`, the technician community route, and the pair is still
 /// distinguishable because they disagree about [confidence]:
 ///
 /// * [remoteAssist] - we are confident nobody needs to travel. High confidence.

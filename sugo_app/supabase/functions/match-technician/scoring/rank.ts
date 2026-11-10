@@ -95,6 +95,7 @@ function snapshot(
     member_since: technician.created_at,
     latitude: technician.latitude,
     longitude: technician.longitude,
+    barangay: technician.barangay ?? null,
     verification_tier: technician.verification_tier ?? "basic",
     // The exact brands that earned this match, so the review screen can say
     // "Assessed on Samsung aircon" instead of only showing a number.

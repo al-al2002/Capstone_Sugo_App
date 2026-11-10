@@ -44,8 +44,8 @@ enum ServicePath {
   ),
   itCommunity(
     'it_community',
-    'IT community',
-    'Post it to the technician community for a group diagnosis first.',
+    'Technician community',
+    'Post it to the technician community so technicians can guide you first.',
     Icons.groups_rounded,
   );
 

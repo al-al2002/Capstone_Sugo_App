@@ -36,7 +36,9 @@ void main() {
       service: _GatedService(gate),
     );
     posting.selectCategory(DeviceCategory.laptop);
-    posting.selectSymptom('laptop_wont_power_on');
+    // Keep this loader test on the normal matching path. Ambiguous symptoms
+    // now intentionally post to the technician community first.
+    posting.selectSymptom('laptop_slow_or_freezing');
     posting.setLocation(latitude: 7.0731, longitude: 125.6128);
     return (posting: posting, gate: gate);
   }

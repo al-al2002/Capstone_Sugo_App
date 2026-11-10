@@ -163,6 +163,29 @@ class Job {
 class JobDraft {
   JobDraft();
 
+  factory JobDraft.fromJob(Job job) {
+    final JobDraft draft = JobDraft()
+      ..deviceType = job.deviceType
+      ..deviceDetail = job.deviceDetail
+      ..brand = job.brand
+      ..problemSymptom = job.problemSymptom
+      ..hasPhysicalDamage = job.hasPhysicalDamage
+      ..urgency = job.urgency
+      ..latitude = job.latitude
+      ..longitude = job.longitude
+      ..locationLabel = job.addressText
+      ..budgetMin = job.budgetMin
+      ..budgetMax = job.budgetMax
+      ..preferredSchedule = job.preferredSchedule
+      ..description = job.description
+      ..photoUrls = List<String>.of(job.photoUrls);
+    draft.classification = ClassificationResult.evaluate(
+      symptomCode: job.problemSymptom,
+      hasPhysicalDamage: job.hasPhysicalDamage,
+    );
+    return draft;
+  }
+
   DeviceType? deviceType;
 
   /// Precise device, from the same vocabulary as

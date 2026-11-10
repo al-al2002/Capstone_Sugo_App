@@ -486,6 +486,7 @@ class TechnicianRegistrationService {
     required double latitude,
     required double longitude,
     required double radiusKm,
+    String? barangay,
   }) async {
     await ensureTechnicianRow();
 
@@ -496,6 +497,7 @@ class TechnicianRegistrationService {
             'base_latitude': latitude,
             'base_longitude': longitude,
             'service_radius_km': radiusKm,
+            'barangay': barangay,
           })
           .eq('id', _uid);
     } on PostgrestException catch (error) {

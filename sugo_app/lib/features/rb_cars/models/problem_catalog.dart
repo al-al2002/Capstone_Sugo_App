@@ -31,7 +31,7 @@ class ProblemSymptom {
   final ServicePath pathWhenDamaged;
 
   /// True when the symptom alone cannot separate a software fault from a
-  /// hardware fault. Ambiguous symptoms go to the IT community first and are
+  /// hardware fault. Ambiguous symptoms go to the technician community first and are
   /// written with `classification_confidence = 'low'`.
   final bool isAmbiguous;
 
@@ -288,7 +288,7 @@ class ClassificationResult {
 
   /// Applies the rule base.
   ///
-  /// * "Not sure" always routes to the IT community with low confidence.
+  /// * "Not sure" always routes to the technician community with low confidence.
   /// * An ambiguous symptom with no visible damage does the same, because a
   ///   wrong path costs the client a wasted visit.
   /// * Otherwise the symptom's own mapping decides, keyed on physical damage.
@@ -301,8 +301,8 @@ class ClassificationResult {
         servicePath: ServicePath.itCommunity,
         confidence: ClassificationConfidence.low,
         reason:
-            'You are not sure what is wrong yet, so the IT community will '
-            'narrow it down before anyone is dispatched.',
+            'You are not sure what is wrong yet, so the technician community '
+            'will guide you before you choose a service.',
       );
     }
 
@@ -318,7 +318,7 @@ class ClassificationResult {
         confidence: ClassificationConfidence.low,
         reason:
             'We could not classify that symptom, so it goes to the IT '
-            'community for a first look.',
+            'technician community for a first look.',
       );
     }
 
@@ -328,7 +328,7 @@ class ClassificationResult {
         confidence: ClassificationConfidence.low,
         reason:
             '${symptom.label} can be either a software or a hardware fault. '
-            'The IT community will confirm which before we send anyone.',
+            'Technicians in the community will confirm which service is best.',
       );
     }
 

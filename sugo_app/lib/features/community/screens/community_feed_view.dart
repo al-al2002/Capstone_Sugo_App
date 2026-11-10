@@ -150,7 +150,8 @@ class CommunityFeedViewState extends State<CommunityFeedView> {
   Future<void> _open(CommunityPost post) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => CommunityPostScreen(post: post),
+        builder: (_) =>
+            CommunityPostScreen(post: post, isClient: widget.isClient),
       ),
     );
     if (!mounted) return;
@@ -426,64 +427,68 @@ class _SortRow extends StatelessWidget {
           border: Border.all(color: AppColors.border),
         ),
         child: Row(
-          children: CommunitySort.values.map((CommunitySort option) {
-            final bool active = option == sort;
+          children: CommunitySort.values
+              .map((CommunitySort option) {
+                final bool active = option == sort;
 
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => onChanged(option),
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: AppMotion.base,
-                  curve: AppMotion.standard,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: active ? AppColors.surface : Colors.transparent,
-                    borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-                    // The thumb rests on the track: a hairline edge rather
-                    // than a shadow since the Dispatch redesign.
-                    border: active
-                        ? Border.all(color: AppColors.border)
-                        : null,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      Icon(
-                        option.icon,
-                        size: 14,
-                        color: active
-                            ? AppColors.primary
-                            : AppColors.textSecondary,
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => onChanged(option),
+                    behavior: HitTestBehavior.opaque,
+                    child: AnimatedContainer(
+                      duration: AppMotion.base,
+                      curve: AppMotion.standard,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.surface : Colors.transparent,
+                        borderRadius: BorderRadius.circular(
+                          AppSizes.pillRadius,
+                        ),
+                        // The thumb rests on the track: a hairline edge rather
+                        // than a shadow since the Dispatch redesign.
+                        border: active
+                            ? Border.all(color: AppColors.border)
+                            : null,
                       ),
-                      const SizedBox(width: 6),
-                      // Flexible, because half of a 360dp screen is not much
-                      // and "Most Helpful" is the longest label the control
-                      // has. Without it the row overflows - by 18px in the
-                      // test harness, and by however much a wide font or a
-                      // large accessibility text scale adds on a real device.
-                      Flexible(
-                        child: Text(
-                          option.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: active
-                                ? FontWeight.w700
-                                : FontWeight.w600,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Icon(
+                            option.icon,
+                            size: 14,
                             color: active
                                 ? AppColors.primary
                                 : AppColors.textSecondary,
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                          // Flexible, because half of a 360dp screen is not much
+                          // and "Most Helpful" is the longest label the control
+                          // has. Without it the row overflows - by 18px in the
+                          // test harness, and by however much a wide font or a
+                          // large accessibility text scale adds on a real device.
+                          Flexible(
+                            child: Text(
+                              option.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                                color: active
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            );
-          }).toList(growable: false),
+                );
+              })
+              .toList(growable: false),
         ),
       ),
     );
@@ -503,9 +508,7 @@ class _TopicRow extends StatelessWidget {
       height: 34,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.screenPadding,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: AppSizes.screenPadding),
         children: <Widget>[
           _Chip(
             label: 'All',

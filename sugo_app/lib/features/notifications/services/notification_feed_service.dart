@@ -124,7 +124,9 @@ class NotificationFeedService {
     };
 
     // Stamp anything this device has not seen before.
-    final Map<String, int>? stored = await _prefs.notificationObservedTimes(uid);
+    final Map<String, int>? stored = await _prefs.notificationObservedTimes(
+      uid,
+    );
     final bool firstRun = stored == null;
     final Map<String, int> observed = Map<String, int>.of(
       stored ?? <String, int>{},
@@ -186,7 +188,9 @@ class NotificationFeedService {
     await _prefs.markNotificationsSeen(
       uid,
       items
-          .where((AppNotification n) => n.category != NotificationCategory.messages)
+          .where(
+            (AppNotification n) => n.category != NotificationCategory.messages,
+          )
           .map((AppNotification n) => n.id),
     );
   }
@@ -270,6 +274,22 @@ class NotificationFeedService {
 
     switch (job.status) {
       case JobStatus.pending:
+        if (job.servicePath == ServicePath.itCommunity) {
+          return <_Draft>[
+            _Draft(
+              id: 'job:${job.id}:community',
+              category: NotificationCategory.booking,
+              title: 'Question posted to technician community',
+              body:
+                  'Technicians can comment with advice. Choose a service route '
+                  'only if you need someone to do the repair.',
+              icon: Icons.forum_rounded,
+              tone: SugoTone.info,
+              jobId: job.id,
+              knownTime: job.createdAt,
+            ),
+          ];
+        }
         return <_Draft>[
           _Draft(
             id: 'job:${job.id}:pending',
@@ -283,13 +303,29 @@ class NotificationFeedService {
           ),
         ];
       case JobStatus.matched:
+        if (job.servicePath == ServicePath.itCommunity) {
+          return <_Draft>[
+            _Draft(
+              id: 'job:${job.id}:community',
+              category: NotificationCategory.booking,
+              title: 'Your community question is live',
+              body:
+                  'Open Technician Community to read advice from technicians.',
+              icon: Icons.forum_rounded,
+              tone: SugoTone.info,
+              jobId: job.id,
+              fallbackTime: job.createdAt,
+            ),
+          ];
+        }
         if (who != null && who.status == MatchStatus.offered) {
           return <_Draft>[
             _Draft(
               id: 'job:${job.id}:offered:${who.technicianId}',
               category: NotificationCategory.booking,
               title: 'Request sent to ${who.firstName}',
-              body: 'Waiting for them to accept your ${job.symptomLabel.toLowerCase()} job.',
+              body:
+                  'Waiting for them to accept your ${job.symptomLabel.toLowerCase()} job.',
               icon: Icons.hourglass_top_rounded,
               tone: SugoTone.warning,
               jobId: job.id,
@@ -303,7 +339,8 @@ class NotificationFeedService {
               id: 'job:${job.id}:declined:${who.technicianId}',
               category: NotificationCategory.booking,
               title: '${who.firstName} could not take this job',
-              body: 'Your other matches are still ready. Choose another technician.',
+              body:
+                  'Your other matches are still ready. Choose another technician.',
               icon: Icons.person_off_rounded,
               tone: SugoTone.danger,
               jobId: job.id,
@@ -488,7 +525,9 @@ class NotificationFeedService {
         // stages fall back to the moment this device noticed them, because
         // `updated_at` moves with every position fix and would make an hour-old
         // stage look like it happened a second ago.
-        knownTime: t.stage == TrackingStage.headingToPickup ? t.startedAt : null,
+        knownTime: t.stage == TrackingStage.headingToPickup
+            ? t.startedAt
+            : null,
         fallbackTime: t.startedAt,
       ),
       if (t.isDelayed)

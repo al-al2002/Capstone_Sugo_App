@@ -35,6 +35,9 @@
 alter table public.community_posts
   add column if not exists image_path text;
 
+alter table public.community_posts
+  add column if not exists source_job_id uuid references public.jobs(id) on delete set null;
+
 comment on column public.community_posts.image_path is
   'Object path inside the public `community-photos` bucket, as '
   '`<author_id>/<file>`. Null for a question with no picture.';
@@ -118,6 +121,7 @@ select
     where c.post_id = p.id
   ), 0)                                as helpful_total,
   p.image_path                         as image_path
+  ,p.source_job_id                     as source_job_id
 from public.community_posts p;
 
 alter view public.community_feed set (security_invoker = on);

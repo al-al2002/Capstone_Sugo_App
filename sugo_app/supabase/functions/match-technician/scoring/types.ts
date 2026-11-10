@@ -48,6 +48,8 @@ export interface JobRow {
   urgency: Urgency;
   latitude: number | null;
   longitude: number | null;
+  /** Public barangay or area label; never an exact address. */
+  barangay: string | null;
   budget_min: number | null;
   budget_max: number | null;
   preferred_schedule: string | null;
@@ -105,6 +107,8 @@ export interface TechnicianRow {
    */
   base_latitude: number | null;
   base_longitude: number | null;
+  /** Public barangay or area label; never an exact address. */
+  barangay?: string | null;
 
   /** How far they said they will travel, in km. */
   service_radius_km: number | null;

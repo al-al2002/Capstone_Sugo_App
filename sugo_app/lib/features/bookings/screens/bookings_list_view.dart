@@ -113,11 +113,20 @@ class _BookingsListViewState extends State<BookingsListView> {
         _clientService.jobParties(),
       ).wait;
 
+      // A technician-community question is not a booking until the client
+      // chooses a service route. Keep it in the jobs table so it can be
+      // converted later, but do not present it in the client's booking list.
+      final List<Job> visibleJobs = widget.role == BookingsRole.client
+          ? jobs
+                .where((Job job) => job.servicePath != ServicePath.itCommunity)
+                .toList(growable: false)
+          : jobs;
+
       // Never throws - a failed lookup just means no chips this time.
       final Map<String, ReturnMethod> methods =
           widget.role == BookingsRole.technician
           ? await TrackingService().returnMethods(<String>[
-              for (final Job job in jobs)
+              for (final Job job in visibleJobs)
                 if (job.servicePath == ServicePath.pickup &&
                     job.status != JobStatus.completed &&
                     job.status != JobStatus.cancelled)
@@ -127,7 +136,7 @@ class _BookingsListViewState extends State<BookingsListView> {
 
       if (!mounted) return;
       setState(() {
-        _jobs = jobs;
+        _jobs = visibleJobs;
         _parties = parties;
         _returnMethods = methods;
         _isLoading = false;

@@ -135,6 +135,7 @@ class CommunityPost {
     this.helpfulTotal = 0,
     this.isMine = false,
     this.imagePath,
+    this.sourceJobId,
     required this.createdAt,
     required this.lastActivityAt,
   });
@@ -157,6 +158,7 @@ class CommunityPost {
       // Read defensively: a build newer than the database simply sees every
       // question as photoless rather than failing to parse the feed.
       imagePath: json['image_path'] as String?,
+      sourceJobId: json['source_job_id'] as String?,
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '')?.toLocal() ??
           DateTime.now(),
@@ -180,6 +182,11 @@ class CommunityPost {
   /// Object path in the public `community-photos` bucket, or null. Resolve it
   /// to a URL with `CommunityService.photoUrl`.
   final String? imagePath;
+  final String? sourceJobId;
+
+  bool get cameFromTaskPost =>
+      sourceJobId != null ||
+      (body.startsWith('I need help with ') && body.contains('\n\nSymptom: '));
 
   final DateTime createdAt;
   final DateTime lastActivityAt;
@@ -282,8 +289,18 @@ String communityTimeAgo(DateTime moment) {
   if (gap.inDays < 7) return '${gap.inDays}d ago';
 
   const List<String> months = <String>[
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[moment.month - 1]} ${moment.day}';
 }

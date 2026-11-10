@@ -37,6 +37,7 @@ class Technician {
     this.currentWorkload = 0,
     this.latitude,
     this.longitude,
+    this.barangay,
     this.memberSince,
     this.distanceKm,
     this.registeredSpecializations = const <TechnicianSpecialization>[],
@@ -75,6 +76,7 @@ class Technician {
       currentWorkload: asInt(json['current_workload']),
       latitude: asNullableDouble(json['latitude']),
       longitude: asNullableDouble(json['longitude']),
+      barangay: pick('barangay'),
       memberSince: asDate(json['member_since'] ?? json['created_at']),
       // Computed by the `technician-directory` function against the origin the
       // client sends. Absent when the client had no location to send, or when
@@ -104,7 +106,9 @@ class Technician {
   static DateTime? _parseDay(Object? value) {
     if (value is! String || value.isEmpty) return null;
     final DateTime? parsed = DateTime.tryParse(value);
-    return parsed == null ? null : DateTime(parsed.year, parsed.month, parsed.day);
+    return parsed == null
+        ? null
+        : DateTime(parsed.year, parsed.month, parsed.day);
   }
 
   /// Same uuid as `profiles.id` and `auth.users.id`.
@@ -123,6 +127,7 @@ class Technician {
   final int currentWorkload;
   final double? latitude;
   final double? longitude;
+  final String? barangay;
   final DateTime? memberSince;
 
   /// Straight-line kilometres from the client, when the directory could work
@@ -184,8 +189,9 @@ class Technician {
   /// the one-job-at-a-time rule is enforced when the technician accepts.
   bool get isBusy => currentWorkload > 0;
 
-  String? get awayLabel =>
-      isAway ? 'On vacation until ${DateFormat('MMM d').format(awayUntil!)}' : null;
+  String? get awayLabel => isAway
+      ? 'On vacation until ${DateFormat('MMM d').format(awayUntil!)}'
+      : null;
 
   /// Returns a copy with [awayUntil] merged in from `technicians_away()`.
   Technician copyWith({DateTime? awayUntil}) {
@@ -204,6 +210,7 @@ class Technician {
       currentWorkload: currentWorkload,
       latitude: latitude,
       longitude: longitude,
+      barangay: barangay,
       memberSince: memberSince,
       distanceKm: distanceKm,
       // Carried through explicitly. Omitting them here would silently reset a

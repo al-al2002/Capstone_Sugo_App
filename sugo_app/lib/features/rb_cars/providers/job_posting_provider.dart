@@ -8,6 +8,8 @@ import '../models/issue_catalog.dart';
 import '../models/job_enums.dart';
 import '../models/schedule_preference.dart';
 import '../services/rb_cars_service.dart';
+import '../../community/models/community_models.dart';
+import '../../community/services/community_service.dart';
 
 /// Drives the three-screen job posting flow.
 ///
@@ -16,21 +18,30 @@ import '../services/rb_cars_service.dart';
 /// booking. The screens read [draft] and call the mutators; nothing writes to
 /// the draft directly.
 class JobPostingProvider extends ChangeNotifier {
-  JobPostingProvider({RbCarsService? service, this.preselectedTechnicianId})
-    : _service = service ?? RbCarsService(),
-      editingJob = null;
+  JobPostingProvider({
+    RbCarsService? service,
+    CommunityService? communityService,
+    this.preselectedTechnicianId,
+  }) : _service = service ?? RbCarsService(),
+       _communityService = communityService ?? CommunityService(),
+       editingJob = null;
 
   /// "Edit post": the same five steps, opened on an existing job with every
   /// answer already filled in. Saving updates that job instead of posting a
   /// new one, and matching runs again for the changed details.
-  JobPostingProvider.editing(Job job, {RbCarsService? service})
-    : _service = service ?? RbCarsService(),
-      preselectedTechnicianId = null,
-      editingJob = job {
+  JobPostingProvider.editing(
+    Job job, {
+    RbCarsService? service,
+    CommunityService? communityService,
+  }) : _service = service ?? RbCarsService(),
+       _communityService = communityService ?? CommunityService(),
+       preselectedTechnicianId = null,
+       editingJob = job {
     _prefill(job);
   }
 
   final RbCarsService _service;
+  final CommunityService _communityService;
 
   /// The job being edited, or null when posting a new one.
   final Job? editingJob;
@@ -65,6 +76,8 @@ class JobPostingProvider extends ChangeNotifier {
   bool _requestSaved = false;
   String? _error;
   Job? _postedJob;
+  bool _communityPostCreated = false;
+  CommunityPost? _communityPost;
   int _photosFailed = 0;
 
   bool get isSubmitting => _isSubmitting;
@@ -74,6 +87,8 @@ class JobPostingProvider extends ChangeNotifier {
   bool get requestSaved => _requestSaved;
   String? get error => _error;
   Job? get postedJob => _postedJob;
+  bool get postedToTechnicianCommunity => _communityPostCreated;
+  CommunityPost? get communityPost => _communityPost;
 
   /// The engine's explanation when the first matching run found nobody.
   ///
@@ -196,6 +211,21 @@ class JobPostingProvider extends ChangeNotifier {
   /// original confidence so the analytics still show what the rules said.
   void overrideServicePath(ServicePath path) {
     draft.servicePathOverride = path;
+    notifyListeners();
+  }
+
+  /// Changes a technician-community request into a service request while
+  /// keeping the client's device details, location, photos and notes.
+  void chooseServicePath(ServicePath path) {
+    if (path == ServicePath.itCommunity) return;
+    draft.servicePathOverride = path;
+    notifyListeners();
+  }
+
+  /// Allows the review screen to leave the community result after the same
+  /// job has been updated and matched for a service route.
+  void leaveTechnicianCommunity() {
+    _communityPostCreated = false;
     notifyListeners();
   }
 
@@ -334,6 +364,7 @@ class JobPostingProvider extends ChangeNotifier {
           : await _service.uploadPhotos(_photos);
       _photosFailed = _photos.length - uploaded.length;
       draft.photoUrls = <String>[..._keptPhotoUrls, ...uploaded];
+      final XFile? communityPhoto = _photos.isEmpty ? null : _photos.first;
 
       final Job? existing = _postedJob ?? editingJob;
       final Job job = existing == null
@@ -351,6 +382,22 @@ class JobPostingProvider extends ChangeNotifier {
       // later save keeps them without uploading them a second time.
       _keptPhotoUrls = List<String>.of(draft.photoUrls);
       _photos.clear();
+
+      if (draft.servicePath == ServicePath.itCommunity &&
+          existing == null &&
+          !_communityPostCreated) {
+        _communityPost = await _communityService.ask(
+          title: 'Help with ${draft.deviceType?.label ?? 'my device'}',
+          body: _communityQuestionBody(),
+          topic: _communityTopic,
+          photo: communityPhoto,
+          sourceJobId: job.id,
+        );
+        _communityPostCreated = true;
+        _requestSaved = false;
+        notifyListeners();
+        return job;
+      }
 
       // Matching runs immediately: the client should land on the review screen
       // with a Top 3 already waiting, not on an empty list.
@@ -374,6 +421,25 @@ class JobPostingProvider extends ChangeNotifier {
       _isSubmitting = false;
       notifyListeners();
     }
+  }
+
+  CommunityTopic get _communityTopic {
+    return switch (draft.deviceType) {
+      DeviceType.laptop => CommunityTopic.laptop,
+      DeviceType.phone => CommunityTopic.phone,
+      DeviceType.appliance => CommunityTopic.appliance,
+      DeviceType.network => CommunityTopic.network,
+      null => CommunityTopic.general,
+    };
+  }
+
+  String _communityQuestionBody() {
+    final List<String> details = <String>[
+      'I need help with ${draft.deviceDetail ?? draft.deviceType?.label ?? 'my device'}.',
+      'Symptom: ${draft.problemSymptom ?? 'Not sure yet'}.',
+      if (draft.composedDescription case final String description) description,
+    ];
+    return details.join('\n\n');
   }
 
   void clearError() {

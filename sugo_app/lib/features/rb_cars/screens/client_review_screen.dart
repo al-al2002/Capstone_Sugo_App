@@ -18,6 +18,7 @@ import '../../../core/widgets/sugo_skeleton.dart';
 import '../../bookings/models/booking_route.dart';
 import '../models/job.dart';
 import '../models/job_enums.dart';
+import '../models/labor_price_catalog.dart';
 import '../models/match_result.dart';
 import '../models/schedule_preference.dart';
 import '../providers/job_posting_provider.dart';
@@ -30,6 +31,9 @@ import '../widgets/recommendation_reasons_sheet.dart';
 import '../widgets/technician_matching_loader.dart';
 import 'matching_walkthrough_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
+import '../../client/screens/client_dashboard_screen.dart';
+import '../../community/screens/community_post_screen.dart';
+import '../../community/models/community_models.dart';
 import 'booking_success_screen.dart';
 import 'job_posting_screen.dart';
 import 'technician_detail_screen.dart';
@@ -90,6 +94,7 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
   String? _jobId;
 
   String? _postError;
+  bool _isSwitchingToService = false;
 
   /// True from the first frame when there is a draft to post, so the back
   /// gesture is already blocked before [_post] has begun.
@@ -162,7 +167,9 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
           canPop: !_isPosting,
           child: Scaffold(
             appBar: SugoAppBar(
-              title: 'Finding your technicians',
+              title: widget.draft?.draft.servicePath == ServicePath.itCommunity
+                  ? 'Posting to technician community'
+                  : 'Finding your technicians',
               automaticallyImplyLeading: !_isPosting,
             ),
             body: SafeArea(
@@ -175,6 +182,30 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
       // The analysis screen, following the post as it really goes: the first
       // tick waits for the job to be saved, the rest for the match result.
       final JobPostingProvider draft = widget.draft!;
+      if (draft.draft.servicePath == ServicePath.itCommunity) {
+        return PopScope(
+          canPop: !_isPosting,
+          child: Scaffold(
+            appBar: SugoAppBar(
+              title: 'Posting to technician community',
+              automaticallyImplyLeading: !_isPosting,
+            ),
+            body: Center(
+              child: _isPosting
+                  ? const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        CircularProgressIndicator(),
+                        SizedBox(height: AppSizes.lg),
+                        Text('Posting your question...'),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        );
+      }
+
       return PopScope(
         canPop: !_isPosting,
         child: ListenableBuilder(
@@ -188,6 +219,39 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
                   : MatchingPhase.saving,
             ),
           ),
+        ),
+      );
+    }
+
+    if (_isSwitchingToService) {
+      return const Scaffold(
+        appBar: SugoAppBar(title: 'Finding a technician'),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              CircularProgressIndicator(),
+              SizedBox(height: AppSizes.lg),
+              Text('Updating your request...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (widget.draft?.postedToTechnicianCommunity ?? false) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, Object? _) {
+          if (!didPop) {
+            Navigator.of(
+              context,
+            ).popUntil((Route<dynamic> route) => route.isFirst);
+          }
+        },
+        child: _TechnicianCommunityPostedView(
+          communityPost: widget.draft!.communityPost,
+          onChooseService: _chooseService,
         ),
       );
     }
@@ -221,6 +285,127 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
         Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
       },
       child: review,
+    );
+  }
+
+  Future<void> _chooseService(ServicePath path) async {
+    final JobPostingProvider posting = widget.draft!;
+    setState(() => _isSwitchingToService = true);
+    posting.chooseServicePath(path);
+
+    final Job? job = await posting.submit();
+    if (!mounted) return;
+
+    if (job == null) {
+      setState(() => _isSwitchingToService = false);
+      UiFeedback.showError(
+        context,
+        posting.error ?? 'Could not change this request to a service.',
+      );
+      return;
+    }
+
+    posting.leaveTechnicianCommunity();
+    setState(() {
+      _jobId = job.id;
+      _isSwitchingToService = false;
+    });
+  }
+}
+
+class _TechnicianCommunityPostedView extends StatelessWidget {
+  const _TechnicianCommunityPostedView({
+    required this.communityPost,
+    required this.onChooseService,
+  });
+
+  final CommunityPost? communityPost;
+  final Future<void> Function(ServicePath path) onChooseService;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const SugoAppBar(title: 'Technician community'),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.screenPadding),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              const Icon(
+                Icons.groups_rounded,
+                size: 56,
+                color: AppColors.primary,
+              ),
+              const SizedBox(height: AppSizes.lg),
+              const Text(
+                'Your question is now in the technician community',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.headline,
+              ),
+              const SizedBox(height: AppSizes.sm),
+              const Text(
+                'Technicians can comment with steps to try. If you cannot do '
+                'the fix yourself, you can then choose home service or shop '
+                'pickup.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.subtitle,
+              ),
+              const SizedBox(height: AppSizes.xl),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Need someone to do it for you?',
+                  style: AppTextStyles.subtitle,
+                ),
+              ),
+              const SizedBox(height: AppSizes.sm),
+              OutlinedButton.icon(
+                onPressed: () => onChooseService(ServicePath.homeService),
+                icon: const Icon(Icons.home_repair_service_rounded),
+                label: const Text('Book home service'),
+              ),
+              const SizedBox(height: AppSizes.sm),
+              OutlinedButton.icon(
+                onPressed: () => onChooseService(ServicePath.pickup),
+                icon: const Icon(Icons.local_shipping_rounded),
+                label: const Text('Choose shop pickup'),
+              ),
+              const SizedBox(height: AppSizes.lg),
+              PrimaryButton(
+                label: 'Open technician community',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) {
+                      final CommunityPost? post = communityPost;
+                      if (post == null) {
+                        return const ClientDashboardScreen(
+                          initialTab: ClientTab.community,
+                        );
+                      }
+                      return CommunityPostScreen(
+                        post: post,
+                        isClient: true,
+                        onChooseService: (ServicePath path) async {
+                          await onChooseService(path);
+                          if (context.mounted) Navigator.of(context).pop();
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSizes.sm),
+              TextButton(
+                onPressed: () => Navigator.of(
+                  context,
+                ).popUntil((Route<dynamic> route) => route.isFirst),
+                child: const Text('Back to home'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -546,8 +731,7 @@ class _ClientReviewView extends StatelessWidget {
                 match: match,
                 highlighted: match.technicianId == preselectedTechnicianId,
                 onTap: () => _openDetail(context, match),
-                onWhyTap: () =>
-                    RecommendationReasonsSheet.show(context, match),
+                onWhyTap: () => RecommendationReasonsSheet.show(context, match),
                 onSelect: () => _book(context, match),
                 selectLabel: match.isTopPick
                     ? 'Book ${match.technician?.displayName.split(' ').first ?? 'now'}'
@@ -671,7 +855,8 @@ class _ClientReviewView extends StatelessWidget {
 
     if (waitingOn != null) {
       final String name =
-          waitingOn.technician?.displayName.split(' ').first ?? 'the technician';
+          waitingOn.technician?.displayName.split(' ').first ??
+          'the technician';
       final bool? proceed = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
@@ -754,6 +939,17 @@ class _ClientReviewView extends StatelessWidget {
 
     final String name =
         match.technician?.displayName.split(' ').first ?? 'this technician';
+    final Job? priceJob = matching.job;
+    final LaborPrice? labor = priceJob == null
+        ? null
+        : LaborPriceCatalog.forJob(
+            deviceType: priceJob.deviceType,
+            symptomCode: priceJob.problemSymptom,
+          );
+    final double? distanceKm = priceJob?.servicePath == ServicePath.homeService
+        ? match.breakdown.context.distanceKm ?? match.technician?.distanceKm
+        : null;
+    final int? travelFee = LaborPriceCatalog.travelFee(distanceKm);
 
     // On another job? Asked live, because the card's label is from when the
     // job was matched (2026-09-29). They can still be requested: the client
@@ -783,11 +979,12 @@ class _ClientReviewView extends StatelessWidget {
                 ),
               ),
               title: Text('$name is on another job'),
-              content: Text(
-                '$name is finishing a repair for someone else, so they can '
-                'only accept yours once that one is done. You can send the '
-                'request now and wait, or choose someone else.\n\n'
-                'Sending it lets the other two options go.',
+              content: _BookingPriceContent(
+                technicianName: name,
+                labor: labor,
+                distanceKm: distanceKm,
+                travelFee: travelFee,
+                busy: true,
               ),
               actions: <Widget>[
                 TextButton(
@@ -802,10 +999,11 @@ class _ClientReviewView extends StatelessWidget {
             )
           : AlertDialog(
               title: Text('Book $name?'),
-              content: Text(
-                'We will send your job to $name and let the other two '
-                'options go. They still need to accept before it is '
-                'confirmed.',
+              content: _BookingPriceContent(
+                technicianName: name,
+                labor: labor,
+                distanceKm: distanceKm,
+                travelFee: travelFee,
               ),
               actions: <Widget>[
                 TextButton(
@@ -851,6 +1049,7 @@ class _ClientReviewView extends StatelessWidget {
         context,
         job: job,
         technician: match.technician,
+        match: match,
       );
     } else {
       UiFeedback.showError(
@@ -1033,7 +1232,6 @@ class _JobSummary extends StatelessWidget {
             children: <Widget>[
               if (path != null) _MetaPill(icon: path.icon, label: path.label),
               _MetaPill(icon: Icons.schedule_rounded, label: schedule.label),
-              _MetaPill(icon: Icons.payments_outlined, label: job.budgetLabel),
             ],
           ),
           const SizedBox(height: AppSizes.md),
@@ -1051,6 +1249,92 @@ class _JobSummary extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BookingPriceContent extends StatelessWidget {
+  const _BookingPriceContent({
+    required this.technicianName,
+    required this.labor,
+    required this.distanceKm,
+    required this.travelFee,
+    this.busy = false,
+  });
+
+  final String technicianName;
+  final LaborPrice? labor;
+  final double? distanceKm;
+  final int? travelFee;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> children = <Widget>[
+      if (labor != null) ...<Widget>[
+        const Text('Price', style: TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: AppSizes.sm),
+        _PriceLine(label: 'Symptom', value: labor!.symptom),
+        _PriceLine(label: 'Labor fee', value: labor!.fee),
+        if (travelFee != null) ...<Widget>[
+          _PriceLine(
+            label: 'Travel fee (${distanceKm!.toStringAsFixed(1)} km)',
+            value: '₱$travelFee',
+          ),
+          const Divider(height: AppSizes.lg),
+          _PriceLine(
+            label: 'Estimated total',
+            value: LaborPriceCatalog.estimatedTotal(
+              labor: labor!,
+              travelFee: travelFee!,
+            ),
+            bold: true,
+          ),
+        ],
+        const SizedBox(height: AppSizes.md),
+      ],
+      Text(
+        busy
+            ? '$technicianName is finishing a repair for someone else, so '
+                  'they can only accept yours once that one is done. You can '
+                  'send the request now and wait, or choose someone else.'
+            : 'We will send your job to $technicianName and let the other '
+                  'options go. They still need to accept before it is '
+                  'confirmed.',
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+  }
+}
+
+class _PriceLine extends StatelessWidget {
+  const _PriceLine({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle style = TextStyle(
+      fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSizes.xs),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: Text(label)),
+          Text(value, style: style),
         ],
       ),
     );

@@ -152,6 +152,7 @@ class TechnicianRegistrationController extends RegistrationFlowController {
             latitude: place.latitude,
             longitude: place.longitude,
             radiusKm: _radiusKm,
+            barangay: place.barangay,
           );
           return true;
         });

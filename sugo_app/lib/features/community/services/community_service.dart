@@ -75,13 +75,13 @@ class CommunityService {
       }
 
       final List<Map<String, dynamic>> rows = switch (sort) {
-        CommunitySort.recent => await query
-            .order('last_activity_at', ascending: false)
-            .limit(limit),
-        CommunitySort.mostHelpful => await query
-            .order('helpful_total', ascending: false)
-            .order('last_activity_at', ascending: false)
-            .limit(limit),
+        CommunitySort.recent =>
+          await query.order('last_activity_at', ascending: false).limit(limit),
+        CommunitySort.mostHelpful =>
+          await query
+              .order('helpful_total', ascending: false)
+              .order('last_activity_at', ascending: false)
+              .limit(limit),
       };
 
       return rows.map(CommunityPost.fromJson).toList(growable: false);
@@ -123,6 +123,7 @@ class CommunityService {
     required String body,
     CommunityTopic topic = CommunityTopic.general,
     XFile? photo,
+    String? sourceJobId,
   }) async {
     final String cleanTitle = title.trim();
     final String cleanBody = body.trim();
@@ -168,6 +169,7 @@ class CommunityService {
             'body': cleanBody,
             'topic': topic.wire,
             if (imagePath != null) 'image_path': imagePath,
+            if (sourceJobId != null) 'source_job_id': sourceJobId,
           })
           .select('id')
           .single();
@@ -187,7 +189,10 @@ class CommunityService {
         throw const RbCarsFailure(_photosNotSetUp);
       }
 
-      throw RbCarsFailure(_writeFailure(error, 'post a question'), detail: error);
+      throw RbCarsFailure(
+        _writeFailure(error, 'post a question'),
+        detail: error,
+      );
     } catch (error) {
       _log('ask', error);
       throw const RbCarsFailure(
@@ -352,9 +357,10 @@ class CommunityService {
 
       final List<Map<String, dynamic>> rows = switch (sort) {
         CommunitySort.recent => await query.order('created_at'),
-        CommunitySort.mostHelpful => await query
-            .order('helpful_count', ascending: false)
-            .order('created_at'),
+        CommunitySort.mostHelpful =>
+          await query
+              .order('helpful_count', ascending: false)
+              .order('created_at'),
       };
 
       return rows.map(CommunityAnswer.fromJson).toList(growable: false);

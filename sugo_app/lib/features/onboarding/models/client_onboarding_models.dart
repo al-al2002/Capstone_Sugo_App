@@ -22,6 +22,7 @@ class GeoPlace {
     required this.longitude,
     required this.addressText,
     this.shortLabel,
+    this.barangay,
   });
 
   /// Builds one from a Nominatim search or reverse-geocode result.
@@ -30,6 +31,8 @@ class GeoPlace {
     final double? lat = double.tryParse(json['lat']?.toString() ?? '');
     final double? lon = double.tryParse(json['lon']?.toString() ?? '');
     final String display = json['display_name'] as String? ?? '';
+    final Map<String, dynamic> address =
+        json['address'] as Map<String, dynamic>? ?? const <String, dynamic>{};
 
     return GeoPlace(
       latitude: lat ?? 0,
@@ -39,6 +42,11 @@ class GeoPlace {
       // or street name - and is what a list row should lead with. The full
       // display_name is often eight components long and unreadable in a list.
       shortLabel: display.split(',').first.trim(),
+      barangay:
+          address['barangay'] as String? ??
+          address['suburb'] as String? ??
+          address['village'] as String? ??
+          address['town'] as String?,
     );
   }
 
@@ -46,6 +54,7 @@ class GeoPlace {
   final double longitude;
   final String addressText;
   final String? shortLabel;
+  final String? barangay;
 
   /// True when the coordinates are usable. Nominatim occasionally returns a
   /// row whose lat/lon fail to parse, and a silent (0, 0) puts the pin in the

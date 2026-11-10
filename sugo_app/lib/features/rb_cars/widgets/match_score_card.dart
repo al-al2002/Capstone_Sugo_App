@@ -118,6 +118,12 @@ class MatchScoreCard extends StatelessWidget {
             _Identity(technician: technician),
             const SizedBox(height: AppSizes.md),
 
+            _TechnicianFacts(
+              technician: technician,
+              distanceLabel: match.breakdown.context.distanceLabel,
+            ),
+            const SizedBox(height: AppSizes.md),
+
             _NowRow(match: match, technician: technician),
             const SizedBox(height: AppSizes.md),
 
@@ -377,6 +383,76 @@ class _Identity extends StatelessWidget {
   }
 }
 
+class _TechnicianFacts extends StatelessWidget {
+  const _TechnicianFacts({
+    required this.technician,
+    required this.distanceLabel,
+  });
+
+  final Technician? technician;
+  final String? distanceLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final Technician? t = technician;
+    final String skills = t == null || t.skillTags.isEmpty
+        ? t?.specializationLabel ?? 'Not available'
+        : t.skillTags.map(Technician.labelForSkill).take(3).join(', ');
+    final String locationName = t?.barangay?.trim() ?? '';
+    final String location = <String>[
+      if (locationName.isNotEmpty) locationName,
+      distanceLabel ?? t?.distanceAwayLabel ?? 'Distance unavailable',
+    ].join(' · ');
+
+    return Column(
+      children: <Widget>[
+        _FactRow(icon: Icons.handyman_outlined, label: 'Skills', value: skills),
+        const SizedBox(height: AppSizes.xs),
+        _FactRow(
+          icon: Icons.location_on_outlined,
+          label: 'Location:',
+          value: location,
+        ),
+      ],
+    );
+  }
+}
+
+class _FactRow extends StatelessWidget {
+  const _FactRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(icon, size: 15, color: AppColors.secondary),
+        const SizedBox(width: 6),
+        SizedBox(width: 58, child: Text(label, style: AppTextStyles.caption)),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.caption.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Distance, and whether they are free - the two things that change hourly.
 class _NowRow extends StatelessWidget {
   const _NowRow({required this.match, required this.technician});
@@ -398,8 +474,10 @@ class _NowRow extends StatelessWidget {
         ? null
         : workload == 0
         ? ('Available today', AppColors.success)
-        : ('$workload job${workload == 1 ? '' : 's'} in progress',
-              AppColors.warning);
+        : (
+            '$workload job${workload == 1 ? '' : 's'} in progress',
+            AppColors.warning,
+          );
 
     return Wrap(
       spacing: AppSizes.lg,

@@ -182,6 +182,7 @@ class GeocodingService {
         longitude: longitude,
         addressText: place.addressText,
         shortLabel: place.shortLabel,
+        barangay: place.barangay,
       );
     } catch (error) {
       _log('reverse', error);

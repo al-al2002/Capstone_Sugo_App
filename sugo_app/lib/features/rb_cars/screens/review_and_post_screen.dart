@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-
 import '../../../core/constants/app_sizes.dart';
 import '../models/job.dart';
+import '../models/job_enums.dart';
 import '../providers/job_posting_provider.dart';
 import '../theme/posting_text.dart';
 import '../widgets/photo_picker_row.dart';
@@ -10,6 +9,7 @@ import '../widgets/posting_field.dart';
 import '../widgets/posting_scaffold.dart';
 import 'client_review_screen.dart';
 import '../../../core/constants/app_colors.dart';
+import '../models/labor_price_catalog.dart';
 
 /// Step 5 of 5: the last look before the job goes out to technicians.
 ///
@@ -77,7 +77,11 @@ class _ReviewAndPostScreenState extends State<ReviewAndPostScreen> {
           ? 'Saving updates your post and finds a fresh top 3 for it.'
           : 'Last look before we rank the three best technicians near you.',
       stepName: 'Review',
-      ctaLabel: editing ? 'Save & find technicians' : 'Find technician',
+      ctaLabel: posting.draft.servicePath == ServicePath.itCommunity
+          ? 'Post'
+          : editing
+          ? 'Save & find technicians'
+          : 'Find technician',
       ctaHint: 'Set a location on the map to post this job.',
       onCta: posting.canSubmit ? _submit : null,
       children: <Widget>[
@@ -116,7 +120,11 @@ class _ReviewAndPostScreenState extends State<ReviewAndPostScreen> {
         ),
 
         const SizedBox(height: AppSizes.lg),
-        _MatchPromise(editing: editing),
+        _MatchPromise(
+          editing: editing,
+          isTechnicianCommunity:
+              posting.draft.servicePath == ServicePath.itCommunity,
+        ),
 
         const SizedBox(height: AppSizes.lg),
         _Summary(posting: posting),
@@ -131,9 +139,13 @@ class _ReviewAndPostScreenState extends State<ReviewAndPostScreen> {
 /// flow's filled colours are reserved for things the client chose or is about
 /// to press.
 class _MatchPromise extends StatelessWidget {
-  const _MatchPromise({required this.editing});
+  const _MatchPromise({
+    required this.editing,
+    required this.isTechnicianCommunity,
+  });
 
   final bool editing;
+  final bool isTechnicianCommunity;
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +171,8 @@ class _MatchPromise extends StatelessWidget {
             child: Text(
               editing
                   ? 'Your current matches will be replaced with a fresh top 3'
+                  : isTechnicianCommunity
+                  ? 'Your question will be posted to the technician community'
                   : 'RB-CARS will match you with top 3 technicians',
               style: const TextStyle(
                 fontSize: 12,
@@ -173,7 +187,7 @@ class _MatchPromise extends StatelessWidget {
   }
 }
 
-/// The four facts the job will be judged on, read back before it is sent.
+/// The three facts relevant to routing and scheduling, read back before it is sent.
 class _Summary extends StatelessWidget {
   const _Summary({required this.posting});
 
@@ -187,6 +201,13 @@ class _Summary extends StatelessWidget {
       posting.deviceCategory?.label,
       draft.brand,
     ].whereType<String>().join(' - ');
+    final LaborPrice? labor =
+        draft.deviceType == null || draft.problemSymptom == null
+        ? null
+        : LaborPriceCatalog.forJob(
+            deviceType: draft.deviceType!,
+            symptomCode: draft.problemSymptom!,
+          );
 
     return Container(
       decoration: BoxDecoration(
@@ -197,22 +218,24 @@ class _Summary extends StatelessWidget {
       child: Column(
         children: <Widget>[
           _Row(label: 'Device', value: device.isEmpty ? 'Not set' : device),
+          _Row(
+            label: 'Symptom',
+            value:
+                labor?.symptom ??
+                (draft.problemSymptom == null
+                    ? 'Not set'
+                    : draft.problemSymptom!),
+          ),
+          _Row(label: 'Price', value: labor?.fee ?? 'Price to be confirmed'),
           _Row(label: 'Service', value: draft.servicePath?.label ?? 'Not set'),
-          _Row(label: 'Schedule', value: posting.schedulePreference.label),
-          _Row(label: 'Budget', value: _budget(draft), last: true),
+          _Row(
+            label: 'Schedule',
+            value: posting.schedulePreference.label,
+            last: true,
+          ),
         ],
       ),
     );
-  }
-
-  static String _budget(JobDraft draft) {
-    if (draft.budgetMin == null && draft.budgetMax == null) return 'Any budget';
-    final NumberFormat peso = NumberFormat.currency(
-      symbol: '₱',
-      decimalDigits: 0,
-    );
-    return '${peso.format(draft.budgetMin ?? 0)} - '
-        '${peso.format(draft.budgetMax ?? 0)}';
   }
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../models/device_category.dart';
 import '../models/issue_catalog.dart';
+import '../models/labor_price_catalog.dart';
 import '../models/job_enums.dart';
 import '../models/problem_catalog.dart';
 import '../providers/job_posting_provider.dart';
@@ -143,14 +144,10 @@ class _SymptomDropdown extends StatelessWidget {
             ...issues.map(
               (IssueOption issue) => DropdownMenuItem<String>(
                 value: issue.code,
-                child: Text(
-                  issue.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15),
-                ),
+                child: _SymptomOption(issue: issue),
               ),
             ),
-            // The escape hatch. Choosing this routes the job to the IT
+            // The escape hatch. Choosing this routes the job to the technician
             // community with low confidence, instead of guessing a path.
             const DropdownMenuItem<String>(
               value: ProblemCatalog.notSureCode,
@@ -203,6 +200,43 @@ class _SymptomDropdown extends StatelessWidget {
   }
 }
 
+class _SymptomOption extends StatelessWidget {
+  const _SymptomOption({required this.issue});
+
+  final IssueOption issue;
+
+  @override
+  Widget build(BuildContext context) {
+    final LaborPrice? labor = LaborPriceCatalog.forJob(
+      deviceType: issue.deviceType,
+      symptomCode: issue.code,
+    );
+
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            issue.label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 15),
+          ),
+        ),
+        if (labor != null) ...<Widget>[
+          const SizedBox(width: AppSizes.sm),
+          Text(
+            labor.fee,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primaryDark,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _NotSureNote extends StatelessWidget {
   const _NotSureNote();
 
@@ -221,8 +255,8 @@ class _NotSureNote extends StatelessWidget {
           SizedBox(width: 6),
           Expanded(
             child: Text(
-              'No problem. The IT community narrows it down before anyone is '
-              'dispatched, so you are not charged for a guess.',
+              'No problem. Technicians in the community can guide you before '
+              'you choose home service or shop pickup.',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.4,

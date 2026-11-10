@@ -70,7 +70,9 @@ import '../widgets/service_category_row.dart';
 ///
 /// Reached only through `SessionController.destination`, on `role = 'client'`.
 class ClientDashboardScreen extends StatefulWidget {
-  const ClientDashboardScreen({super.key});
+  const ClientDashboardScreen({super.key, this.initialTab = ClientTab.home});
+
+  final ClientTab initialTab;
 
   @override
   State<ClientDashboardScreen> createState() => _ClientDashboardScreenState();
@@ -104,7 +106,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   final TrackingService _tracking = TrackingService();
   final NotificationFeedService _notifications = NotificationFeedService();
 
-  ClientTab _tab = ClientTab.home;
+  late ClientTab _tab = widget.initialTab;
 
   /// Unread messages across every thread, for the Messages tab badge.
   int _unreadMessages = 0;
@@ -259,24 +261,22 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     if (_heroWatchJobId == hero.id) return;
     _stopHeroWatch();
     _heroWatchJobId = hero.id;
-    _heroWatch = _tracking
-        .watch(hero.id)
-        .listen(
-          (JobTracking? t) {
-            if (!mounted) return;
-            setState(() => _heroTracking = t);
-            if (_isMoving(t)) {
-              _maybeAlertDelay(hero, t!);
-              return;
-            }
-            // Arrived, or on the bench: nothing left to follow, and the job
-            // itself may have moved on too.
-            _stopHeroWatch();
-            _loadJobs();
-          },
-          // A dropped feed just leaves the card as it was.
-          onError: (Object _) {},
-        );
+    _heroWatch = _tracking.watch(hero.id).listen(
+      (JobTracking? t) {
+        if (!mounted) return;
+        setState(() => _heroTracking = t);
+        if (_isMoving(t)) {
+          _maybeAlertDelay(hero, t!);
+          return;
+        }
+        // Arrived, or on the bench: nothing left to follow, and the job
+        // itself may have moved on too.
+        _stopHeroWatch();
+        _loadJobs();
+      },
+      // A dropped feed just leaves the card as it was.
+      onError: (Object _) {},
+    );
   }
 
   void _stopHeroWatch() {
@@ -541,6 +541,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   List<Job> get _activeJobs => _jobs
       .where(
         (Job job) =>
+            job.servicePath != ServicePath.itCommunity &&
             job.status != JobStatus.completed &&
             job.status != JobStatus.cancelled,
       )

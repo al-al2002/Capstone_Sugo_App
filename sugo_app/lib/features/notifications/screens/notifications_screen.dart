@@ -15,6 +15,7 @@ import '../../../core/widgets/sugo_status_badge.dart';
 import '../../bookings/screens/bookings_list_view.dart';
 import '../../bookings/screens/job_detail_screen.dart';
 import '../../chat/screens/chat_thread_screen.dart';
+import '../../client/screens/client_dashboard_screen.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
 import '../../rb_cars/screens/client_review_screen.dart';
@@ -120,10 +121,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!mounted) return;
     setState(() {
       _items = _items
-          .map((AppNotification n) => n.id == item.id && n.category !=
-                  NotificationCategory.messages
-              ? n.copyWith(unread: false)
-              : n)
+          .map(
+            (AppNotification n) =>
+                n.id == item.id && n.category != NotificationCategory.messages
+                ? n.copyWith(unread: false)
+                : n,
+          )
           .toList();
     });
 
@@ -155,14 +158,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
 
+    // A Technician Community question has no technician shortlist yet.
+    // Opening the community destination keeps this notification separate from
+    // the matching flow; the shortlist only becomes valid after conversion to
+    // Home Service or Shop Pickup.
+    if (_isClient && job.servicePath == ServicePath.itCommunity) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              const ClientDashboardScreen(initialTab: ClientTab.community),
+        ),
+      );
+      await _load();
+      return;
+    }
+
     final Widget destination = switch (item.action) {
       // Each role gets the tracking screen built for it: the client watches,
       // the technician drives.
-      NotificationAction.openTracking => _isClient
-          ? JobTrackingScreen(job: job)
-          : TechnicianDeliveryScreen(job: job),
-      _ when !_isClient =>
-        JobDetailScreen(job: job, role: BookingsRole.technician),
+      NotificationAction.openTracking =>
+        _isClient
+            ? JobTrackingScreen(job: job)
+            : TechnicianDeliveryScreen(job: job),
+      _ when !_isClient => JobDetailScreen(
+        job: job,
+        role: BookingsRole.technician,
+      ),
       _ =>
         job.status == JobStatus.pending || job.status == JobStatus.matched
             ? ClientReviewScreen(jobId: job.id)

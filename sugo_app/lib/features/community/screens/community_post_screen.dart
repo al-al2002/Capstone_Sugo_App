@@ -12,6 +12,9 @@ import '../../../core/widgets/sugo_image_viewer.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
+import '../../rb_cars/models/job_enums.dart';
+import '../../rb_cars/models/job.dart';
+import '../../rb_cars/screens/client_review_screen.dart';
 import '../models/community_models.dart';
 import '../services/community_service.dart';
 import '../widgets/community_answer_card.dart';
@@ -31,9 +34,16 @@ import '../widgets/community_author_row.dart';
 /// model") is a normal and useful thing to do, and blocking it would push that
 /// conversation into a second question.
 class CommunityPostScreen extends StatefulWidget {
-  const CommunityPostScreen({super.key, required this.post});
+  const CommunityPostScreen({
+    super.key,
+    required this.post,
+    this.isClient = false,
+    this.onChooseService,
+  });
 
   final CommunityPost post;
+  final bool isClient;
+  final Future<void> Function(ServicePath path)? onChooseService;
 
   @override
   State<CommunityPostScreen> createState() => _CommunityPostScreenState();
@@ -50,6 +60,7 @@ class _CommunityPostScreenState extends State<CommunityPostScreen> {
 
   bool _loading = true;
   bool _sending = false;
+  bool _converting = false;
   String? _error;
 
   @override
@@ -88,9 +99,9 @@ class _CommunityPostScreenState extends State<CommunityPostScreen> {
 
   /// Re-reads the post row too, so the answer count in the header stays true.
   Future<void> _refresh() async {
-    final CommunityPost? fresh = await _service.post(_post.id).catchError(
-      (_) => null,
-    );
+    final CommunityPost? fresh = await _service
+        .post(_post.id)
+        .catchError((_) => null);
     if (!mounted) return;
     if (fresh != null) setState(() => _post = fresh);
     await _load();
@@ -153,6 +164,43 @@ class _CommunityPostScreenState extends State<CommunityPostScreen> {
       if (!mounted) return;
       setState(() => _sending = false);
       UiFeedback.showError(context, failure.message);
+    }
+  }
+
+  Future<void> _convertTask(ServicePath path) async {
+    if (_converting || !_post.cameFromTaskPost) return;
+    setState(() => _converting = true);
+    try {
+      final List<Job> jobs = await RbCarsService().myJobs();
+      final String? symptom = RegExp(
+        r'\n\nSymptom:\s*([^.]+)\.',
+      ).firstMatch(_post.body)?.group(1)?.trim();
+      final Job job = jobs.firstWhere(
+        (Job row) =>
+            row.id == _post.sourceJobId ||
+            (symptom != null && row.problemSymptom == symptom),
+      );
+      final JobDraft draft = JobDraft.fromJob(job)..servicePathOverride = path;
+      final RbCarsService service = RbCarsService();
+      final Job updated = await service.updateJob(job.id, draft);
+      await service.runMatching(updated.id);
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => ClientReviewScreen(jobId: updated.id),
+        ),
+      );
+    } on RbCarsFailure catch (failure) {
+      if (mounted) UiFeedback.showError(context, failure.message);
+    } catch (_) {
+      if (mounted) {
+        UiFeedback.showError(
+          context,
+          'Could not switch this post to a service.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _converting = false);
     }
   }
 
@@ -227,11 +275,15 @@ class _CommunityPostScreenState extends State<CommunityPostScreen> {
               ),
             ),
           ),
-          _ReplyBar(
-            controller: _reply,
-            sending: _sending,
-            onSend: _send,
-          ),
+          if (widget.isClient &&
+              (widget.onChooseService != null ||
+                  _post.cameFromTaskPost)) ...<Widget>[
+            _ClientServiceFallback(
+              onChooseService: widget.onChooseService ?? _convertTask,
+              converting: _converting,
+            ),
+          ],
+          _ReplyBar(controller: _reply, sending: _sending, onSend: _send),
         ],
       ),
     );
@@ -271,6 +323,66 @@ class _CommunityPostScreenState extends State<CommunityPostScreen> {
                 : null,
           ),
       ],
+    );
+  }
+}
+
+class _ClientServiceFallback extends StatelessWidget {
+  const _ClientServiceFallback({
+    required this.onChooseService,
+    this.converting = false,
+  });
+
+  final Future<void> Function(ServicePath path) onChooseService;
+  final bool converting;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.screenPadding,
+        AppSizes.sm,
+        AppSizes.screenPadding,
+        AppSizes.sm,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text(
+              'Need someone to do it for you?',
+              style: AppTextStyles.subtitle,
+            ),
+            const SizedBox(height: AppSizes.xs),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: converting
+                        ? null
+                        : () => onChooseService(ServicePath.homeService),
+                    child: const Text('Home service'),
+                  ),
+                ),
+                const SizedBox(width: AppSizes.sm),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: converting
+                        ? null
+                        : () => onChooseService(ServicePath.pickup),
+                    child: const Text('Shop pickup'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -319,7 +431,8 @@ class _QuestionCard extends StatelessWidget {
           // fault off the picture, so it gets the space - and a tap opens the
           // same zoomable viewer the job photos use, because "is that a
           // capacitor or a burn mark" is a question that needs pinch-zoom.
-          if (CommunityService.publicPhotoUrl(post.imagePath) case final String url) ...<Widget>[
+          if (CommunityService.publicPhotoUrl(post.imagePath)
+              case final String url) ...<Widget>[
             const SizedBox(height: AppSizes.md),
             _QuestionPhoto(url: url),
           ],
@@ -363,7 +476,10 @@ class _QuestionPhoto extends StatelessWidget {
             loadingBuilder:
                 (BuildContext context, Widget child, ImageChunkEvent? loading) {
                   if (loading == null) return child;
-                  return const SugoSkeleton(height: 180, width: double.infinity);
+                  return const SugoSkeleton(
+                    height: 180,
+                    width: double.infinity,
+                  );
                 },
             errorBuilder:
                 (BuildContext context, Object error, StackTrace? stack) {
