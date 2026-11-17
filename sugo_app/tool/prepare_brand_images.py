@@ -1,5 +1,10 @@
 """Turns the brand artwork into the files the app actually uses.
 
+NOTE (2026-11-16): the app icon and the emblem now come from
+`tool/make_logo.py` (the new S-road logo). This script no longer writes them;
+only its splash outputs still run, and those are no longer shown either (the
+splash and the auth headers are drawn in code).
+
 Run from `sugo_app/` whenever the icon or splash artwork changes:
 
     python tool/prepare_brand_images.py
@@ -259,7 +264,10 @@ def splash_outputs() -> list[Path]:
 
 
 def main() -> None:
-    written = icon_outputs() + splash_outputs()
+    # The icon outputs are written by tool/make_logo.py since the 2026-11-16
+    # logo. Running icon_outputs() here would put the old house-and-van
+    # emblem back over the app icon and the in-app mark, so it is not called.
+    written = splash_outputs()
     for path in RETIRED:
         if path.exists():
             path.unlink()
