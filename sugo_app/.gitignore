@@ -49,3 +49,7 @@ supabase/.temp/
 supabase/.branches/
 supabase/functions/.env.local
 supabase/functions/.env
+
+# Golden-test failure images are written next to the test on a mismatch;
+# they are scratch output, never something to commit.
+test/**/failures/
