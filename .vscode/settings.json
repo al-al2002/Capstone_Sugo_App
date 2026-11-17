@@ -25,6 +25,17 @@
     "**/build/**": true
   },
 
+  // The admin (sugo_app/sugo-admin) runs Tailwind from the v3 Play CDN, but
+  // its package.json lists Tailwind v4 for an unused Vite pipeline, so the
+  // Tailwind extension lints the Blade views as v4. Its "can be written as"
+  // suggestions (bg-gradient-to-b -> bg-linear-to-b, bg-white/[0.12] ->
+  // bg-white/12, border-[22px] -> border-22) are v4-only class names that do
+  // not exist in v3: accepting them would make the admin's gradients and
+  // translucent fills silently disappear. Only this one rule is switched off;
+  // the extension's other checks stay on. Revisit if the admin ever moves to
+  // the v4 build. (2026-11-17)
+  "tailwindCSS.lint.suggestCanonicalClasses": "ignore",
+
   "dart.lineLength": 80,
   "[dart]": {
     "editor.formatOnSave": true,
