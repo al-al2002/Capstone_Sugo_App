@@ -33,28 +33,38 @@ class AppServiceProvider extends ServiceProvider
          * Only for a signed-in admin (the login page uses its own view), and
          * never fatal: a badge is a convenience, and a Supabase hiccup must not
          * take down the page it decorates.
+         *
+         * Also composed into `dashboard` (2026-11-17), whose hero shows the
+         * open-dispute count: a child view renders BEFORE its layout, so a
+         * value composed only into the layout is not visible inside the
+         * dashboard's own markup. `once()` keeps it to one pair of Supabase
+         * counts per request even though two views ask.
          */
-        View::composer('layouts.app', function ($view): void {
+        View::composer(['layouts.app', 'dashboard'], function ($view): void {
             if (! session()->has('admin')) {
                 return;
             }
 
-            try {
-                $count = app(Supabase::class)->count('identity_verifications', [
-                    'status' => 'eq.pending',
-                ]);
-            } catch (Throwable) {
-                $count = 0;
-            }
+            [$count, $disputes] = once(function (): array {
+                try {
+                    $count = app(Supabase::class)->count('identity_verifications', [
+                        'status' => 'eq.pending',
+                    ]);
+                } catch (Throwable) {
+                    $count = 0;
+                }
 
-            // Reports still waiting on a decision - the "Disputes" badge.
-            try {
-                $disputes = app(Supabase::class)->count('admin_disputes', [
-                    'status' => 'eq.open',
-                ]);
-            } catch (Throwable) {
-                $disputes = 0;
-            }
+                // Reports still waiting on a decision - the "Disputes" badge.
+                try {
+                    $disputes = app(Supabase::class)->count('admin_disputes', [
+                        'status' => 'eq.open',
+                    ]);
+                } catch (Throwable) {
+                    $disputes = 0;
+                }
+
+                return [$count, $disputes];
+            });
 
             $view->with('pendingBadge', $count)->with('disputeBadge', $disputes);
         });

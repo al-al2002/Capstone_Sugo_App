@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\AccountApproved;
 use App\Services\Supabase;
+use App\Support\Specializations;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -108,8 +109,16 @@ class VerificationController extends Controller
 
         $specializations = [];
         $documents = [];
+        $work = null;
 
         if (($verification['role'] ?? null) === 'technician') {
+            // The work they take (2026-11-17): context for the reviewer - a
+            // Shop Repair applicant should have a shop pinned.
+            $work = $this->supabase->first('technicians', [
+                'select' => 'offers_home_service,offers_shop_repair,shop_name,shop_latitude,shop_longitude',
+                'id' => 'eq.'.$verification['user_id'],
+            ]);
+
             $specializations = $this->supabase->select('technician_specializations', [
                 'technician_id' => 'eq.'.$verification['user_id'],
                 'order' => 'created_at.asc',
@@ -140,6 +149,7 @@ class VerificationController extends Controller
             'history',
             'specializations',
             'documents',
+            'work',
         ));
     }
 
@@ -181,13 +191,11 @@ class VerificationController extends Controller
             return [];
         }
 
-        $documents = $this->supabase->select('technician_verification_documents', [
+        return $this->supabase->select('technician_verification_documents', [
             'technician_id' => 'eq.'.$verification['user_id'],
             'status' => 'eq.pending',
-            'select' => 'id',
+            'select' => 'id,doc_type',
         ]);
-
-        return array_column($documents, 'id');
     }
 
     public function update(Request $request, string $id): RedirectResponse
@@ -195,6 +203,14 @@ class VerificationController extends Controller
         $data = $request->validate([
             'decision' => ['required', 'in:approve,reject'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            // Progressive Trust Badge (20261115000002): which specialization
+            // each approved certificate proves. Approving it skill-verifies
+            // the technician's declared rows in that specialization.
+            'specializations' => ['nullable', 'array'],
+            'specializations.*' => [
+                'nullable',
+                'in:'.implode(',', array_keys(Specializations::LABELS)),
+            ],
         ]);
 
         $approved = $data['decision'] === 'approve';
@@ -216,8 +232,18 @@ class VerificationController extends Controller
         $documents = [];
 
         if ($approved) {
-            foreach ($this->pendingDocuments($id) as $documentId) {
-                $documents[] = ['id' => $documentId, 'decision' => 'approve'];
+            foreach ($this->pendingDocuments($id) as $document) {
+                $entry = ['id' => $document['id'], 'decision' => 'approve'];
+
+                // Only a certificate can prove a specialization; anything the
+                // form sent for another document type is ignored here rather
+                // than rejected by the database.
+                $specialization = $data['specializations'][$document['id']] ?? null;
+                if ($document['doc_type'] === 'certificate' && ! empty($specialization)) {
+                    $entry['specialization'] = $specialization;
+                }
+
+                $documents[] = $entry;
             }
         }
 

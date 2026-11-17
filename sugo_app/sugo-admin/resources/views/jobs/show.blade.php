@@ -6,7 +6,7 @@
 
 @section('actions')
     <a href="{{ route('jobs.index') }}"
-        class="inline-flex items-center gap-1.5 rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+        class="inline-flex items-center gap-1.5 rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:-translate-x-0.5 hover:border-brand hover:text-brand">
         @include('partials.icon', ['name' => 'arrow-left', 'class' => 'h-3.5 w-3.5', 'stroke' => 2.5])
         All jobs
     </a>
@@ -29,19 +29,32 @@
     @endphp
 
     {{-- ----------------------------------------------------------- Progress --}}
-    <section class="mb-6 rounded-2xl border border-line bg-white p-6 shadow-sm">
-        <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-                @include('partials.badge', ['value' => $job['status']])
-                @if (!empty($job['service_path']))
-                    @include('partials.badge', ['value' => $job['service_path']])
-                @endif
-            </div>
-            <div class="text-right">
-                <div class="text-2xl font-extrabold tabular-nums text-navy">{{ $p['percent'] }}%</div>
-                <div class="text-[11px] font-semibold text-ink-muted">{{ $p['label'] }}</div>
+    {{-- Since 2026-11-17 the card opens on a band in the job's own colour:
+         brand while it is live, green once finished, slate if cancelled. --}}
+    @php
+        $band = $p['cancelled']
+            ? 'from-[#475569] to-[#94A3B8]'
+            : ($p['percent'] >= 100 ? 'from-[#0F6B3E] to-ok' : 'from-navy via-[#0A4A9A] to-brand-light');
+    @endphp
+    <section class="mb-6 overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div class="sugo-shine-once relative overflow-hidden bg-gradient-to-br {{ $band }} px-6 py-5 text-white">
+            <div class="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border-[22px] border-white/[0.06]"></div>
+            <div class="relative z-10 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    @include('partials.badge', ['value' => $job['status']])
+                    @if (!empty($job['service_path']))
+                        @include('partials.badge', ['value' => $job['service_path']])
+                    @endif
+                </div>
+                <div class="text-right">
+                    <div class="text-3xl font-extrabold tabular-nums" data-count-to="{{ $p['percent'] }}"
+                        data-suffix="%">{{ $p['percent'] }}%</div>
+                    <div class="text-[11px] font-semibold text-white/75">{{ $p['label'] }}</div>
+                </div>
             </div>
         </div>
+
+        <div class="p-6">
 
         @if ($p['cancelled'])
             <div class="rounded-xl border border-line bg-canvas px-4 py-3 text-sm font-semibold text-ink-muted">
@@ -57,9 +70,14 @@
                         $done = $step['state'] === 'done';
                         $current = $step['state'] === 'current';
                     @endphp
-                    <li class="relative flex flex-col items-center text-center">
+                    <li class="sugo-rise relative flex flex-col items-center text-center" style="--d: {{ $i * 90 }}ms">
                         @if (!$loop->last)
-                            <span class="absolute left-1/2 top-4 h-0.5 w-full {{ $done ? 'bg-ok' : 'bg-line' }}"></span>
+                            {{-- A done connector draws in, left to right, after its step. --}}
+                            <span class="absolute left-1/2 top-4 h-0.5 w-full bg-line"></span>
+                            @if ($done)
+                                <span class="sugo-grow-x absolute left-1/2 top-4 h-0.5 w-full bg-ok"
+                                    style="--d: {{ 250 + $i * 160 }}ms"></span>
+                            @endif
                         @endif
                         <span
                             class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-extrabold
@@ -81,8 +99,8 @@
             </ol>
 
             <div class="mt-5 h-2 overflow-hidden rounded-full bg-canvas">
-                <div class="h-full rounded-full {{ $p['percent'] >= 100 ? 'bg-ok' : 'bg-brand' }}"
-                    style="width: {{ $p['percent'] }}%"></div>
+                <div class="sugo-grow-x h-full rounded-full bg-gradient-to-r {{ $p['percent'] >= 100 ? 'from-ok to-[#34C77B]' : 'from-brand to-[#11C5E8]' }}"
+                    style="width: {{ $p['percent'] }}%; --d: 300ms"></div>
             </div>
 
             @if ($p['stage'])
@@ -95,14 +113,15 @@
                 </p>
             @endif
         @endif
+        </div>
     </section>
 
-    <div class="grid gap-6 xl:grid-cols-[1fr_360px]">
+    <div class="grid gap-6 xl:grid-cols-[1fr_360px]" data-reveal>
 
         <div class="space-y-6">
             {{-- ---------------------------------------------------- The people --}}
             <div class="grid gap-4 md:grid-cols-2">
-                <section class="rounded-2xl border border-line bg-white p-5 shadow-sm">
+                <section class="sugo-lift rounded-2xl border border-line bg-white p-5 shadow-sm">
                     <div class="mb-4 flex items-center justify-between">
                         <h2 class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Client</h2>
                         @include('partials.badge', ['value' => 'client'])
@@ -117,13 +136,13 @@
                     <div class="mt-4 flex flex-wrap gap-2">
                         @if (!empty($job['client_id']))
                             <a href="{{ route('accounts.show', ['client', $job['client_id']]) }}"
-                                class="rounded-lg border border-line px-3 py-1.5 text-[11px] font-bold text-brand hover:bg-brand-softer">Open
+                                class="rounded-lg border border-line px-3 py-1.5 text-[11px] font-bold text-brand transition hover:border-brand hover:bg-brand hover:text-white">Open
                                 account</a>
                         @endif
                     </div>
                 </section>
 
-                <section class="rounded-2xl border border-line bg-white p-5 shadow-sm">
+                <section class="sugo-lift rounded-2xl border border-line bg-white p-5 shadow-sm">
                     <div class="mb-4 flex items-center justify-between">
                         <h2 class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Technician</h2>
                         @include('partials.badge', ['value' => 'technician'])
@@ -144,7 +163,7 @@
                         @if (!empty($job['technician_id']))
                             <div class="mt-4">
                                 <a href="{{ route('accounts.show', ['technician', $job['technician_id']]) }}"
-                                    class="rounded-lg border border-line px-3 py-1.5 text-[11px] font-bold text-brand hover:bg-brand-softer">Open
+                                    class="rounded-lg border border-line px-3 py-1.5 text-[11px] font-bold text-brand transition hover:border-brand hover:bg-brand hover:text-white">Open
                                     account</a>
                             </div>
                         @endif
@@ -159,7 +178,7 @@
                                     {{ $job['status'] === 'cancelled' ? 'Nobody was assigned' : 'Finding a technician' }}
                                 </div>
                                 <div class="text-[11px] text-ink-muted">{{ (int) ($job['match_count'] ?? 0) }} ranked by
-                                    RB-CARS</div>
+                                    SUGO</div>
                             </div>
                         </div>
                     @endif

@@ -14,13 +14,21 @@
         ];
     @endphp
 
+    @include('partials.page-hero', [
+        'icon' => 'jobs',
+        'kicker' => 'Jobs',
+        'value' => $counts['all'],
+        'label' => Str::plural('job', $counts['all']) . ' on SUGO',
+        'sub' => $counts['active'] . ' active · ' . $counts['completed'] . ' completed · ' . $counts['cancelled'] . ' cancelled',
+    ])
+
     {{-- Filters --}}
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap gap-2">
             @foreach ($tabs as $key => $label)
                 <a href="{{ route('jobs.index', array_filter(['status' => $key, 'q' => $search])) }}"
                     class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition
-                      {{ $filter === $key ? 'bg-brand text-white shadow-md shadow-brand/25' : 'border border-line bg-white text-ink-muted hover:text-ink' }}">
+                      {{ $filter === $key ? 'bg-gradient-to-r from-brand to-brand-light text-white shadow-md shadow-brand/25' : 'border border-line bg-white text-ink-muted hover:-translate-y-0.5 hover:text-ink hover:shadow-sm' }}">
                     {{ $label }}
                     <span
                         class="rounded-full px-1.5 text-[10px] {{ $filter === $key ? 'bg-white/25' : 'bg-canvas' }}">{{ $counts[$key] }}</span>
@@ -34,11 +42,18 @@
                 @include('partials.icon', ['name' => 'search', 'class' => 'h-4 w-4'])
             </span>
             <input type="text" name="q" value="{{ $search }}" placeholder="Client, technician or fault"
-                class="w-64 rounded-xl border border-line bg-white py-2 pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15">
+                class="w-64 rounded-xl border border-line bg-white py-2 pl-9 pr-3 text-xs font-semibold shadow-sm outline-none transition-all duration-300 focus:w-80 focus:border-brand focus:ring-2 focus:ring-brand/15">
         </form>
     </div>
 
-    <div class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+    {{-- Why a client's community question is missing (2026-11-17). --}}
+    <p class="-mt-2 mb-4 flex items-center gap-1.5 text-[11px] text-ink-muted">
+        @include('partials.icon', ['name' => 'forum', 'class' => 'h-3.5 w-3.5'])
+        Technician Community questions are not listed. One appears here once the
+        client books a technician for it.
+    </p>
+
+    <div class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm" data-reveal>
         <div class="overflow-x-auto">
             <table class="w-full min-w-[980px] text-left">
                 <thead class="border-b border-line bg-canvas/60">
@@ -58,11 +73,12 @@
                             $p = \App\Support\JobProgress::for($job);
                             $bar = $p['cancelled'] ? 'bg-ink-muted/40' : ($p['percent'] >= 100 ? 'bg-ok' : 'bg-brand');
                         @endphp
-                        <tr class="border-b border-line last:border-0 transition hover:bg-canvas/60">
+                        <tr class="sugo-rise border-b border-line last:border-0 transition hover:bg-brand-softer/70"
+                            style="--d: {{ min($loop->index, 12) * 35 }}ms">
                             <td class="px-5 py-3.5">
                                 <div class="flex items-center gap-3">
                                     <div
-                                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand">
+                                        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-light to-[#11C5E8] text-white shadow-sm">
                                         @include('partials.icon', [
                                             'name' => 'device',
                                             'class' => 'h-4 w-4',
@@ -119,8 +135,8 @@
                                     <span class="font-bold tabular-nums text-ink-muted">{{ $p['percent'] }}%</span>
                                 </div>
                                 <div class="h-1.5 overflow-hidden rounded-full bg-canvas">
-                                    <div class="h-full rounded-full {{ $bar }}"
-                                        style="width: {{ $p['percent'] }}%"></div>
+                                    <div class="sugo-grow-x h-full rounded-full {{ $bar }}"
+                                        style="width: {{ $p['percent'] }}%; --d: {{ 200 + min($loop->index, 12) * 35 }}ms"></div>
                                 </div>
                             </td>
 
@@ -134,11 +150,11 @@
 
                             <td class="px-5 py-3.5 text-right">
                                 <a href="{{ route('jobs.show', $job['id']) }}"
-                                    class="inline-flex items-center gap-1 rounded-lg bg-brand px-3.5 py-2 text-[11px] font-bold text-white transition hover:bg-brand-dark">
+                                    class="group inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-brand to-brand-light px-3.5 py-2 text-[11px] font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                                     View
                                     @include('partials.icon', [
                                         'name' => 'arrow-right',
-                                        'class' => 'h-3 w-3',
+                                        'class' => 'h-3 w-3 transition group-hover:translate-x-0.5',
                                         'stroke' => 2.5,
                                     ])
                                 </a>
@@ -146,15 +162,14 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-5 py-16 text-center">
-                                <div
-                                    class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-canvas text-ink-muted">
-                                    @include('partials.icon', ['name' => 'jobs', 'class' => 'h-6 w-6'])
-                                </div>
-                                <p class="text-sm font-bold text-ink">No jobs here</p>
-                                <p class="mt-1 text-xs text-ink-muted">
-                                    {{ $search !== '' ? 'Nothing matches "' . $search . '".' : 'Nothing ' . ($filter === 'all' ? '' : $filter) . ' yet.' }}
-                                </p>
+                            <td colspan="7">
+                                @include('partials.empty', [
+                                    'icon' => 'jobs',
+                                    'title' => 'No jobs here',
+                                    'message' => $search !== ''
+                                        ? 'Nothing matches "' . $search . '".'
+                                        : 'Nothing ' . ($filter === 'all' ? '' : $filter) . ' yet.',
+                                ])
                             </td>
                         </tr>
                     @endforelse

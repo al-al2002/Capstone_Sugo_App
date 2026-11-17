@@ -14,12 +14,23 @@
     ];
 @endphp
 
+@include('partials.page-hero', [
+    'icon' => 'id',
+    'kicker' => 'ID review',
+    'value' => $counts['pending'],
+    'label' => Str::plural('submission', $counts['pending']) . ' waiting',
+    'sub' => $counts['pending'] > 0
+        ? 'Nobody can book or accept work until their ID is reviewed.'
+        : 'The queue is clear. ' . $counts['approved'] . ' approved · ' . $counts['rejected'] . ' rejected',
+    'tone' => $counts['pending'] > 0 ? 'warn' : 'brand',
+])
+
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
     <div class="flex flex-wrap gap-2">
         @foreach ($tabs as $key => $label)
             <a href="{{ route('verifications.index', ['status' => $key, 'role' => $role]) }}"
                class="rounded-xl px-4 py-2 text-xs font-bold transition
-                      {{ $status === $key ? 'bg-brand text-white shadow-md shadow-brand/25' : 'border border-line bg-white text-ink-muted hover:text-ink' }}">
+                      {{ $status === $key ? 'bg-gradient-to-r from-brand to-brand-light text-white shadow-md shadow-brand/25' : 'border border-line bg-white text-ink-muted hover:-translate-y-0.5 hover:text-ink hover:shadow-sm' }}">
                 {{ $label }}
             </a>
         @endforeach
@@ -50,7 +61,7 @@
     </div>
 </div>
 
-<div class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+<div class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm" data-reveal>
     <div class="overflow-x-auto">
         <table class="w-full min-w-[860px] text-left">
             <thead class="border-b border-line bg-canvas/60">
@@ -74,13 +85,14 @@
                         // console starts contradicting the product.
                         $stale = $row['status'] === 'pending' && $waiting->diffInHours(now()) >= 24;
                     @endphp
-                    <tr class="border-b border-line last:border-0 hover:bg-canvas/60">
+                    <tr class="sugo-rise border-b border-line last:border-0 transition hover:bg-brand-softer/70"
+                        style="--d: {{ min($loop->index, 12) * 35 }}ms">
                         <td class="px-5 py-3.5">
                             <div class="flex items-center gap-3">
                                 {{-- Avatar tinted by role: blue technician, orange
                                      client - the colours the app uses for them. --}}
-                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold
-                                            {{ $row['role'] === 'client' ? 'bg-accent-soft text-accent' : 'bg-brand-soft text-brand' }}">
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-extrabold text-white shadow-sm
+                                            {{ $row['role'] === 'client' ? 'from-accent-light to-[#FBBF24]' : 'from-brand-light to-[#11C5E8]' }}">
                                     {{ strtoupper(mb_substr($row['full_name'] ?: '?', 0, 1)) }}
                                 </div>
                                 <div class="min-w-0">
@@ -115,19 +127,20 @@
                         <td class="px-5 py-3.5">@include('partials.badge', ['value' => $row['status']])</td>
                         <td class="px-5 py-3.5 text-right">
                             <a href="{{ route('verifications.show', $row['verification_id']) }}"
-                               class="rounded-lg bg-brand px-3.5 py-2 text-[11px] font-bold text-white transition hover:bg-brand-dark">
+                               class="rounded-lg bg-gradient-to-r from-brand to-brand-light px-3.5 py-2 text-[11px] font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                                 {{ $row['status'] === 'pending' ? 'Review' : 'View' }}
                             </a>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-5 py-14 text-center">
-                            <p class="text-sm font-bold text-ink">Nothing here</p>
-                            <p class="mt-1 text-xs text-ink-muted">
-                                No {{ $status === 'all' ? '' : $status }}
-                                {{ $role === 'all' ? '' : $role }} submissions.
-                            </p>
+                        <td colspan="6">
+                            @include('partials.empty', [
+                                'icon' => 'id',
+                                'title' => 'Nothing here',
+                                'message' => 'No ' . ($status === 'all' ? '' : $status . ' ')
+                                    . ($role === 'all' ? '' : $role . ' ') . 'submissions.',
+                            ])
                         </td>
                     </tr>
                 @endforelse

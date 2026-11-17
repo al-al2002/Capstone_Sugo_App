@@ -117,52 +117,149 @@
         $periodDone = array_sum(array_map(fn($d) => (int) $d['completed'], $daily));
 
         $deviceMax = max(1, ...array_map(fn($d) => (int) $d['jobs'], $devices ?: [['jobs' => 0]]));
+
+        // ---------------------------------------------- 2026-11-17 renovation
+        // The greeting uses Manila time on purpose: the app's clock is UTC,
+        // and "Good morning" eight hours early would be the first thing an
+        // admin in Davao notices.
+        $hour = (int) now('Asia/Manila')->format('G');
+        $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
+        $firstName = trim(explode(' ', (string) (session('admin')['name'] ?? ''))[0]) ?: 'Admin';
+        $live = (int) ($jobs['matched'] ?? 0) + (int) ($jobs['confirmed'] ?? 0) + (int) ($jobs['in_progress'] ?? 0);
+        $openDisputes = (int) ($disputeBadge ?? 0);
+
+        // Numbers the page counts up to. Null leaves the printed value alone
+        // (e.g. a rating of "—").
+        $kpis[0] += ['count' => (int) ($jobs['total'] ?? 0)];
+        $kpis[1] += [
+            'count' => ($jobs['completion_rate'] ?? null) !== null ? round((float) $jobs['completion_rate'], 1) : 0,
+            'decimals' => fmod((float) ($jobs['completion_rate'] ?? 0), 1.0) == 0.0 ? 0 : 1,
+            'suffix' => '%',
+        ];
+        $kpis[2] += [
+            'count' => ($ratings['technician_avg'] ?? null) !== null ? round((float) $ratings['technician_avg'], 2) : null,
+            'decimals' => 2,
+        ];
+        $kpis[3] += ['count' => (int) ($users['clients'] ?? 0) + (int) ($users['technicians'] ?? 0)];
+
+        // The KPI tiles' gradient icon wells, per tone.
+        $wells = [
+            'brand' => 'from-brand-light to-[#11C5E8]',
+            'ok' => 'from-ok to-[#34C77B]',
+            'accent' => 'from-accent-light to-[#FBBF24]',
+            'navy' => 'from-navy to-brand-light',
+        ];
+
+        // A 14-day sparkline for "Jobs posted", as polyline points in a
+        // 100 x 28 box. Null with fewer than two days.
+        $postedSeries = array_map(fn($d) => (int) $d['posted'], $daily);
+        $sparkMax = max(1, ...($postedSeries ?: [0]));
+        $spark = count($postedSeries) < 2 ? null : implode(' ', array_map(
+            fn($v, $i) => round($i / (count($postedSeries) - 1) * 100, 2) . ',' . round(26 - ($v / $sparkMax) * 22, 2),
+            $postedSeries,
+            array_keys($postedSeries),
+        ));
+
+        // Medal colours for the leaderboards' top three.
+        $medals = [
+            0 => 'bg-gradient-to-br from-[#FCD34D] to-[#F59E0B] text-white shadow-md shadow-amber-500/30',
+            1 => 'bg-gradient-to-br from-[#E2E8F0] to-[#94A3B8] text-white shadow-md shadow-slate-500/20',
+            2 => 'bg-gradient-to-br from-[#FDBA74] to-[#C2410C] text-white shadow-md shadow-orange-600/20',
+        ];
     @endphp
 
-    @if ($pending > 0)
-        <div
-            class="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-warn/25 bg-warn-soft px-5 py-4">
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-warn text-white">
-                    @include('partials.icon', ['name' => 'id', 'class' => 'h-5 w-5'])
-                </div>
-                <div>
-                    <p class="text-sm font-extrabold text-ink">
-                        {{ $pending }} {{ Str::plural('person', $pending) }} waiting to be verified
-                    </p>
-                    <p class="text-xs text-ink-muted">Nobody can book or accept work until their ID is reviewed.</p>
-                </div>
+    {{-- ------------------------------------------------------------ Hero --}}
+    {{-- Replaced the amber "waiting to be verified" strip (2026-11-17): the
+         same news, said first and in the brand gradient, with the four
+         numbers an admin opens the console to check. --}}
+    <section
+        class="sugo-shine-once relative mb-6 overflow-hidden rounded-3xl bg-gradient-to-br from-navy via-[#0A4A9A] to-brand-light p-6 text-white shadow-xl shadow-navy/20 sm:p-8">
+        <div class="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full border-[30px] border-white/[0.05]"></div>
+        <div class="pointer-events-none absolute -bottom-28 right-32 h-64 w-64 rounded-full bg-[#11C5E8]/20 blur-3xl"></div>
+
+        <div class="relative z-10 flex flex-wrap items-end justify-between gap-6">
+            <div class="max-w-2xl">
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-white/60">
+                    {{ now('Asia/Manila')->format('l, d F') }}</p>
+                <h2 class="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{{ $greeting }}, {{ $firstName }}</h2>
+                <p class="mt-2 text-sm leading-relaxed text-white/80">
+                    @if ($pending > 0)
+                        <span class="font-bold text-white">{{ $pending }} {{ Str::plural('person', $pending) }} waiting to be verified.</span>
+                        Nobody can book or accept work until their ID is reviewed.
+                    @else
+                        The review queue is clear.
+                    @endif
+                    {{ $live === 0 ? 'No jobs are live right now.' : $live . ' ' . Str::plural('job', $live) . ' live right now.' }}
+                </p>
             </div>
-            <a href="{{ route('verifications.index') }}"
-                class="rounded-xl bg-warn px-4 py-2 text-xs font-bold text-white transition hover:opacity-90">
-                Open the queue
-            </a>
+            <div class="flex flex-wrap gap-2">
+                @if ($pending > 0)
+                    <a href="{{ route('verifications.index') }}"
+                        class="group inline-flex items-center gap-2 rounded-xl bg-accent-light px-4 py-2.5 text-xs font-extrabold text-navy shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl">
+                        Open the queue
+                        @include('partials.icon', ['name' => 'arrow-right', 'class' => 'h-3.5 w-3.5 transition group-hover:translate-x-0.5'])
+                    </a>
+                @endif
+                <a href="{{ route('jobs.index') }}"
+                    class="inline-flex items-center gap-2 rounded-xl bg-white/[0.12] px-4 py-2.5 text-xs font-bold text-white ring-1 ring-white/25 backdrop-blur transition hover:bg-white/20">
+                    @include('partials.icon', ['name' => 'jobs', 'class' => 'h-3.5 w-3.5'])
+                    Open jobs
+                </a>
+            </div>
         </div>
-    @endif
+
+        <div class="relative z-10 mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            @foreach ([['Live now', $live, 'jobs'], ['Waiting on review', $pending, 'id'], ['Open disputes', $openDisputes, 'flag'], ['Posted this week', (int) ($jobs['last_7d'] ?? 0), 'chart']] as $i => [$label, $value, $icon])
+                <div class="sugo-rise flex items-center gap-3 rounded-2xl bg-white/10 p-3 ring-1 ring-white/15 backdrop-blur"
+                    style="--d: {{ 250 + $i * 80 }}ms">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                        @include('partials.icon', ['name' => $icon, 'class' => 'h-4 w-4'])
+                    </span>
+                    <div class="min-w-0">
+                        <div class="text-xl font-extrabold leading-none tabular-nums" data-count-to="{{ $value }}">{{ $value }}</div>
+                        <div class="mt-1 truncate text-[11px] font-medium text-white/70">{{ $label }}</div>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </section>
 
     {{-- ------------------------------------------------------------ KPIs --}}
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        @foreach ($kpis as $kpi)
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-reveal>
+        @foreach ($kpis as $i => $kpi)
             @php [$bg, $fg] = $tones[$kpi['tone']]; @endphp
-            <div class="rounded-2xl border border-line bg-white p-5 shadow-sm transition hover:shadow-md">
-                <div class="flex items-start justify-between">
+            <div class="sugo-lift sugo-rise relative overflow-hidden rounded-2xl border border-line bg-white p-5 shadow-sm"
+                style="--d: {{ $i * 70 }}ms">
+                {{-- A soft wash of the tile's colour in the corner. --}}
+                <div class="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full {{ $bg }} opacity-70 blur-xl"></div>
+                <div class="relative flex items-start justify-between">
                     <div>
                         <div class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">{{ $kpi['label'] }}</div>
-                        <div class="mt-2 text-3xl font-extrabold tabular-nums tracking-tight text-navy">{{ $kpi['value'] }}
-                        </div>
+                        <div class="mt-2 text-3xl font-extrabold tabular-nums tracking-tight text-navy"
+                            @if ($kpi['count'] !== null) data-count-to="{{ $kpi['count'] }}"
+                                data-decimals="{{ $kpi['decimals'] ?? 0 }}" data-suffix="{{ $kpi['suffix'] ?? '' }}" @endif>
+                            {{ $kpi['value'] }}</div>
                     </div>
                     <div
-                        class="flex h-10 w-10 items-center justify-center rounded-xl {{ $bg }} {{ $fg }}">
+                        class="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br {{ $wells[$kpi['tone']] }} text-white shadow-md">
                         @include('partials.icon', ['name' => $kpi['icon'], 'class' => 'h-5 w-5'])
                     </div>
                 </div>
-                <div class="mt-2 text-[11px] text-ink-muted">{{ $kpi['hint'] }}</div>
+                @if ($i === 0 && $spark !== null)
+                    {{-- The last 14 days of postings, drawn in. --}}
+                    <svg class="sugo-chart-reveal relative mt-2 h-8 w-full overflow-visible" viewBox="0 0 100 28"
+                        preserveAspectRatio="none" aria-hidden="true">
+                        <polyline points="{{ $spark }}" fill="none" stroke="#087FEA" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                    </svg>
+                @endif
+                <div class="relative mt-2 text-[11px] text-ink-muted">{{ $kpi['hint'] }}</div>
             </div>
         @endforeach
     </div>
 
     {{-- ------------------------------------------------ Activity + status --}}
-    <div class="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+    <div class="mt-6 grid gap-6 xl:grid-cols-[1.6fr_1fr]" data-reveal>
 
         <section class="rounded-2xl border border-line bg-white p-5 shadow-sm">
             <header class="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -306,7 +403,8 @@
             </header>
 
             {{-- One stacked bar: the whole pipeline at a glance. --}}
-            <div class="mb-5 flex h-3 overflow-hidden rounded-full bg-canvas">
+            <div class="mb-5 h-3 overflow-hidden rounded-full bg-canvas">
+                <div class="sugo-grow-x flex h-full" style="--d: 250ms">
                 @foreach ($statusOrder as $key => [$label, $color])
                     @php $n = (int) ($jobs[$key] ?? 0); @endphp
                     @if ($n > 0)
@@ -314,6 +412,7 @@
                             title="{{ $label }}: {{ $n }}"></div>
                     @endif
                 @endforeach
+                </div>
             </div>
 
             <ul class="space-y-2.5">
@@ -334,7 +433,7 @@
     {{-- --------------------------------------------- Both sides of the market --}}
     {{-- Technicians and clients side by side: the two leaderboards answer the
          same question - who is SUGO working for? - from each end of a job. --}}
-    <div class="mt-6 grid gap-6 lg:grid-cols-2">
+    <div class="mt-6 grid gap-6 lg:grid-cols-2" data-reveal>
 
         <section class="rounded-2xl border border-line bg-white p-5 shadow-sm">
             <header class="mb-3 flex items-start justify-between gap-3">
@@ -348,9 +447,10 @@
                 <a href="{{ route('accounts.index', 'technician') }}" class="text-xs font-bold text-brand hover:underline">All</a>
             </header>
             @forelse ($top as $i => $t)
-                <div class="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
-                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold
-                                 {{ $i === 0 ? 'bg-accent text-white' : 'bg-canvas text-ink-muted' }}">{{ $i + 1 }}</span>
+                <div class="sugo-rise -mx-2 flex items-center gap-3 rounded-xl border-b border-line px-2 py-2.5 transition last:border-0 hover:bg-canvas"
+                    style="--d: {{ $i * 60 }}ms">
+                    <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold
+                                 {{ $medals[$i] ?? 'bg-canvas text-ink-muted' }}">{{ $i + 1 }}</span>
                     <div class="min-w-0 flex-1">
                         <div class="truncate text-sm font-bold">{{ $t['name'] ?: 'Unnamed' }}</div>
                         <div class="truncate text-[11px] text-ink-muted">{{ $t['jobs'] }} jobs · {{ $t['reviews'] }} reviews</div>
@@ -382,9 +482,10 @@
                     // difference between a client who books and one who cancels.
                     $followThrough = (int) $c['posted'] > 0 ? round($c['jobs'] / $c['posted'] * 100) : 0;
                 @endphp
-                <div class="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
-                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold
-                                 {{ $i === 0 ? 'bg-accent text-white' : 'bg-canvas text-ink-muted' }}">{{ $i + 1 }}</span>
+                <div class="sugo-rise -mx-2 flex items-center gap-3 rounded-xl border-b border-line px-2 py-2.5 transition last:border-0 hover:bg-canvas"
+                    style="--d: {{ $i * 60 }}ms">
+                    <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold
+                                 {{ $medals[$i] ?? 'bg-canvas text-ink-muted' }}">{{ $i + 1 }}</span>
                     <div class="min-w-0 flex-1">
                         <div class="truncate text-sm font-bold">{{ $c['name'] ?: 'Unnamed' }}</div>
                         <div class="truncate text-[11px] text-ink-muted">
@@ -404,7 +505,7 @@
     </div>
 
     {{-- ------------------------------------------- Devices, ratings, community --}}
-    <div class="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+    <div class="mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3" data-reveal>
 
         <section class="rounded-2xl border border-line bg-white p-5 shadow-sm lg:col-span-2 xl:col-span-1">
             <h2 class="text-sm font-extrabold text-navy">What gets repaired</h2>
@@ -416,8 +517,8 @@
                         <span class="font-bold tabular-nums text-navy">{{ $d['jobs'] }}</span>
                     </div>
                     <div class="h-2 overflow-hidden rounded-full bg-canvas">
-                        <div class="h-full rounded-full bg-brand"
-                            style="width: {{ round(($d['jobs'] / $deviceMax) * 100) }}%"></div>
+                        <div class="sugo-grow-x h-full rounded-full bg-gradient-to-r from-brand to-brand-light"
+                            style="width: {{ round(($d['jobs'] / $deviceMax) * 100) }}%; --d: {{ 200 + $loop->index * 90 }}ms"></div>
                     </div>
                 </div>
             @empty
@@ -468,7 +569,7 @@
     </div>
 
     {{-- -------------------------------------------------- Live work + queue --}}
-    <div class="mt-6 grid gap-6 xl:grid-cols-2">
+    <div class="mt-6 grid gap-6 xl:grid-cols-2" data-reveal>
 
         <section class="rounded-2xl border border-line bg-white shadow-sm">
             <header class="flex items-center justify-between border-b border-line px-5 py-4">
@@ -495,7 +596,8 @@
                     </div>
                     <div class="flex items-center gap-3">
                         <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-canvas">
-                            <div class="h-full rounded-full bg-brand" style="width: {{ $p['percent'] }}%"></div>
+                            <div class="sugo-grow-x h-full rounded-full bg-gradient-to-r from-brand to-[#11C5E8]"
+                                style="width: {{ $p['percent'] }}%; --d: {{ 200 + $loop->index * 80 }}ms"></div>
                         </div>
                         <span
                             class="w-24 truncate text-right text-[11px] font-semibold text-ink-muted">{{ $p['label'] }}</span>
@@ -544,7 +646,7 @@
     </div>
 
     {{-- ------------------------------------------------ Verification tiles --}}
-    <section class="mt-6 rounded-2xl border border-line bg-white shadow-sm">
+    <section class="mt-6 rounded-2xl border border-line bg-white shadow-sm" data-reveal>
         <header class="border-b border-line px-5 py-4">
             <h2 class="text-sm font-extrabold text-navy">Registration pipeline</h2>
             <p class="text-[11px] text-ink-muted">Where every account is in sign-up and review</p>
@@ -572,7 +674,7 @@
                 @php [$bg, $fg] = $tones[$tile['tone']]; @endphp
                 <div class="p-5">
                     <div class="mb-2 inline-flex h-2 w-2 rounded-full {{ str_replace('text-', 'bg-', $fg) }}"></div>
-                    <div class="text-2xl font-extrabold tabular-nums text-navy">{{ $tile['value'] }}</div>
+                    <div class="text-2xl font-extrabold tabular-nums text-navy" data-count-to="{{ $tile['value'] }}">{{ $tile['value'] }}</div>
                     <div class="mt-0.5 text-xs font-semibold text-ink-muted">{{ $tile['label'] }}</div>
                 </div>
             @endforeach
@@ -580,7 +682,7 @@
     </section>
 
     {{-- ------------------------------------------------------- History --}}
-    <section class="mt-6 rounded-2xl border border-line bg-white shadow-sm">
+    <section class="mt-6 rounded-2xl border border-line bg-white shadow-sm" data-reveal>
         <header class="border-b border-line px-5 py-4">
             <h2 class="text-sm font-extrabold text-navy">Recently decided</h2>
             <p class="text-[11px] text-ink-muted">The last few reviews and who made them</p>

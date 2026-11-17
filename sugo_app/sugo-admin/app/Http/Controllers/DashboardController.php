@@ -46,11 +46,12 @@ class DashboardController extends Controller
 
         // The five most recent jobs still in play, for the "live work" panel.
         try {
+            // Bookings only, like the Jobs page (2026-11-17).
             $liveJobs = $this->supabase->select('admin_jobs', [
                 'status' => 'in.(matched,confirmed,in_progress)',
                 'order' => 'created_at.desc',
                 'limit' => '5',
-            ]);
+            ] + JobController::NOT_COMMUNITY);
         } catch (Throwable $e) {
             Log::warning('admin_jobs failed', ['error' => $e->getMessage()]);
             $liveJobs = [];

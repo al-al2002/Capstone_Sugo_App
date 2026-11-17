@@ -5,7 +5,7 @@
 
 @section('actions')
     <a href="{{ route('accounts.index', $role) }}"
-       class="rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+       class="rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:-translate-x-0.5 hover:border-brand hover:text-brand">
         Back
     </a>
 @endsection
@@ -16,12 +16,20 @@
 
     {{-- Profile --}}
     <div class="space-y-6">
-        <section class="rounded-2xl border border-line bg-white p-5">
-            <div class="mb-5 flex items-center gap-4">
-                <div class="flex h-14 w-14 items-center justify-center rounded-full bg-brand-soft text-lg font-extrabold text-brand">
+        {{-- A profile card (2026-11-17): a banner in the role's colour with
+             the avatar overlapping it - the app's profile cover, in miniature. --}}
+        <section class="sugo-rise overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+            <div class="sugo-shine-once relative h-24 overflow-hidden bg-gradient-to-br
+                {{ $role === 'client' ? 'from-[#7C2D12] via-accent to-accent-light' : 'from-navy via-[#0A4A9A] to-brand-light' }}">
+                <div class="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full border-[18px] border-white/[0.07]"></div>
+            </div>
+            <div class="px-5 pb-5">
+            <div class="-mt-9 mb-5 flex items-end gap-4">
+                <div class="relative z-10 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-gradient-to-br text-2xl font-extrabold text-white shadow-lg ring-4 ring-white
+                    {{ $role === 'client' ? 'from-accent-light to-[#FBBF24]' : 'from-brand-light to-[#11C5E8]' }}">
                     {{ strtoupper(substr($account['full_name'] ?? '?', 0, 1)) }}
                 </div>
-                <div class="min-w-0">
+                <div class="min-w-0 pb-1">
                     <div class="truncate text-base font-extrabold text-navy">{{ $account['full_name'] ?: 'Unnamed' }}</div>
                     <div class="truncate text-xs text-ink-muted">{{ $account['email'] ?? '' }}</div>
                 </div>
@@ -58,6 +66,25 @@
                         <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Verification tier</dt>
                         <dd>@include('partials.badge', ['value' => $account['verification_tier'] ?? 'basic'])</dd>
                     </div>
+                    {{-- What they take (2026-11-17). Matching only offers them
+                         jobs of these kinds. --}}
+                    <div class="flex items-start justify-between gap-4">
+                        <dt class="pt-0.5 text-[11px] font-bold uppercase tracking-wider text-ink-muted">Work type</dt>
+                        <dd class="text-right">@include('partials.work-type', ['tech' => $work ?? null])</dd>
+                    </div>
+                    @if (\App\Support\WorkType::of($work ?? null)['shop'] ?? false)
+                        <div class="flex items-center justify-between gap-4">
+                            <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Shop</dt>
+                            <dd class="text-xs font-semibold {{ \App\Support\WorkType::hasShop($work ?? null) ? '' : 'text-warn' }}">
+                                @if (\App\Support\WorkType::hasShop($work ?? null))
+                                    {{ trim((string) ($work['shop_name'] ?? '')) !== '' ? $work['shop_name'] : 'Pinned' }}
+                                    <span class="font-normal text-ink-muted">· on the map</span>
+                                @else
+                                    Not pinned
+                                @endif
+                            </dd>
+                        </div>
+                    @endif
                     <div class="flex items-center justify-between gap-4">
                         <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Service radius</dt>
                         <dd class="text-xs font-semibold">
@@ -81,6 +108,7 @@
                     </div>
                 @endif
             </dl>
+            </div>
         </section>
 
         {{-- Why the console cannot edit these --}}
@@ -93,15 +121,15 @@
     </div>
 
     {{-- Detail --}}
-    <div class="space-y-6">
+    <div class="space-y-6" data-reveal>
 
         {{-- Verifications --}}
-        <section class="rounded-2xl border border-line bg-white">
+        <section class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
             <header class="border-b border-line px-5 py-4">
                 <h2 class="text-sm font-extrabold text-navy">ID submissions</h2>
             </header>
             @forelse ($verifications as $v)
-                <div class="flex items-center gap-4 border-b border-line px-5 py-3.5 last:border-0">
+                <div class="flex items-center gap-4 border-b border-line px-5 py-3.5 transition last:border-0 hover:bg-brand-softer/70">
                     <div class="min-w-0 flex-1">
                         <div class="text-xs font-bold">
                             {{ \Carbon\Carbon::parse($v['submitted_at'])->format('d M Y, H:i') }}
@@ -120,7 +148,7 @@
         </section>
 
         @if ($role === 'technician')
-            <section class="rounded-2xl border border-line bg-white">
+            <section class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
                 <header class="border-b border-line px-5 py-4">
                     <h2 class="text-sm font-extrabold text-navy">Specialisations</h2>
                     <p class="text-[11px] text-ink-muted">A tick means the assessment for that brand was passed</p>
@@ -144,7 +172,7 @@
                 @endforelse
             </section>
 
-            <section class="rounded-2xl border border-line bg-white">
+            <section class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
                 <header class="flex items-center justify-between border-b border-line px-5 py-4">
                     <div>
                         <h2 class="text-sm font-extrabold text-navy">Credentials</h2>
@@ -168,7 +196,7 @@
                 @endforelse
             </section>
         @else
-            <section class="rounded-2xl border border-line bg-white">
+            <section class="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
                 <header class="border-b border-line px-5 py-4">
                     <h2 class="text-sm font-extrabold text-navy">Saved addresses</h2>
                 </header>

@@ -76,12 +76,28 @@ class DisputeController extends Controller
             [
                 'decision' => ['required', 'in:resolved,dismissed'],
                 'note' => ['required', 'string', 'min:5', 'max:2000'],
+                // Progressive Trust Badge (20261115000002). "Upheld" on a
+                // client's report counts against the technician's Community
+                // Trusted badge; the remedy drops them one level.
+                'outcome' => ['nullable', 'in:upheld,not_upheld'],
+                'remedy' => ['nullable', 'in:none,skill_deverification'],
+                'remedy_specialization' => [
+                    'nullable',
+                    'required_if:remedy,skill_deverification',
+                    'in:computer,phone_tablet,network_setup,appliance,pc_building',
+                ],
             ],
             [
                 'note.required' => 'Write the decision out - both sides are shown it word for word.',
                 'note.min' => 'Write the decision out - both sides are shown it word for word.',
+                'remedy_specialization.required_if' => 'Choose which specialization the de-verification removes.',
             ],
         );
+
+        // "Close without action" is never upheld and carries no remedy; the
+        // database enforces the same, this just keeps the form honest.
+        $dismissed = $data['decision'] === 'dismissed';
+        $remedy = $dismissed ? 'none' : ($data['remedy'] ?? 'none');
 
         try {
             $this->supabase->rpc('resolve_job_dispute', [
@@ -89,6 +105,11 @@ class DisputeController extends Controller
                 'p_decision' => $data['decision'],
                 'p_note' => trim($data['note']),
                 'p_admin_id' => session('admin.id'),
+                'p_outcome' => $dismissed ? 'not_upheld' : ($data['outcome'] ?? 'upheld'),
+                'p_remedy' => $remedy,
+                'p_remedy_specialization' => $remedy === 'skill_deverification'
+                    ? $data['remedy_specialization']
+                    : null,
             ]);
         } catch (RuntimeException $e) {
             return back()->withInput()->with('error', $e->getMessage());

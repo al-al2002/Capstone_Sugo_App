@@ -5,7 +5,7 @@
 
 @section('actions')
     <a href="{{ route('verifications.index') }}"
-       class="rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+       class="rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:-translate-x-0.5 hover:border-brand hover:text-brand">
         Back to queue
     </a>
 @endsection
@@ -26,10 +26,10 @@
      is sent into strangers' homes - so the role leads the page instead of
      sitting as a small badge in the sidebar. --}}
 <section class="mb-5 overflow-hidden rounded-2xl border bg-white shadow-sm {{ $isTechnician ? 'border-brand/25' : 'border-accent/30' }}">
-    <div class="h-1.5 {{ $isTechnician ? 'bg-brand' : 'bg-accent' }}"></div>
+    <div class="h-2 bg-gradient-to-r {{ $isTechnician ? 'from-navy via-brand-light to-[#11C5E8]' : 'from-[#7C2D12] via-accent to-accent-light' }}"></div>
     <div class="flex flex-wrap items-center gap-5 p-5">
-        <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-xl font-extrabold
-                    {{ $isTechnician ? 'bg-brand-soft text-brand' : 'bg-accent-soft text-accent' }}">
+        <div class="sugo-rise flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-xl font-extrabold text-white shadow-md
+                    {{ $isTechnician ? 'from-brand-light to-[#11C5E8]' : 'from-accent-light to-[#FBBF24]' }}">
             {{ strtoupper(mb_substr($name, 0, 1)) }}
         </div>
 
@@ -47,17 +47,17 @@
         </div>
 
         <div class="grid w-full grid-cols-3 gap-2 sm:w-auto">
-            <div class="rounded-xl bg-canvas px-3 py-2 text-center">
+            <div class="sugo-rise rounded-xl bg-canvas px-3 py-2 text-center" style="--d: 80ms">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-ink-muted">Attempt</div>
                 <div class="text-sm font-extrabold text-navy">#{{ $attempt }}</div>
             </div>
-            <div class="rounded-xl bg-canvas px-3 py-2 text-center">
+            <div class="sugo-rise rounded-xl bg-canvas px-3 py-2 text-center" style="--d: 150ms">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-ink-muted">To check</div>
                 <div class="text-sm font-extrabold text-navy">
                     {{ $isTechnician ? 'ID + '.count($documents) : 'ID only' }}
                 </div>
             </div>
-            <div class="flex flex-col items-center justify-center rounded-xl bg-canvas px-3 py-2">
+            <div class="sugo-rise flex flex-col items-center justify-center rounded-xl bg-canvas px-3 py-2" style="--d: 220ms">
                 <div class="mb-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted">Status</div>
                 @include('partials.badge', ['value' => $verification['status']])
             </div>
@@ -111,7 +111,7 @@
                             <a href="{{ $url }}" target="_blank" rel="noopener"
                                class="group relative block overflow-hidden rounded-xl border border-line bg-canvas">
                                 <img src="{{ $url }}" alt="{{ $caption }}"
-                                     class="h-72 w-full bg-white object-contain">
+                                     class="h-72 w-full bg-white object-contain transition duration-500 group-hover:scale-[1.03]">
                                 <span class="absolute bottom-2 right-2 rounded-lg bg-navy/80 px-2 py-1 text-[10px] font-bold text-white opacity-0 transition group-hover:opacity-100">
                                     Open full size
                                 </span>
@@ -169,7 +169,7 @@
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     @foreach ($documents as $doc)
-                        <article class="overflow-hidden rounded-xl border border-line">
+                        <article class="sugo-lift overflow-hidden rounded-xl border border-line">
                             @if ($doc['preview_url'] ?? null)
                                 <a href="{{ $doc['preview_url'] }}" target="_blank" rel="noopener"
                                    class="block border-b border-line bg-canvas">
@@ -199,6 +199,26 @@
                                 @if (! empty($doc['admin_notes']))
                                     <p class="rounded-lg bg-canvas px-2 py-1.5 text-[11px] italic text-ink">
                                         "{{ $doc['admin_notes'] }}"
+                                    </p>
+                                @endif
+
+                                {{-- Progressive Trust Badge: a certificate can prove one
+                                     specialization. Part of the review form below via
+                                     form="review-form", so approving sends it along. --}}
+                                @if ($doc['doc_type'] === 'certificate' && $doc['status'] === 'pending')
+                                    <label class="mt-2 block text-[11px] font-bold text-ink-muted">
+                                        Proves competency in
+                                        <select name="specializations[{{ $doc['id'] }}]" form="review-form"
+                                            class="mt-1 w-full rounded-lg border border-line bg-white px-2 py-1.5 text-xs font-normal text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20">
+                                            <option value="">Nothing specific (no skill verification)</option>
+                                            @foreach (\App\Support\Specializations::LABELS as $value => $label)
+                                                <option value="{{ $value }}" @selected(old('specializations.'.$doc['id']) === $value)>{{ $label }}</option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+                                @elseif (! empty($doc['specialization']))
+                                    <p class="mt-2 text-[11px] font-semibold text-ok">
+                                        Proves {{ \App\Support\Specializations::LABELS[$doc['specialization']] ?? $doc['specialization'] }}
                                     </p>
                                 @endif
                             </div>
@@ -238,8 +258,10 @@
         @endif
     </div>
 
-    {{-- Sidebar --}}
-    <div class="space-y-6">
+    {{-- Sidebar. On a wide screen the decision stays pinned in view while
+         the ID and selfie scroll past, so comparing them never means
+         scrolling back up to the buttons (2026-11-17). --}}
+    <div class="space-y-6 xl:sticky xl:top-24 xl:self-start">
 
         {{-- Applicant --}}
         <section class="rounded-2xl border border-line bg-white p-5">
@@ -278,6 +300,29 @@
                 </a>
             @endif
         </section>
+
+        {{-- The work they take (2026-11-17) --}}
+        @if ($verification['role'] === 'technician')
+            <section class="rounded-2xl border border-line bg-white p-5">
+                <h2 class="mb-1 text-sm font-extrabold text-navy">Work they take</h2>
+                <p class="mb-3 text-[11px] leading-relaxed text-ink-muted">
+                    Clients are matched only with technicians who take the kind of
+                    service they chose. Shop Repair needs a shop pinned on the map.
+                </p>
+                <div class="flex flex-wrap items-center gap-3">
+                    @include('partials.work-type', ['tech' => $work ?? null])
+                    @if (\App\Support\WorkType::of($work ?? null)['shop'] ?? false)
+                        @if (\App\Support\WorkType::hasShop($work ?? null))
+                            <span class="text-[11px] font-semibold text-ok">
+                                Shop pinned{{ trim((string) ($work['shop_name'] ?? '')) !== '' ? ': '.$work['shop_name'] : '' }}
+                            </span>
+                        @else
+                            <span class="text-[11px] font-semibold text-warn">Shop not pinned yet</span>
+                        @endif
+                    @endif
+                </div>
+            </section>
+        @endif
 
         {{-- Technician context --}}
         @if ($verification['role'] === 'technician' && $specializations !== [])
@@ -348,7 +393,7 @@
                         </button>
                         <button type="submit" name="decision" value="approve" data-loading-text="Approving…"
                                 onclick="return confirm('Approve this applicant? This is what lets the account trade on SUGO.')"
-                                class="rounded-xl bg-ok px-4 py-2.5 text-xs font-bold text-white transition hover:opacity-90">
+                                class="rounded-xl bg-gradient-to-r from-ok to-[#34C77B] px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-ok/20 transition hover:-translate-y-0.5 hover:shadow-lg">
                             Approve all
                         </button>
                     </div>

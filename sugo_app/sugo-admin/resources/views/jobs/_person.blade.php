@@ -12,14 +12,18 @@
      */
     $display = trim((string) ($name ?? '')) !== '' ? $name : 'Unnamed';
     $initial = strtoupper(mb_substr($display, 0, 1));
-    $tint = ($tone ?? 'brand') === 'accent' ? 'bg-accent-soft text-accent' : 'bg-brand-soft text-brand';
+    // A gradient disc in the role's colour (2026-11-17), the same as the
+    // account lists.
+    $tint = ($tone ?? 'brand') === 'accent'
+        ? 'bg-gradient-to-br from-accent-light to-[#FBBF24] text-white shadow-sm'
+        : 'bg-gradient-to-br from-brand-light to-[#11C5E8] text-white shadow-sm';
     $size = $size ?? 'h-9 w-9';
 @endphp
 <div class="flex min-w-0 items-center gap-3">
     @if (! empty($avatar))
         <img src="{{ $avatar }}" alt="" class="{{ $size }} shrink-0 rounded-full object-cover ring-2 ring-white">
     @else
-        <div class="flex {{ $size }} shrink-0 items-center justify-center rounded-full text-xs font-bold {{ $tint }}">{{ $initial }}</div>
+        <div class="flex {{ $size }} shrink-0 items-center justify-center rounded-full text-xs font-extrabold {{ $tint }}">{{ $initial }}</div>
     @endif
     <div class="min-w-0">
         <div class="truncate text-sm font-bold">{{ $display }}</div>

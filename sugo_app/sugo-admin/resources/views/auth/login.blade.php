@@ -59,7 +59,11 @@
             }
         };
     </script>
-    <link rel="icon" href="{{ asset('favicon.ico') }}">
+    {{-- The S-road logo (2026-11-16), drawn by sugo_app/tool/make_logo.py:
+         SVG where the browser takes it, the .ico for the rest. --}}
+    <link rel="icon" type="image/svg+xml" href="{{ asset('images/sugo-logo.svg') }}">
+    <link rel="icon" href="{{ asset('favicon.ico') }}" sizes="any">
+    <link rel="apple-touch-icon" href="{{ asset('images/brand-emblem.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -71,31 +75,62 @@
 
         {{-- Brand panel. Hidden on small screens, where it would push the form
          below the fold on a phone. --}}
-        <div class="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-navy p-12 text-white lg:flex">
+        <div class="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-gradient-to-br from-navy via-[#0A3F80] to-brand-light p-12 text-white lg:flex">
+            <div class="pointer-events-none absolute -right-28 -top-28 h-96 w-96 rounded-full border-[36px] border-white/[0.05]"></div>
             <div class="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-brand/25 blur-3xl"></div>
             <div class="absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-accent/15 blur-3xl"></div>
 
             <div class="relative flex items-center gap-3">
-                {{-- The app icon's emblem (house, wrench, van), the same file
-                     the mobile app uses - see tool/prepare_brand_images.py. --}}
-                <img src="{{ asset('images/brand-emblem.png') }}" alt=""
-                     class="h-10 w-10 rounded-xl object-cover ring-1 ring-white/20">
+                {{-- The app's S-road logo (2026-11-16) - a road from a start
+                     dot to a map pin, the errand SUGO is named for. Drawn by
+                     sugo_app/tool/make_logo.py, the same geometry as the
+                     phone's app icon. --}}
+                <img src="{{ asset('images/sugo-logo.svg') }}" alt="SUGO"
+                     class="h-12 w-12 shrink-0 drop-shadow-lg">
                 <div>
                     <div class="text-lg font-extrabold leading-none">SUGO</div>
                     <div class="text-xs text-white/60">Fix. Technology. Appliances.</div>
                 </div>
             </div>
 
+            {{-- The S-road from the logo drawing itself in (2026-11-17): from
+                 the start dot to the map pin, the errand "sugo" is named for.
+                 The same geometry as sugo_app/tool/make_logo.py; drawn once,
+                 then still. --}}
+            <svg class="pointer-events-none absolute right-10 top-1/2 h-[26rem] w-[26rem] -translate-y-1/2 opacity-90"
+                viewBox="290 170 480 660" aria-hidden="true">
+                <path d="M 619.9 342.5 A 135.0 135.0 0 1 0 503.0 545.0 A 135.0 135.0 0 1 1 386.1 747.5"
+                    fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="112" stroke-linecap="round" />
+                <path class="sugo-draw" pathLength="1"
+                    d="M 619.9 342.5 A 135.0 135.0 0 1 0 503.0 545.0 A 135.0 135.0 0 1 1 386.1 747.5"
+                    fill="none" stroke="#FFFFFF" stroke-width="112" stroke-linecap="round" />
+                <circle class="sugo-pop" style="--d: 150ms" cx="386.1" cy="747.5" r="34" fill="#11C5E8" />
+                <path class="sugo-pop" style="--d: 1650ms"
+                    d="M 629.9 336.5 L 571.3 246.8 A 70.0 70.0 0 1 1 688.5 246.8 Z" fill="#F59E0B" />
+                <circle class="sugo-pop" style="--d: 1750ms" cx="629.9" cy="222" r="24" fill="#FFFFFF" />
+            </svg>
+
             <div class="relative max-w-md">
-                <h2 class="text-3xl font-extrabold leading-tight">Every account is checked by a person.</h2>
-                <p class="mt-4 text-sm leading-relaxed text-white/70">
+                <h2 class="sugo-rise text-3xl font-extrabold leading-tight" style="--d: 300ms">Every account is checked by a person.</h2>
+                <p class="sugo-rise mt-4 text-sm leading-relaxed text-white/70" style="--d: 420ms">
                     Technicians walk into people's homes, and clients let strangers in.
                     Both submit a government ID and a selfie holding it, and neither
                     goes live until someone here has looked at both.
                 </p>
             </div>
 
-            <p class="relative text-xs text-white/40"></p>
+            {{-- What the console guarantees, said once each (2026-11-17). --}}
+            <ul class="relative space-y-2.5 text-sm text-white/80">
+                @foreach ([['id', 'A government ID and a selfie on every account'], ['clock', 'Signed links that expire: no document is ever public'], ['check', 'Every decision recorded with who made it']] as $i => [$icon, $line])
+                    <li class="sugo-rise flex items-center gap-3" style="--d: {{ 600 + $i * 120 }}ms">
+                        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
+                            @include('partials.icon', ['name' => $icon, 'class' => 'h-4 w-4'])
+                        </span>
+                        {{ $line }}
+                    </li>
+                @endforeach
+            </ul>
+
         </div>
 
         {{-- Form --}}
@@ -103,7 +138,7 @@
             <div class="absolute -right-24 top-1/4 h-72 w-72 rounded-full bg-brand-soft/70 blur-3xl"></div>
             <div class="absolute -bottom-24 left-1/4 h-64 w-64 rounded-full bg-accent-soft/60 blur-3xl"></div>
 
-            <div class="relative w-full max-w-md rounded-3xl border border-line bg-white p-6 shadow-[0_24px_70px_rgba(6,43,92,0.10)] sm:p-9">
+            <div class="sugo-rise relative w-full max-w-md rounded-3xl border border-line bg-white p-6 shadow-[0_24px_70px_rgba(6,43,92,0.10)] sm:p-9">
                 <div class="mb-8 flex items-center justify-between">
                     <div class="flex items-center gap-3 lg:hidden">
                         <img src="{{ asset('images/brand-emblem.png') }}" alt=""
@@ -172,7 +207,7 @@
                     </div>
 
                     <button type="submit" data-loading-text="Signing in…"
-                        class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand/20 transition hover:-translate-y-0.5 hover:bg-brand-dark hover:shadow-brand/30 focus:outline-none focus:ring-2 focus:ring-brand/40 active:translate-y-0">
+                        class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand to-brand-light px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand/25 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand/30 focus:outline-none focus:ring-2 focus:ring-brand/40 active:translate-y-0">
                         Sign in
                     </button>
                 </form>
@@ -190,6 +225,9 @@
     </div>
 
     @include('partials.loading')
+    {{-- The login has its own page skeleton, so it pulls in the motion kit
+         itself (2026-11-17). --}}
+    @include('partials.motion')
     <script>
         const password = document.getElementById('password');
         const togglePassword = document.getElementById('toggle-password');

@@ -15,14 +15,26 @@
             'payment' => 'Was not paid',
             'other' => 'Something else',
         ];
+        $openCount = (int) ($counts['open'] ?? 0);
     @endphp
+
+    @include('partials.page-hero', [
+        'icon' => 'flag',
+        'kicker' => 'Disputes',
+        'value' => $openCount,
+        'label' => 'open ' . Str::plural('report', $openCount),
+        'sub' => $openCount > 0
+            ? 'Read the booking\'s chat before deciding: it is the other half of the evidence.'
+            : 'Nothing is waiting on a decision. ' . (int) ($counts['decided'] ?? 0) . ' decided so far.',
+        'tone' => $openCount > 0 ? 'warn' : 'brand',
+    ])
 
     {{-- Filters --}}
     <div class="mb-5 flex flex-wrap gap-2">
         @foreach (\App\Http\Controllers\DisputeController::FILTERS as $key => $label)
             <a href="{{ route('disputes.index', ['status' => $key]) }}"
                 class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition
-                  {{ $filter === $key ? 'bg-brand text-white shadow-md shadow-brand/25' : 'border border-line bg-white text-ink-muted hover:text-ink' }}">
+                  {{ $filter === $key ? 'bg-gradient-to-r from-brand to-brand-light text-white shadow-md shadow-brand/25' : 'border border-line bg-white text-ink-muted hover:-translate-y-0.5 hover:text-ink hover:shadow-sm' }}">
                 {{ $label }}
                 <span class="rounded-full px-1.5 text-[10px] {{ $filter === $key ? 'bg-white/25' : 'bg-canvas' }}">{{ $counts[$key] }}</span>
             </a>
@@ -36,7 +48,12 @@
                 $reported = \Carbon\Carbon::parse($dispute['created_at']);
                 $byClient = $dispute['raised_by_role'] === 'client';
             @endphp
-            <article class="rounded-2xl border border-line bg-white p-5 shadow-sm">
+            {{-- A status edge down the left (amber open, green resolved,
+                 grey closed), rising in one after another. --}}
+            <article class="sugo-rise sugo-lift relative overflow-hidden rounded-2xl border border-line bg-white p-5 pl-6 shadow-sm"
+                style="--d: {{ min($loop->index, 8) * 60 }}ms">
+                <span class="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b
+                    {{ $isOpen ? 'from-accent-light to-accent' : ($dispute['status'] === 'resolved' ? 'from-[#34C77B] to-ok' : 'from-line to-ink-muted/40') }}"></span>
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-2">
@@ -69,7 +86,7 @@
                                 @foreach ($dispute['photo_urls'] as $url)
                                     <a href="{{ $url }}" target="_blank" rel="noopener">
                                         <img src="{{ $url }}" alt="Photo attached to the report"
-                                            class="h-24 w-24 rounded-xl border border-line object-cover">
+                                            class="h-24 w-24 rounded-xl border border-line object-cover transition duration-300 hover:scale-105 hover:shadow-lg">
                                     </a>
                                 @endforeach
                             </div>
@@ -113,13 +130,54 @@
                                 <p class="mt-1 text-xs font-semibold text-bad">{{ $message }}</p>
                             @enderror
                         @endif
+
+                        {{-- Progressive Trust Badge: only "Mark resolved" reads these.
+                             An upheld CLIENT report counts against the technician's
+                             Community Trusted badge; the remedy drops them one level. --}}
+                        @php($oldHere = old('form_id') === $dispute['id'])
+                        <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                            <label class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                                Finding
+                                <select name="outcome"
+                                    class="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15">
+                                    <option value="upheld" @selected(! $oldHere || old('outcome', 'upheld') === 'upheld')>Upheld: the report was right</option>
+                                    <option value="not_upheld" @selected($oldHere && old('outcome') === 'not_upheld')>Not upheld: nobody at fault</option>
+                                </select>
+                            </label>
+                            @if ($byClient && ! empty($dispute['technician_id']))
+                                <label class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                                    Remedy
+                                    <select name="remedy"
+                                        class="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15">
+                                        <option value="none" @selected(! $oldHere || old('remedy', 'none') === 'none')>None</option>
+                                        <option value="skill_deverification" @selected($oldHere && old('remedy') === 'skill_deverification')>Skill de-verification (one level down)</option>
+                                    </select>
+                                </label>
+                                <label class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                                    Specialization
+                                    <select name="remedy_specialization"
+                                        class="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15">
+                                        <option value="">Only for de-verification</option>
+                                        @foreach (\App\Support\Specializations::LABELS as $value => $label)
+                                            <option value="{{ $value }}" @selected($oldHere && old('remedy_specialization') === $value)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                            @endif
+                        </div>
+                        @if ($oldHere)
+                            @error('remedy_specialization')
+                                <p class="mt-1 text-xs font-semibold text-bad">{{ $message }}</p>
+                            @enderror
+                        @endif
+
                         <div class="mt-3 flex flex-wrap justify-end gap-2">
                             <button type="submit" name="decision" value="dismissed"
                                 class="rounded-lg border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:bg-canvas">
                                 Close without action
                             </button>
                             <button type="submit" name="decision" value="resolved"
-                                class="rounded-lg bg-brand px-4 py-2 text-xs font-bold text-white transition hover:bg-brand-dark">
+                                class="rounded-lg bg-gradient-to-r from-brand to-brand-light px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                                 Mark resolved
                             </button>
                         </div>
@@ -136,18 +194,25 @@
                             @endif
                         </p>
                         <p class="mt-1 whitespace-pre-line text-sm text-ink">{{ $dispute['resolution_note'] }}</p>
+                        @if (! empty($dispute['outcome']))
+                            <p class="mt-2 text-xs font-semibold text-ink-muted">
+                                {{ $dispute['outcome'] === 'upheld' ? 'Upheld' : 'Not upheld' }}
+                                @if (($dispute['remedy'] ?? 'none') === 'skill_deverification')
+                                    &middot; Skill de-verification:
+                                    {{ \App\Support\Specializations::LABELS[$dispute['remedy_specialization']] ?? $dispute['remedy_specialization'] }}
+                                @endif
+                            </p>
+                        @endif
                     </div>
                 @endif
             </article>
         @empty
-            <div class="rounded-2xl border border-line bg-white px-5 py-16 text-center shadow-sm">
-                <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-canvas text-ink-muted">
-                    @include('partials.icon', ['name' => 'flag', 'class' => 'h-6 w-6'])
-                </div>
-                <p class="text-sm font-bold text-ink">No reports here</p>
-                <p class="mt-1 text-xs text-ink-muted">
-                    {{ $filter === 'open' ? 'Nothing is waiting on a decision.' : 'Nothing yet.' }}
-                </p>
+            <div class="rounded-2xl border border-line bg-white shadow-sm">
+                @include('partials.empty', [
+                    'icon' => 'flag',
+                    'title' => 'No reports here',
+                    'message' => $filter === 'open' ? 'Nothing is waiting on a decision.' : 'Nothing yet.',
+                ])
             </div>
         @endforelse
     </div>

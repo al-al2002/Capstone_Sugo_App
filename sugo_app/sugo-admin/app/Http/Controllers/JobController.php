@@ -15,11 +15,25 @@ use Illuminate\View\View;
  * `auth.users` for the client's email and returns every job on the platform -
  * which is exactly why it can only be reached through this console, behind
  * `EnsureAdmin`.
+ *
+ * ## Technician Community posts are not jobs (2026-11-17)
+ *
+ * A post to the Technician Community (`service_path = it_community`) is a
+ * question for free advice: no technician is matched, booked or paid. It is
+ * left out of this page and its counts, at the user's request. If the advice
+ * does not fix it, the client taps "Still not fixed? Find a technician", the
+ * post becomes a Home Service or Shop Repair booking, and it appears here.
  */
 class JobController extends Controller
 {
     /** Statuses that mean the job is still in play. */
     private const ACTIVE = ['pending', 'matched', 'confirmed', 'in_progress'];
+
+    /**
+     * Bookings only - every query on this page carries it. A posted job always
+     * has a path, so `neq` (which also drops a null) loses nothing real.
+     */
+    public const NOT_COMMUNITY = ['service_path' => 'neq.it_community'];
 
     public function __construct(private readonly Supabase $supabase)
     {
@@ -35,7 +49,7 @@ class JobController extends Controller
         $query = [
             'order' => 'created_at.desc',
             'limit' => '200',
-        ];
+        ] + self::NOT_COMMUNITY;
 
         $query += match ($filter) {
             'active' => ['status' => 'in.('.implode(',', self::ACTIVE).')'],
@@ -62,9 +76,11 @@ class JobController extends Controller
         $jobs = $this->supabase->select('admin_jobs', $query);
 
         $counts = [
-            'active' => $this->supabase->count('jobs', ['status' => 'in.('.implode(',', self::ACTIVE).')']),
-            'completed' => $this->supabase->count('jobs', ['status' => 'eq.completed']),
-            'cancelled' => $this->supabase->count('jobs', ['status' => 'eq.cancelled']),
+            'active' => $this->supabase->count('jobs', [
+                'status' => 'in.('.implode(',', self::ACTIVE).')',
+            ] + self::NOT_COMMUNITY),
+            'completed' => $this->supabase->count('jobs', ['status' => 'eq.completed'] + self::NOT_COMMUNITY),
+            'cancelled' => $this->supabase->count('jobs', ['status' => 'eq.cancelled'] + self::NOT_COMMUNITY),
         ];
         $counts['all'] = array_sum($counts);
 

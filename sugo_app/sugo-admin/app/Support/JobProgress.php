@@ -26,8 +26,13 @@ final class JobProgress
         'completed'   => 'Completed',
     ];
 
-    /** Pickup journey, in order, as written by the technician's app. */
+    /**
+     * Pickup journey, in order, as written by the apps. `dropping_off` is the
+     * client bringing the unit in on a drop-off job (20261117000006); it comes
+     * before the bench and has no pickup legs.
+     */
     private const STAGES = [
+        'dropping_off'         => 'Client dropping it off',
         'heading_to_pickup'    => 'Heading to pick up',
         'collected'            => 'Unit collected',
         'returning_to_shop'    => 'Heading to the shop',
