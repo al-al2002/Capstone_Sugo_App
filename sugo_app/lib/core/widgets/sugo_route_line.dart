@@ -69,11 +69,7 @@ class SugoRoutePosition {
 /// real change, so it moves. It never moves on its own, and under "remove
 /// animations" it jumps instead of sliding.
 class SugoRouteLine extends StatelessWidget {
-  const SugoRouteLine({
-    super.key,
-    required this.stops,
-    required this.position,
-  });
+  const SugoRouteLine({super.key, required this.stops, required this.position});
 
   /// Stop names, first to last - short words ("Posted", "Matched"). At least
   /// two; checked in [build], because a const constructor cannot read a

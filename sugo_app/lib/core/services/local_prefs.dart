@@ -175,8 +175,10 @@ class LocalPrefs extends ChangeNotifier {
   ) async {
     // Newest first, capped, so the map cannot grow for the life of the app.
     final List<MapEntry<String, int>> entries = times.entries.toList()
-      ..sort((MapEntry<String, int> a, MapEntry<String, int> b) =>
-          b.value.compareTo(a.value));
+      ..sort(
+        (MapEntry<String, int> a, MapEntry<String, int> b) =>
+            b.value.compareTo(a.value),
+      );
     final Map<String, int> capped = Map<String, int>.fromEntries(
       entries.take(_maxSeenIds),
     );

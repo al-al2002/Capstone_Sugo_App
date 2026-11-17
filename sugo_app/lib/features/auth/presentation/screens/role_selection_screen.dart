@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/session/session_state.dart';
+import '../../../../core/theme/app_motion.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/widgets/sugo_card.dart';
+import '../../../../core/widgets/sugo_motion.dart';
 
 /// "Continue as a client" or "Continue as a technician".
 ///
@@ -38,47 +40,87 @@ class RoleSelectionScreen extends StatelessWidget {
         AppSizes.xxl,
       ),
       children: <Widget>[
-        Text('How will you use SUGO?', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.xs),
-        Text(
-          'This sets up your app. You will not be asked again.',
-          style: AppTextStyles.subtitle,
+        // On the brand band since 2026-11-17, like every renovated screen.
+        SugoRiseIn(
+          child: SugoHeroBand(
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'How will you use SUGO?',
+                        style: AppTextStyles.headline.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: AppSizes.xs),
+                      Text(
+                        'This sets up your app. You will not be asked again.',
+                        style: AppTextStyles.subtitle.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSizes.md),
+                const SugoWiggle(
+                  swings: 2,
+                  angle: 0.2,
+                  alignment: Alignment.bottomCenter,
+                  child: Icon(
+                    Icons.waving_hand_rounded,
+                    size: 34,
+                    color: AppColors.accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: AppSizes.xl),
 
-        _RoleCard(
-          title: 'Continue as a client',
-          blurb:
-              'Post a repair job and let RB-CARS rank the three best '
-              'technicians near you.',
-          icon: Icons.person_search_rounded,
-          accent: AppColors.primary,
-          tint: AppColors.primarySofter,
-          bullets: const <String>[
-            'One quick ID check, then start booking',
-            'No skills assessment or tier',
-            'Track jobs and rate technicians',
-          ],
-          onTap: () => onChosen(UserRole.client),
+        SugoRiseIn(
+          delay: AppMotion.staggerDelay(2),
+          child: _RoleCard(
+            title: 'Continue as a client',
+            blurb:
+                'Post a repair job and let SUGO rank the three best '
+                'technicians near you.',
+            icon: Icons.person_search_rounded,
+            accent: AppColors.primary,
+            gradient: const <Color>[AppColors.primary, AppColors.secondary],
+            bullets: const <String>[
+              'One quick ID check, then start booking',
+              'No skills assessment or tier',
+              'Track jobs and rate technicians',
+            ],
+            onTap: () => onChosen(UserRole.client),
+          ),
         ),
         const SizedBox(height: AppSizes.lg),
 
-        _RoleCard(
-          title: 'Continue as a technician',
-          blurb:
-              'Receive matched repair jobs. Requires a valid ID and a short '
-              'skills assessment.',
-          icon: Icons.engineering_rounded,
-          // The text orange: the bright one is 2.1:1 on white, too faint for
-          // an icon that carries meaning.
-          accent: AppColors.accentDark,
-          tint: AppColors.accentSofter,
-          bullets: const <String>[
-            'Upload a government ID',
-            'Pass a 10-question assessment',
-            'Your score sets your starting tier',
-          ],
-          onTap: () => onChosen(UserRole.technician),
+        SugoRiseIn(
+          delay: AppMotion.staggerDelay(4),
+          child: _RoleCard(
+            title: 'Continue as a technician',
+            blurb:
+                'Receive matched repair jobs. Requires a valid ID and a short '
+                'skills assessment.',
+            icon: Icons.engineering_rounded,
+            // The text orange: the bright one is 2.1:1 on white, too faint for
+            // an icon that carries meaning.
+            accent: AppColors.accentDark,
+            gradient: const <Color>[AppColors.accentDark, AppColors.accent],
+            bullets: const <String>[
+              'Upload a government ID',
+              'Pass a 10-question assessment',
+              'Your score sets your starting tier',
+            ],
+            onTap: () => onChosen(UserRole.technician),
+          ),
         ),
 
         const SizedBox(height: AppSizes.xl),
@@ -112,16 +154,18 @@ class _RoleCard extends StatelessWidget {
     required this.blurb,
     required this.icon,
     required this.accent,
-    required this.tint,
     required this.bullets,
     required this.onTap,
+    required this.gradient,
   });
+
+  /// The icon tile's gradient, in the role's colour (2026-11-17).
+  final List<Color> gradient;
 
   final String title;
   final String blurb;
   final IconData icon;
   final Color accent;
-  final Color tint;
   final List<String> bullets;
   final VoidCallback onTap;
 
@@ -140,10 +184,14 @@ class _RoleCard extends StatelessWidget {
                 width: AppSizes.iconTile,
                 height: AppSizes.iconTile,
                 decoration: BoxDecoration(
-                  color: tint,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: gradient,
+                  ),
                   borderRadius: BorderRadius.circular(AppSizes.radius),
                 ),
-                child: Icon(icon, size: 24, color: accent),
+                child: Icon(icon, size: 24, color: Colors.white),
               ),
               const SizedBox(width: AppSizes.md),
               Expanded(child: Text(title, style: AppTextStyles.sectionTitle)),

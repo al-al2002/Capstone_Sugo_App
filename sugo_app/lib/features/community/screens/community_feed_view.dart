@@ -6,6 +6,7 @@ import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/community_models.dart';
@@ -30,8 +31,21 @@ import 'community_post_screen.dart';
 ///
 /// The empty states differ for the same reason - "ask the first question" is
 /// useless advice to someone who is not allowed to ask one.
+///
+/// Renovated 2026-11-17 ("Dispatch, levelled up"): a summary band like every
+/// other list in the app, the shared sliding control for the sort, topic
+/// chips that pop when chosen, questions that deal in (every load replays it,
+/// because a new sort or topic is a new list), and animated empty states.
 class CommunityFeedView extends StatefulWidget {
-  const CommunityFeedView({super.key, required this.isClient});
+  const CommunityFeedView({
+    super.key,
+    required this.isClient,
+    @visibleForTesting this.service,
+  });
+
+  /// Tests only (2026-11-17), so the feed can be rendered with questions in
+  /// it rather than only in its offline error state.
+  final CommunityService? service;
 
   /// Drives the two role differences described above. Passed in rather than
   /// read from the session here, because both dashboards already know the
@@ -50,7 +64,7 @@ class CommunityFeedView extends StatefulWidget {
 /// built around. This is here for the feed's own Ask button and its empty
 /// state, and so a future entry point does not have to make the state public.
 class CommunityFeedViewState extends State<CommunityFeedView> {
-  final CommunityService _service = CommunityService();
+  late final CommunityService _service = widget.service ?? CommunityService();
 
   List<CommunityPost> _posts = const <CommunityPost>[];
   CommunitySort _sort = CommunitySort.recent;
@@ -239,7 +253,7 @@ class CommunityFeedViewState extends State<CommunityFeedView> {
 
     if (_posts.isEmpty) {
       return widget.isClient
-          ? SugoEmptyState(
+          ? _EmptyCommunity(
               icon: Icons.forum_rounded,
               title: _topic == null
                   ? 'No questions yet'
@@ -251,7 +265,7 @@ class CommunityFeedViewState extends State<CommunityFeedView> {
               actionLabel: 'Ask a question',
               onAction: openComposer,
             )
-          : SugoEmptyState(
+          : _EmptyCommunity(
               icon: Icons.question_answer_rounded,
               title: _topic == null
                   ? 'No questions yet'
@@ -267,8 +281,13 @@ class CommunityFeedViewState extends State<CommunityFeedView> {
     return Column(
       children: <Widget>[
         for (int i = 0; i < _posts.length; i++)
-          _Entrance(
-            index: i,
+          SugoRiseIn(
+            // Keyed by sort and topic as well as the post, so each new list
+            // deals in afresh.
+            key: ValueKey<String>(
+              '${_sort.name}-${_topic?.name}-${_posts[i].id}',
+            ),
+            delay: AppMotion.staggerDelay(i),
             child: CommunityPostCard(
               post: _posts[i],
               onTap: () => _open(_posts[i]),
@@ -280,36 +299,9 @@ class CommunityFeedViewState extends State<CommunityFeedView> {
   }
 }
 
-/// Fades and lifts a row into place, staggered by its position.
-///
-/// Capped by [AppMotion.maxStaggerIndex], so a long feed does not animate its
-/// twentieth row a second and a half late.
-class _Entrance extends StatelessWidget {
-  const _Entrance({required this.index, required this.child});
-
-  final int index;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: AppMotion.slow,
-      curve: AppMotion.standard,
-      builder: (BuildContext context, double t, Widget? inner) {
-        return Opacity(
-          opacity: t,
-          child: Transform.translate(
-            offset: Offset(0, 12 * (1 - t)),
-            child: inner,
-          ),
-        );
-      },
-      child: child,
-    );
-  }
-}
-
+/// The feed's summary band (2026-11-17): the same navy band as every other
+/// list, with the one role difference that matters here on the right - a
+/// client's Ask button, or the count of questions a technician could answer.
 class _Header extends StatelessWidget {
   const _Header({
     required this.isClient,
@@ -330,16 +322,20 @@ class _Header extends StatelessWidget {
         AppSizes.screenPadding,
         0,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+      child: SugoRiseIn(
+        child: SugoHeroBand(
+          child: Row(
             children: <Widget>[
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text('Community', style: AppTextStyles.display),
+                    Text(
+                      'Community',
+                      style: AppTextStyles.display.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       isClient
@@ -348,23 +344,28 @@ class _Header extends StatelessWidget {
                           ? '$unanswered question${unanswered == 1 ? '' : 's'} '
                                 'waiting for an answer'
                           : 'Answer questions to earn reputation points.',
-                      style: AppTextStyles.subtitle,
+                      style: AppTextStyles.subtitle.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
                     ),
                   ],
                 ),
               ),
-              if (isClient) ...<Widget>[
-                const SizedBox(width: AppSizes.md),
-                _AskButton(onTap: onAsk),
-              ],
+              const SizedBox(width: AppSizes.md),
+              if (isClient)
+                _AskButton(onTap: onAsk)
+              else if (unanswered > 0)
+                _WaitingBubble(count: unanswered),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
+/// White on the navy band, so the one action on the screen is the brightest
+/// thing on it.
 class _AskButton extends StatelessWidget {
   const _AskButton({required this.onTap});
 
@@ -373,27 +374,28 @@ class _AskButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.primary,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+      elevation: 0,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
         child: const Padding(
           padding: EdgeInsets.symmetric(
             horizontal: AppSizes.md + 2,
-            vertical: 10,
+            vertical: 11,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.edit_outlined, size: 15, color: Colors.white),
+              Icon(Icons.edit_rounded, size: 15, color: AppColors.primary),
               SizedBox(width: 6),
               Text(
                 'Ask',
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -404,11 +406,52 @@ class _AskButton extends StatelessWidget {
   }
 }
 
+/// The technician's side of the band: how many questions are waiting.
+class _WaitingBubble extends StatelessWidget {
+  const _WaitingBubble({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 74,
+      padding: const EdgeInsets.symmetric(vertical: AppSizes.sm),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppSizes.radius + 4),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SugoCountUp(
+            value: count,
+            style: const TextStyle(
+              fontFamily: AppTextStyles.fontFamily,
+              fontSize: 24,
+              height: 1.1,
+              fontWeight: FontWeight.w800,
+              color: AppColors.accentDark,
+            ),
+          ),
+          Text(
+            'to answer',
+            style: AppTextStyles.micro.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Recent / Most Helpful, as a segmented control.
 ///
 /// A segmented control rather than a dropdown: there are two options, both
 /// worth showing, and a dropdown would hide half the choice behind a tap while
-/// taking up the same room.
+/// taking up the same room. Since 2026-11-17 the shared [SugoSegmentedFilter],
+/// whose highlight slides - the same control as the inbox and the bookings.
+/// Its labels shrink to fit, which covers the "Most Helpful" overflow the old
+/// control had to guard against by hand.
 class _SortRow extends StatelessWidget {
   const _SortRow({required this.sort, required this.onChanged});
 
@@ -419,77 +462,13 @@ class _SortRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSizes.screenPadding),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: AppColors.primarySofter,
-          borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: CommunitySort.values
-              .map((CommunitySort option) {
-                final bool active = option == sort;
-
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () => onChanged(option),
-                    behavior: HitTestBehavior.opaque,
-                    child: AnimatedContainer(
-                      duration: AppMotion.base,
-                      curve: AppMotion.standard,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: active ? AppColors.surface : Colors.transparent,
-                        borderRadius: BorderRadius.circular(
-                          AppSizes.pillRadius,
-                        ),
-                        // The thumb rests on the track: a hairline edge rather
-                        // than a shadow since the Dispatch redesign.
-                        border: active
-                            ? Border.all(color: AppColors.border)
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          Icon(
-                            option.icon,
-                            size: 14,
-                            color: active
-                                ? AppColors.primary
-                                : AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 6),
-                          // Flexible, because half of a 360dp screen is not much
-                          // and "Most Helpful" is the longest label the control
-                          // has. Without it the row overflows - by 18px in the
-                          // test harness, and by however much a wide font or a
-                          // large accessibility text scale adds on a real device.
-                          Flexible(
-                            child: Text(
-                              option.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: active
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: active
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              })
-              .toList(growable: false),
-        ),
+      child: SugoSegmentedFilter<CommunitySort>(
+        selected: sort,
+        onChanged: onChanged,
+        segments: <SugoSegment<CommunitySort>>[
+          for (final CommunitySort option in CommunitySort.values)
+            SugoSegment<CommunitySort>(value: option, label: option.label),
+        ],
       ),
     );
   }
@@ -551,38 +530,121 @@ class _Chip extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-          child: AnimatedContainer(
+          // The chosen topic pops a little (2026-11-17).
+          child: AnimatedScale(
+            scale: active ? 1.05 : 1,
             duration: AppMotion.base,
-            curve: AppMotion.standard,
-            padding: const EdgeInsets.symmetric(horizontal: AppSizes.md + 2),
-            decoration: BoxDecoration(
-              color: active ? AppColors.primary : AppColors.surface,
-              borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-              border: Border.all(
-                color: active ? AppColors.primary : AppColors.border,
-              ),
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  icon,
-                  size: 14,
-                  color: active ? Colors.white : AppColors.textSecondary,
+            curve: AppMotion.playful,
+            child: AnimatedContainer(
+              duration: AppMotion.base,
+              curve: AppMotion.standard,
+              padding: const EdgeInsets.symmetric(horizontal: AppSizes.md + 2),
+              decoration: BoxDecoration(
+                color: active ? AppColors.primary : AppColors.surface,
+                borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+                border: Border.all(
+                  color: active ? AppColors.primary : AppColors.border,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    icon,
+                    size: 14,
                     color: active ? Colors.white : AppColors.textSecondary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: active ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// An empty feed: its icon swinging once on a gradient disc, then the words,
+/// then the action when the reader is allowed one.
+class _EmptyCommunity extends StatelessWidget {
+  const _EmptyCommunity({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        const SizedBox(height: AppSizes.lg),
+        SugoRiseIn(
+          child: Container(
+            width: 96,
+            height: 96,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[AppColors.primarySoft, AppColors.cyanSoft],
+              ),
+            ),
+            child: SugoWiggle(
+              swings: 2,
+              angle: 0.22,
+              alignment: Alignment.bottomCenter,
+              child: Icon(icon, size: 42, color: AppColors.primary),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSizes.lg),
+        SugoRiseIn(
+          delay: AppMotion.staggerDelay(2),
+          child: Column(
+            children: <Widget>[
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.title,
+              ),
+              const SizedBox(height: AppSizes.xs),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.subtitle,
+              ),
+            ],
+          ),
+        ),
+        if (actionLabel != null && onAction != null) ...<Widget>[
+          const SizedBox(height: AppSizes.xl),
+          SugoRiseIn(
+            delay: AppMotion.staggerDelay(4),
+            child: FilledButton.icon(
+              onPressed: onAction,
+              icon: const Icon(Icons.edit_rounded, size: 17),
+              label: Text(actionLabel!),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

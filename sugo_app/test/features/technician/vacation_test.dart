@@ -119,27 +119,26 @@ void main() {
   });
 
   group('client cards', () {
-    MatchResult match({String? awayUntil}) => MatchResult.fromJson(
-      <String, dynamic>{
-        'id': 'm1',
-        'job_id': 'job-1',
-        'technician_id': 't1',
-        'rank': 1,
-        'status': 'shortlisted',
-        'final_score': 0.82,
-        'score_breakdown': <String, dynamic>{
-          'technician': <String, dynamic>{
-            'id': 't1',
-            'full_name': 'Lance Dela Cruz',
-            'is_verified': true,
-            'is_available': true,
-            'rating': 4.6,
-            'total_jobs': 21,
-            'away_until': awayUntil,
+    MatchResult match({String? awayUntil}) =>
+        MatchResult.fromJson(<String, dynamic>{
+          'id': 'm1',
+          'job_id': 'job-1',
+          'technician_id': 't1',
+          'rank': 1,
+          'status': 'shortlisted',
+          'final_score': 0.82,
+          'score_breakdown': <String, dynamic>{
+            'technician': <String, dynamic>{
+              'id': 't1',
+              'full_name': 'Lance Dela Cruz',
+              'is_verified': true,
+              'is_available': true,
+              'rating': 4.6,
+              'total_jobs': 21,
+              'away_until': awayUntil,
+            },
           },
-        },
-      },
-    );
+        });
 
     Widget host(Widget child, {double width = 360, double scale = 1}) {
       return MaterialApp(
@@ -150,7 +149,9 @@ void main() {
             textScaler: TextScaler.linear(scale),
           ),
           child: Scaffold(
-            body: Center(child: SizedBox(width: width, child: child)),
+            body: Center(
+              child: SizedBox(width: width, child: child),
+            ),
           ),
         ),
       );
@@ -199,33 +200,37 @@ void main() {
       expect(find.text('On vacation'), findsNothing);
     });
 
-    testWidgets('the dashboard card fits the vacation line in its fixed height', (
-      WidgetTester tester,
-    ) async {
-      final Technician away = Technician(
-        id: 't1',
-        fullName: 'Lance Dela Cruz',
-        rating: 4.6,
-        reviewCount: 21,
-        totalJobs: 21,
-        distanceKm: 3.4,
-        awayUntil: today.add(const Duration(days: 3)),
-      );
+    testWidgets(
+      'the dashboard card fits the vacation line in its fixed height',
+      (WidgetTester tester) async {
+        final Technician away = Technician(
+          id: 't1',
+          fullName: 'Lance Dela Cruz',
+          rating: 4.6,
+          reviewCount: 21,
+          totalJobs: 21,
+          distanceKm: 3.4,
+          awayUntil: today.add(const Duration(days: 3)),
+        );
 
-      await tester.pumpWidget(
-        host(
-          // The recommended row's height (`_cardHeight`), raised from 172 to
-          // 182 by the 2026-09 type scale.
-          SizedBox(height: 182, child: TechnicianCard.compact(technician: away)),
-          width: 200,
-        ),
-      );
+        await tester.pumpWidget(
+          host(
+            // The recommended row's height (`_cardHeight`), raised from 172 to
+            // 182 by the 2026-09 type scale.
+            SizedBox(
+              height: 182,
+              child: TechnicianCard.compact(technician: away),
+            ),
+            width: 200,
+          ),
+        );
 
-      expect(find.textContaining('On vacation until'), findsOneWidget);
-      // It takes the distance line's place rather than adding a third line.
-      expect(find.text('3.4 km away'), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
+        expect(find.textContaining('On vacation until'), findsOneWidget);
+        // It takes the distance line's place rather than adding a third line.
+        expect(find.text('3.4 km away'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 
   group('availability hero card (replaced the online/offline toggle)', () {

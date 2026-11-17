@@ -29,8 +29,11 @@ class NotificationTap {
     );
   }
 
-  /// What happened: `message`, `stage`, `return_method`, `booked`,
-  /// `completed` or `job_delay` - the `data.type` the server sent.
+  /// What happened - the `data.type` the server sent: `message`, `stage`,
+  /// `return_method`, `booked`, `completed`, `job_delay`, `client_delay`,
+  /// `collection`; and since 2026-11-17 `accepted`, `declined`, `rerouted`,
+  /// `arriving` (to the client), `request_cancelled`, `client_arriving`,
+  /// `client_arrived` (to the technician).
   final String type;
 
   /// The job it is about, when there is one.

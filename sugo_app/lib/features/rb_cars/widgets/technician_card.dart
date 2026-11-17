@@ -107,10 +107,7 @@ class TechnicianCard extends StatelessWidget {
         const SizedBox(height: 2),
         _SpecializationLine(technician: technician),
         const SizedBox(height: AppSizes.sm),
-        _Fact(
-          icon: Icons.build_rounded,
-          text: _jobsLabel,
-        ),
+        _Fact(icon: Icons.build_rounded, text: _jobsLabel),
         // The dashboard row has a fixed height with room for two fact lines.
         // A vacation takes the distance line's place rather than adding a
         // third: "cannot be booked" matters more than how far away they are.
@@ -119,10 +116,7 @@ class TechnicianCard extends StatelessWidget {
           _VacationFact(label: technician.awayLabel!),
         ] else if (technician.distanceAwayLabel != null) ...<Widget>[
           const SizedBox(height: 3),
-          _Fact(
-            icon: Icons.place_rounded,
-            text: technician.distanceAwayLabel!,
-          ),
+          _Fact(icon: Icons.place_rounded, text: technician.distanceAwayLabel!),
         ],
       ],
     );

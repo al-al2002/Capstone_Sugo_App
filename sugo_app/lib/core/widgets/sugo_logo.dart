@@ -108,16 +108,20 @@ class _Stroke extends CustomPainter {
   bool shouldRepaint(covariant _Stroke oldDelegate) => false;
 }
 
-/// The compact brand mark: the emblem - a house with a wrench, a swoosh and a
-/// service van - on its navy tile.
+/// The compact brand mark: the S-road logo on its navy tile (2026-11-16).
 ///
-/// For places the full wordmark does not fit: the top of the home screen, the
-/// auth header's fallback. The artwork is the app icon's own emblem
-/// ([AppAssets.brandEmblem]), so the mark in the app is the icon on the
-/// phone's home screen.
+/// A white S drawn as a road, from a cyan start to an orange map pin - an
+/// errand (*sugo*) from where the technician sets off to your door. It
+/// replaced the house, wrench, swoosh and van emblem, which turned to mush at
+/// icon size. Drawn by `tool/make_logo.py`, which writes the app icon, this
+/// emblem ([AppAssets.brandEmblem]) and the admin panel's logo from one
+/// geometry - so the mark in the app is the icon on the phone's home screen.
 ///
-/// If the file is missing the tile still draws, with a house-and-wrench glyph
-/// in place of the artwork - a missing export never breaks a screen.
+/// For places the full wordmark does not fit: the top of the home screen,
+/// beside the wordmark in the sign-in header, the splash.
+///
+/// If the file is missing the tile still draws, with a route glyph in place
+/// of the artwork - a missing export never breaks a screen.
 class SugoLogoMark extends StatelessWidget {
   const SugoLogoMark({super.key, this.size = 40, this.onDark = false});
 
@@ -144,22 +148,19 @@ class SugoLogoMark extends StatelessWidget {
               ? Border.all(color: Colors.white.withValues(alpha: 0.28))
               : null,
         ),
+        // The export is drawn for exactly this tile, edge to edge, so it is
+        // shown as it is - the old emblem needed zooming past its own air.
         child: ClipRRect(
           borderRadius: corners,
-          // Zoomed a little past the tile's edge: the export leaves air round
-          // the swoosh, which makes the emblem read thin at 32px.
-          child: Transform.scale(
-            scale: 1.15,
-            child: Image.asset(
-              AppAssets.brandEmblem,
-              fit: BoxFit.cover,
-              width: size,
-              height: size,
-              errorBuilder: (BuildContext _, Object _, StackTrace? _) => Icon(
-                Icons.home_repair_service_rounded,
-                size: size * 0.56,
-                color: Colors.white,
-              ),
+          child: Image.asset(
+            AppAssets.brandEmblem,
+            fit: BoxFit.cover,
+            width: size,
+            height: size,
+            errorBuilder: (BuildContext _, Object _, StackTrace? _) => Icon(
+              Icons.route_rounded,
+              size: size * 0.56,
+              color: Colors.white,
             ),
           ),
         ),

@@ -50,8 +50,24 @@ void main() {
   group('the timeline', () {
     test('shows one ending, never both', () {
       for (final TrackingStage stage in TrackingStage.values) {
+        // A drop-off (2026-11-17) is its own, shorter journey - no pickup
+        // legs. It is checked below, with the same rule about one ending.
+        if (stage == TrackingStage.droppingOff) continue;
         final List<TrackingStage> steps = TrackingStage.timelineFor(stage);
         expect(steps.length, 6, reason: 'both routes are the same length');
+        expect(
+          steps.contains(TrackingStage.outForDelivery) &&
+              steps.contains(TrackingStage.readyForCollection),
+          isFalse,
+          reason: 'drawing both would promise a trip that is not happening',
+        );
+      }
+      for (final TrackingStage stage in TrackingStage.values) {
+        final List<TrackingStage> steps = TrackingStage.timelineFor(
+          stage,
+          dropOff: true,
+        );
+        expect(steps.length, 4, reason: 'in, bench, ending, delivered');
         expect(
           steps.contains(TrackingStage.outForDelivery) &&
               steps.contains(TrackingStage.readyForCollection),

@@ -320,6 +320,40 @@ class MatchContext {
 }
 
 /// The whole `score_breakdown` document.
+/// Nobody was within the client's distance limit, so the matcher showed the
+/// nearest technicians who meet everything else (2026-11-17). Read from
+/// `score_breakdown.preference_fallback`.
+class PreferenceFallback {
+  const PreferenceFallback({required this.wantedKm, this.nearestKm});
+
+  static PreferenceFallback? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final double? wanted = asNullableDouble(json['wanted_km']);
+    if (wanted == null) return null;
+    return PreferenceFallback(
+      wantedKm: wanted,
+      nearestKm: asNullableDouble(json['nearest_km']),
+    );
+  }
+
+  /// The client's limit, e.g. 5.
+  final double wantedKm;
+
+  /// The nearest qualified technician, e.g. 12.4. Null when unknown.
+  final double? nearestKm;
+
+  /// "No technician within 5 km - the nearest is 12.4 km away."
+  String get message {
+    final String head = 'No technician within ${_km(wantedKm)} km';
+    return nearestKm == null
+        ? '$head. Showing the closest who meet your other preferences.'
+        : '$head - the nearest is ${_km(nearestKm!)} km away.';
+  }
+
+  static String _km(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+}
+
 class ScoreBreakdown {
   const ScoreBreakdown({
     required this.stage1,
@@ -328,6 +362,7 @@ class ScoreBreakdown {
     required this.explainability,
     this.version = 1,
     this.recommendation,
+    this.preferenceFallback,
   });
 
   factory ScoreBreakdown.fromJson(Map<String, dynamic>? json) {
@@ -347,6 +382,9 @@ class ScoreBreakdown {
       recommendation: recommendation == null
           ? null
           : RecommendationStage.fromJson(recommendation),
+      preferenceFallback: PreferenceFallback.fromJson(
+        json['preference_fallback'],
+      ),
     );
   }
 
@@ -369,6 +407,23 @@ class ScoreBreakdown {
 
   /// Stage 3. Null on version 1 rows.
   final RecommendationStage? recommendation;
+
+  /// Set when this shortlist is the nearest beyond the client's distance
+  /// limit. Null on an ordinary match.
+  final PreferenceFallback? preferenceFallback;
+
+  /// The matcher's Stage 1 skill score for this job, 0-100: its
+  /// specialisation and skill-tag factors, averaged. Null when neither is on
+  /// the row. Drives the "Skills" preference bar.
+  int? get skillPercent {
+    final List<double> values = <double>[
+      for (final ScoreFactor f in stage1.factors)
+        if (f.key == 'specialization' || f.key == 'skill_tag') f.value,
+    ];
+    if (values.isEmpty) return null;
+    final double mean = values.reduce((a, b) => a + b) / values.length;
+    return (mean * 100).clamp(0, 100).round();
+  }
 
   /// What the "Why this technician?" sheet lists.
   ///

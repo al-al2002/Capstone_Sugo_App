@@ -70,7 +70,9 @@ void main() {
   test('a job contributes only its latest state, not its history', () async {
     final List<AppNotification> feed = await build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.confirmed)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     ).load();
 
     expect(feed, hasLength(1));
@@ -99,13 +101,17 @@ void main() {
     // First run: the job is confirmed, and everything is seeded as read.
     await build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.confirmed)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     ).load();
 
     // The same job later completes: a new id, so a new unread item.
     final List<AppNotification> after = await build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.completed)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     ).load();
 
     expect(after.single.title, 'Service completed');
@@ -115,13 +121,17 @@ void main() {
   test('marking seen clears it, and survives a reload', () async {
     final NotificationFeedService service = build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.confirmed)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     );
     await service.load();
 
     final List<AppNotification> fresh = await build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.inProgress)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     ).load();
     expect(fresh.single.unread, isTrue);
 
@@ -129,7 +139,9 @@ void main() {
 
     final List<AppNotification> again = await build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.inProgress)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     ).load();
     expect(again.single.unread, isFalse);
   });
@@ -167,7 +179,9 @@ void main() {
       jobs: <Job>[
         job(id: 'job-1', status: JobStatus.confirmed, path: ServicePath.pickup),
       ],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
       tracking: <String, JobTracking>{
         'job-1': JobTracking.fromJson(<String, dynamic>{
           'id': 'tr1',
@@ -197,7 +211,9 @@ void main() {
 
     final NotificationFeedService service = build(
       jobs: <Job>[job(id: 'job-1', status: JobStatus.confirmed)],
-      people: <String, JobTechnician>{'job-1': technician(MatchStatus.accepted)},
+      people: <String, JobTechnician>{
+        'job-1': technician(MatchStatus.accepted),
+      },
     );
 
     expect(await service.load(), isEmpty);

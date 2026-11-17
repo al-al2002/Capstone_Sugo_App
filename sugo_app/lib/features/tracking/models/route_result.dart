@@ -96,8 +96,7 @@ class RouteResult {
 
   /// A human sentence for [reason], for when there is no route to draw.
   String get unavailableMessage => switch (reason) {
-    'no_location' =>
-      'Turn on location so we can route you from where you are.',
+    'no_location' => 'Turn on location so we can route you from where you are.',
     'no_destination' =>
       'This destination has no location on record yet. Message the other '
           'person for the address.',

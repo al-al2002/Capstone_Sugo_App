@@ -64,16 +64,11 @@ class RouteMapCard extends StatelessWidget {
 
   final double height;
 
-  LatLng get _point => LatLng(latitude, longitude);
-
   void _openRoute(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => InAppRouteScreen(
-          jobId: jobId,
-          title: title,
-          subtitle: address,
-        ),
+        builder: (_) =>
+            InAppRouteScreen(jobId: jobId, title: title, subtitle: address),
       ),
     );
   }
@@ -85,11 +80,11 @@ class RouteMapCard extends StatelessWidget {
       children: <Widget>[
         ClipRRect(
           borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-          child: SizedBox(
+          child: RouteMapPreview(
+            latitude: latitude,
+            longitude: longitude,
             height: height,
-            child: AppEnv.hasMapTilerKey
-                ? _map()
-                : _noMapFallback(),
+            icon: icon,
           ),
         ),
         const SizedBox(height: AppSizes.sm),
@@ -133,6 +128,41 @@ class RouteMapCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Just the map of [RouteMapCard]: a static pin on the destination, or a
+/// plain "no map" panel in a build without a MapTiler key.
+///
+/// Split out on 2026-11-16 so the technician's "Your job" card can show the
+/// client's address on a map without the card's "Show route" button - there,
+/// "Trip to the client" already opens the route, and two buttons to the same
+/// place made the technician stop and wonder which one to press. The caller
+/// clips the corners.
+class RouteMapPreview extends StatelessWidget {
+  const RouteMapPreview({
+    super.key,
+    required this.latitude,
+    required this.longitude,
+    this.height = 180,
+    this.icon = Icons.home_rounded,
+  });
+
+  final double latitude;
+  final double longitude;
+  final double height;
+
+  /// A house for a client's address (the default), a shop for the workshop.
+  final IconData icon;
+
+  LatLng get _point => LatLng(latitude, longitude);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: AppEnv.hasMapTilerKey ? _map() : _noMapFallback(),
     );
   }
 

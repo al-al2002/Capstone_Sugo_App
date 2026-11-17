@@ -145,11 +145,7 @@ class _SugoButtonState extends State<SugoButton> {
   (Color, Color, Color?) get _colors {
     if (!_enabled && !widget.isLoading) {
       return switch (widget.variant) {
-        SugoButtonVariant.ghost => (
-          Colors.transparent,
-          AppColors.hint,
-          null,
-        ),
+        SugoButtonVariant.ghost => (Colors.transparent, AppColors.hint, null),
         SugoButtonVariant.outlined => (
           AppColors.surface,
           AppColors.hint,
@@ -160,7 +156,11 @@ class _SugoButtonState extends State<SugoButton> {
     }
     return switch (widget.variant) {
       SugoButtonVariant.primary => (AppColors.primary, Colors.white, null),
-      SugoButtonVariant.tonal => (AppColors.primarySoft, AppColors.primary, null),
+      SugoButtonVariant.tonal => (
+        AppColors.primarySoft,
+        AppColors.primary,
+        null,
+      ),
       SugoButtonVariant.outlined => (
         AppColors.surface,
         AppColors.primary,

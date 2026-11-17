@@ -58,7 +58,8 @@ class _TermsAgreementState extends State<TermsAgreement> {
                     width: 24,
                     child: Checkbox(
                       value: widget.value,
-                      onChanged: (bool? checked) => widget.onChanged(checked ?? false),
+                      onChanged: (bool? checked) =>
+                          widget.onChanged(checked ?? false),
                     ),
                   ),
                   const SizedBox(width: AppSizes.sm),
@@ -100,7 +101,8 @@ class _TermsAgreementState extends State<TermsAgreement> {
               width: 24,
               child: Checkbox(
                 value: widget.value,
-                onChanged: (bool? checked) => widget.onChanged(checked ?? false),
+                onChanged: (bool? checked) =>
+                    widget.onChanged(checked ?? false),
               ),
             ),
             const SizedBox(width: AppSizes.sm),

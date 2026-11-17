@@ -28,8 +28,8 @@ import '../models/registration_status.dart';
 ///
 /// A production system would add an automated pre-screen here - a face-match
 /// API and document OCR - to reject the obvious failures before they reach a
-/// human. That is a deliberate omission, not an oversight: see the TODO on
-/// [submit].
+/// human. That is a deliberate omission, not an oversight: see the production
+/// note on [submit].
 class IdentityVerificationService {
   IdentityVerificationService({SupabaseClient? client})
     : _client = client ?? SupabaseService.client;
@@ -154,7 +154,7 @@ class IdentityVerificationService {
   /// to upload puts a broken image in front of a reviewer, who would reject an
   /// applicant for an infrastructure fault.
   ///
-  /// TODO(production): pre-screen before this reaches a human. Run a face-match
+  /// Production note: pre-screen before this reaches a human. Run a face-match
   /// between the selfie and the ID portrait, and OCR the document to confirm it
   /// is a recognised Philippine government ID that has not expired. Reject the
   /// obvious failures automatically so the review queue only sees genuine

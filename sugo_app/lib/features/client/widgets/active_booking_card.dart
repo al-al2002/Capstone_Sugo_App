@@ -14,6 +14,9 @@ import '../../bookings/models/booking_route.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_technician.dart';
 import '../../tracking/models/job_tracking.dart';
+import '../../rb_cars/models/match_result.dart';
+import '../../rb_cars/widgets/urgent_countdown.dart';
+import '../../rb_cars/models/job_enums.dart';
 
 /// What the active-booking card is currently saying.
 ///
@@ -108,10 +111,20 @@ class ActiveBookingCard extends StatelessWidget {
   final int moreCount;
   final VoidCallback? onSeeAll;
 
+  /// Accepted, and the client is bringing the unit in (2026-11-17). Nothing
+  /// is tracked until the technician receives it, so "Confirmed / View
+  /// booking" left the client to find out for themselves that the next move
+  /// was theirs.
+  bool get _bringingItIn =>
+      state == ActiveBookingState.confirmed &&
+      job.isSelfDropOff &&
+      (tracking == null || tracking!.stage == TrackingStage.droppingOff);
+
   String get _statusLabel => switch (state) {
     ActiveBookingState.finding => 'Finding technicians',
     ActiveBookingState.choosing => 'Your turn to choose',
     ActiveBookingState.awaiting => 'Waiting for an answer',
+    ActiveBookingState.confirmed when _bringingItIn => 'Bring it to the shop',
     ActiveBookingState.confirmed => 'Confirmed',
     ActiveBookingState.travelling => tracking?.stage.label ?? 'On the way',
     ActiveBookingState.inProgress => 'Repair in progress',
@@ -121,6 +134,7 @@ class ActiveBookingCard extends StatelessWidget {
     ActiveBookingState.finding => Icons.radar_rounded,
     ActiveBookingState.choosing => Icons.touch_app_rounded,
     ActiveBookingState.awaiting => Icons.hourglass_top_rounded,
+    ActiveBookingState.confirmed when _bringingItIn => Icons.storefront_rounded,
     ActiveBookingState.confirmed => Icons.check_circle_rounded,
     ActiveBookingState.travelling =>
       tracking?.stage.icon ?? Icons.directions_car_rounded,
@@ -145,11 +159,13 @@ class ActiveBookingCard extends StatelessWidget {
     ActiveBookingState.choosing => 'Choose technician',
     ActiveBookingState.awaiting => 'View request',
     ActiveBookingState.travelling => 'Track technician',
+    ActiveBookingState.confirmed when _bringingItIn => 'Route to the shop',
     _ => 'View booking',
   };
 
   IconData get _primaryIcon => switch (state) {
     ActiveBookingState.travelling => Icons.near_me_rounded,
+    ActiveBookingState.confirmed when _bringingItIn => Icons.alt_route_rounded,
     ActiveBookingState.choosing => Icons.groups_rounded,
     _ => Icons.receipt_long_rounded,
   };
@@ -177,6 +193,19 @@ class ActiveBookingCard extends StatelessWidget {
     if (when != null) return 'Scheduled ${Fmt.dateTime(when)}';
     if (job.servicePath != null) return job.servicePath!.label;
     return null;
+  }
+
+  /// When an urgent request passes to the next technician, while the client
+  /// is still waiting for an answer. Null otherwise.
+  DateTime? get _urgentDeadline {
+    final DateTime? sent = technician?.offeredAt;
+    if (state != ActiveBookingState.awaiting ||
+        job.urgency != Urgency.needToday ||
+        sent == null) {
+      return null;
+    }
+    final DateTime deadline = sent.add(MatchResult.urgentWindow);
+    return deadline.isAfter(DateTime.now()) ? deadline : null;
   }
 
   @override
@@ -222,6 +251,16 @@ class ActiveBookingCard extends StatelessWidget {
             stops: BookingRoute.stops,
             position: state.routePosition,
           ),
+          // Urgent and still waiting: the five minutes before it passes to
+          // the next technician (2026-11-17), on the same clock the
+          // technician sees.
+          if (_urgentDeadline case final DateTime deadline) ...<Widget>[
+            const SizedBox(height: AppSizes.md),
+            _UrgentWait(
+              deadline: deadline,
+              name: who?.displayName.split(' ').first ?? 'they',
+            ),
+          ],
           if (who != null || detail != null) ...<Widget>[
             const SizedBox(height: AppSizes.lg),
             Row(
@@ -386,6 +425,42 @@ class ActiveBookingSkeleton extends StatelessWidget {
           SugoSkeleton(height: 10, radius: 999),
           SizedBox(height: AppSizes.xl),
           SugoSkeleton(height: AppSizes.socialButtonHeight, radius: 12),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Urgent · 4:12 - if Ryan does not answer, it goes to the next technician."
+class _UrgentWait extends StatelessWidget {
+  const _UrgentWait({required this.deadline, required this.name});
+
+  final DateTime deadline;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.sm + 2),
+      decoration: BoxDecoration(
+        color: AppColors.accentSofter,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: <Widget>[
+          UrgentCountdown(deadline: deadline),
+          const SizedBox(width: AppSizes.sm + 2),
+          Expanded(
+            child: Text(
+              'If $name does not answer, we send it to the next technician '
+              'automatically.',
+              style: AppTextStyles.micro.copyWith(
+                color: AppColors.textPrimary,
+                height: 1.35,
+              ),
+            ),
+          ),
         ],
       ),
     );

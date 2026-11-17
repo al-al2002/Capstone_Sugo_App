@@ -132,7 +132,9 @@ class ChatBubble extends StatelessWidget {
                     service: service,
                     // The meta row is drawn over the photo when there is no
                     // caption to sit under.
-                    overlay: _photoOnly ? _meta(foreground, onDark: true) : null,
+                    overlay: _photoOnly
+                        ? _meta(foreground, onDark: true)
+                        : null,
                   ),
                 if (!_photoOnly)
                   Padding(
@@ -265,11 +267,7 @@ class _Photo extends StatelessWidget {
     final Uint8List? local = bytes;
 
     final Widget image = local != null
-        ? Image.memory(
-            local,
-            fit: BoxFit.cover,
-            width: double.infinity,
-          )
+        ? Image.memory(local, fit: BoxFit.cover, width: double.infinity)
         : _RemotePhoto(path: path!, service: service);
 
     return Stack(
@@ -336,9 +334,7 @@ class _RemotePhotoState extends State<_RemotePhoto> {
       future: _url,
       builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
         if (snapshot.hasError) {
-          return _Unavailable(
-            onRetry: () => setState(() => _url = _resolve()),
-          );
+          return _Unavailable(onRetry: () => setState(() => _url = _resolve()));
         }
         if (!snapshot.hasData) {
           return const SizedBox(

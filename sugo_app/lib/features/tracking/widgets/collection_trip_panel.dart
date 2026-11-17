@@ -13,7 +13,13 @@ import '../models/job_tracking.dart';
 import '../services/tracking_service.dart';
 import 'location_feedback.dart';
 
-/// The client's side of collecting a repaired unit from the workshop.
+/// The client's side of a trip to the workshop: collecting a repaired unit,
+/// or - since 2026-11-17 - bringing one in on a drop-off ([dropOff]).
+///
+/// On a drop-off there is no tracking row until the client sets off: "I'm on
+/// my way" creates it (`start_collection_trip`, 20261117000006). So
+/// [tracking] may be null, and the panel remembers that it started a trip
+/// until the host's live row catches up.
 ///
 /// ## What it does (2026-09-29)
 ///
@@ -34,10 +40,27 @@ import 'location_feedback.dart';
 /// while they drive a trip they started; the client's the same. Leaving this
 /// screen stops the stream, and the panel says so.
 class CollectionTripPanel extends StatefulWidget {
-  const CollectionTripPanel({super.key, required this.tracking, this.service});
+  const CollectionTripPanel({
+    super.key,
+    required this.jobId,
+    this.tracking,
+    this.dropOff = false,
+    this.showsArrival = true,
+    this.service,
+  });
 
-  /// The live row, rebuilt by the tracking screen on every realtime update.
-  final JobTracking tracking;
+  final String jobId;
+
+  /// The live row, rebuilt by the host on every realtime update. Null on a
+  /// drop-off before the client has set off.
+  final JobTracking? tracking;
+
+  /// Bringing the unit in rather than collecting it: only the words change.
+  final bool dropOff;
+
+  /// Whether to print the arrival time and any delay here. False when the
+  /// host shows the trip-conditions card, which says both - and more.
+  final bool showsArrival;
 
   /// Tests pass a fake.
   final TrackingService? service;
@@ -54,15 +77,28 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
   bool _isBusy = false;
   int _fixesSent = 0;
 
-  String get _jobId => widget.tracking.jobId;
+  /// Set by this panel's own taps, so the buttons move on at once instead of
+  /// waiting for the live row - which, on a drop-off, does not even exist
+  /// until the first tap has created it.
+  bool _startedHere = false;
+  bool _arrivedHere = false;
+
+  String get _jobId => widget.jobId;
   bool get _isSharing => _positions != null;
+
+  bool get _arrived =>
+      _arrivedHere ||
+      (!_startedHere && (widget.tracking?.clientArrived ?? false));
+
+  bool get _onTheWay =>
+      !_arrived && (_startedHere || (widget.tracking?.clientOnTheWay ?? false));
 
   @override
   void initState() {
     super.initState();
     // Back on the screen mid-trip: share again without a tap, so a client who
     // forgot cannot leave the technician watching a frozen pin.
-    if (widget.tracking.clientOnTheWay) {
+    if (widget.tracking?.clientOnTheWay ?? false) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _resume();
       });
@@ -92,6 +128,10 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
       if (!await _ensureLocation()) return;
       await _service.startCollectionTrip(_jobId);
       if (!mounted) return;
+      setState(() {
+        _startedHere = true;
+        _arrivedHere = false;
+      });
       _startSharing();
       UiFeedback.showSuccess(
         context,
@@ -121,6 +161,10 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
       await _service.endCollectionTrip(_jobId);
       if (!mounted) return;
       _stopSharing();
+      setState(() {
+        _startedHere = false;
+        _arrivedHere = true;
+      });
       UiFeedback.showSuccess(context, 'Your technician knows you are here.');
     } on RbCarsFailure catch (failure) {
       if (mounted) UiFeedback.showError(context, failure.message);
@@ -169,28 +213,34 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final JobTracking t = widget.tracking;
+    final JobTracking? t = widget.tracking;
 
-    if (t.clientArrived) {
-      return const _Line(
+    if (_arrived) {
+      return _Line(
         icon: Icons.where_to_vote_rounded,
         tint: AppColors.success,
         title: "You've arrived",
-        detail: 'Your technician knows you are at the shop.',
+        detail: widget.dropOff
+            ? 'Your technician knows you are at the shop. Hand it over and '
+                  'they will mark it received.'
+            : 'Your technician knows you are at the shop.',
       );
     }
 
-    if (!t.clientOnTheWay) {
+    if (!_onTheWay) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const _Line(
+          _Line(
             icon: Icons.directions_walk_rounded,
             tint: AppColors.primary,
-            title: 'Heading over?',
-            detail:
-                'Let your technician know. They will see you on a map and '
-                'be told if traffic or the weather holds you up.',
+            title: widget.dropOff ? 'Setting off with it?' : 'Heading over?',
+            detail: widget.dropOff
+                ? 'Tap when you leave. Your technician sees you on a map with '
+                      'your arrival time, and is told if traffic or the '
+                      'weather holds you up.'
+                : 'Let your technician know. They will see you on a map and '
+                      'be told if traffic or the weather holds you up.',
           ),
           const SizedBox(height: AppSizes.md),
           SugoButton(
@@ -222,11 +272,13 @@ class _CollectionTripPanelState extends State<CollectionTripPanel> {
                     'update${_fixesSent == 1 ? '' : 's'} sent'
               : 'Location is off. Your technician cannot see where you are.',
         ),
-        if (_arrivalLabel(t) case final String eta) ...<Widget>[
-          const SizedBox(height: AppSizes.sm),
-          Text(eta, style: AppTextStyles.bodyStrong),
+        if (widget.showsArrival && t != null) ...<Widget>[
+          if (_arrivalLabel(t) case final String eta) ...<Widget>[
+            const SizedBox(height: AppSizes.sm),
+            Text(eta, style: AppTextStyles.bodyStrong),
+          ],
         ],
-        if (t.isDelayed) ...<Widget>[
+        if (widget.showsArrival && t != null && t.isDelayed) ...<Widget>[
           const SizedBox(height: AppSizes.xs),
           Text(
             // The client is the one late here, so this informs rather than

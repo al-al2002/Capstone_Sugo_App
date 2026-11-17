@@ -9,6 +9,7 @@ import '../../../core/utils/ui_feedback.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/verification_document.dart';
 import '../services/technician_registration_service.dart';
+import '../widgets/onboarding_step_intro.dart';
 
 /// Step 5 of the technician flow: the clearance, plus optional trust-boosters.
 ///
@@ -148,13 +149,13 @@ class _VerificationDocumentsStepState extends State<VerificationDocumentsStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Clearance and credentials', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'An NBI or police clearance is required - clients are letting you '
-          'into their home. The other two are optional, and they win you jobs: '
-          'clients see those badges when choosing a technician.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.workspace_premium_rounded,
+          title: 'Clearance and credentials',
+          subtitle:
+              'An NBI or police clearance is required - clients are letting '
+              'you into their home. The other two are optional, and they win '
+              'you jobs: clients see those badges when choosing a technician.',
         ),
         const SizedBox(height: AppSizes.lg),
 
@@ -390,11 +391,7 @@ class _RequirementTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: ink,
-        ),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ink),
       ),
     );
   }

@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_motion.dart';
-import '../../../core/widgets/sugo_step_rail.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../models/registration_status.dart';
 
 /// The progress rail at the top of both onboarding flows.
@@ -27,6 +28,14 @@ import '../models/registration_status.dart';
 /// an icon that says its state; the name is still spoken to screen readers.
 /// Finished steps are SUGO blue, like the distance already covered on the
 /// route line, rather than green.
+///
+/// ## On the brand band (2026-11-17)
+///
+/// The renovation puts the rail on the same navy band every renovated screen
+/// opens with: "Step 3 of 7", the step's name, a ring showing how much of the
+/// registration is done, and the segments in white - cyan once finished. The
+/// ring and the segments animate as steps complete; under reduced motion they
+/// simply change.
 class OnboardingStepper extends StatelessWidget {
   const OnboardingStepper({
     super.key,
@@ -50,43 +59,185 @@ class OnboardingStepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        // The same label the posting flow uses, so a user who has posted a job
-        // recognises the shape of a SUGO multi-step flow immediately.
-        SugoStepLabel(
-          currentIndex: currentIndex,
-          stepCount: steps.length,
-          label: steps[currentIndex].label,
-        ),
-        const SizedBox(height: AppSizes.sm),
-        Row(
-          children: List<Widget>.generate(steps.length, (int i) {
-            return Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: i == steps.length - 1 ? 0 : 4),
-                child: _Segment(
-                  step: steps[i],
-                  isCurrent: i == currentIndex,
-                  isComplete: completedSteps.contains(steps[i]),
-                  // Only a completed step is navigable. Allowing a jump
-                  // forward would let someone reach the assessment without
-                  // choosing a specialisation first.
-                  onTap:
-                      (onStepTapped != null &&
-                          completedSteps.contains(steps[i]) &&
-                          i != currentIndex)
-                      ? () => onStepTapped!(i)
-                      : null,
+    final int done = steps.where(completedSteps.contains).length;
+    final Duration swap = AppMotion.reduced(context)
+        ? Duration.zero
+        : AppMotion.base;
+
+    return SugoHeroBand(
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.lg,
+        AppSizes.md + 2,
+        AppSizes.lg,
+        AppSizes.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    // The same words the posting flow uses, so a user who
+                    // has posted a job recognises the shape of a SUGO
+                    // multi-step flow immediately.
+                    Text(
+                      'Step ${currentIndex + 1} of ${steps.length}',
+                      style: AppTextStyles.overline.copyWith(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    AnimatedSwitcher(
+                      duration: swap,
+                      transitionBuilder: (Widget child, Animation<double> a) =>
+                          FadeTransition(
+                            opacity: a,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.35),
+                                end: Offset.zero,
+                              ).animate(a),
+                              child: child,
+                            ),
+                          ),
+                      child: Text(
+                        steps[currentIndex].label,
+                        key: ValueKey<OnboardingStepId>(steps[currentIndex]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: AppTextStyles.fontFamily,
+                          fontSize: 20,
+                          height: 1.2,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            );
-          }),
-        ),
-      ],
+              const SizedBox(width: AppSizes.md),
+              _ProgressRing(done: done, total: steps.length),
+            ],
+          ),
+          const SizedBox(height: AppSizes.md),
+          Row(
+            children: List<Widget>.generate(steps.length, (int i) {
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: i == steps.length - 1 ? 0 : 4,
+                  ),
+                  child: _Segment(
+                    step: steps[i],
+                    isCurrent: i == currentIndex,
+                    isComplete: completedSteps.contains(steps[i]),
+                    // Only a completed step is navigable. Allowing a jump
+                    // forward would let someone reach the assessment without
+                    // choosing a specialisation first.
+                    onTap:
+                        (onStepTapped != null &&
+                            completedSteps.contains(steps[i]) &&
+                            i != currentIndex)
+                        ? () => onStepTapped!(i)
+                        : null,
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
+}
+
+/// How much of the registration is done, as a ring that sweeps to its new
+/// value whenever a step completes.
+class _ProgressRing extends StatelessWidget {
+  const _ProgressRing({required this.done, required this.total});
+
+  final int done;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final double target = total == 0 ? 0 : done / total;
+    return Semantics(
+      label: '$done of $total steps done',
+      excludeSemantics: true,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: target),
+        duration: AppMotion.reduced(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 700),
+        curve: AppMotion.emphasized,
+        builder: (BuildContext context, double v, Widget? _) => SizedBox(
+          width: 54,
+          height: 54,
+          child: CustomPaint(
+            painter: _RingPainter(v),
+            child: Center(
+              child: Text(
+                '${(v * 100).round()}%',
+                style: const TextStyle(
+                  fontFamily: AppTextStyles.fontFamily,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RingPainter extends CustomPainter {
+  const _RingPainter(this.value);
+
+  final double value;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect box = Offset.zero & size;
+    final Rect arc = box.deflate(4);
+    canvas.drawArc(
+      arc,
+      0,
+      6.2832,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..color = Colors.white.withValues(alpha: 0.18),
+    );
+    if (value <= 0) return;
+    canvas.drawArc(
+      arc,
+      -1.5708, // from twelve o'clock
+      6.2832 * value.clamp(0, 1),
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..strokeCap = StrokeCap.round
+        ..shader = const SweepGradient(
+          colors: <Color>[AppColors.cyan, Colors.white],
+        ).createShader(box),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) => old.value != value;
 }
 
 class _Segment extends StatelessWidget {
@@ -104,11 +255,13 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // On the navy band: finished steps cyan (the covered distance), the
+    // current one white, the rest a faint white.
     final Color fill = isComplete
-        ? AppColors.secondary
+        ? AppColors.cyan
         : isCurrent
-        ? AppColors.primary
-        : AppColors.border;
+        ? Colors.white
+        : Colors.white.withValues(alpha: 0.22);
 
     final bool isLockedGate = step == OnboardingStepId.identity && !isComplete;
 
@@ -131,10 +284,9 @@ class _Segment extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: AppSizes.touchTarget),
           child: Column(
             children: <Widget>[
-              // Animated rather than switched, and on the same token as the
-              // posting flow's rail. A step filling in on completion is the
-              // most satisfying moment in a seven-step registration, and it
-              // is worth the 240ms to let it land.
+              // Animated rather than switched. A step filling in on
+              // completion is the most satisfying moment in a seven-step
+              // registration, and it is worth the 240ms to let it land.
               AnimatedContainer(
                 duration: AppMotion.base,
                 curve: AppMotion.standard,
@@ -142,6 +294,14 @@ class _Segment extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: fill,
                   borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+                  boxShadow: isCurrent
+                      ? <BoxShadow>[
+                          BoxShadow(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : null,
                 ),
               ),
               const SizedBox(height: 6),
@@ -149,18 +309,28 @@ class _Segment extends StatelessWidget {
               // that is the only thing worth saying about it; the ID gate
               // shows a lock while outstanding, which reads as "this one
               // blocks the rest"; everything else shows what the step is.
-              Icon(
-                isComplete
-                    ? Icons.check_circle_rounded
-                    : isLockedGate
-                    ? Icons.lock_outline_rounded
-                    : step.icon,
-                size: 16,
-                color: isComplete
-                    ? AppColors.secondary
-                    : isCurrent
-                    ? AppColors.primary
-                    : AppColors.hint,
+              AnimatedSwitcher(
+                duration: AppMotion.reduced(context)
+                    ? Duration.zero
+                    : AppMotion.base,
+                transitionBuilder: (Widget child, Animation<double> a) =>
+                    ScaleTransition(scale: a, child: child),
+                child: Icon(
+                  isComplete
+                      ? Icons.check_circle_rounded
+                      : isLockedGate
+                      ? Icons.lock_outline_rounded
+                      : step.icon,
+                  key: ValueKey<String>(
+                    isComplete ? 'done' : (isLockedGate ? 'lock' : 'step'),
+                  ),
+                  size: 16,
+                  color: isComplete
+                      ? AppColors.cyan
+                      : isCurrent
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.5),
+                ),
               ),
             ],
           ),

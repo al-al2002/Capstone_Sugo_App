@@ -18,6 +18,7 @@ import '../../../core/widgets/sugo_truck_drive.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/job_tracking.dart';
+import '../models/trip_conditions.dart';
 import '../services/delay_alerts.dart';
 import '../services/tracking_service.dart';
 import '../widgets/client_trip_card.dart';
@@ -25,6 +26,7 @@ import '../widgets/delay_alert_dialog.dart';
 import '../widgets/location_feedback.dart';
 import '../widgets/return_method_card.dart';
 import '../widgets/route_map_card.dart';
+import '../widgets/trip_conditions_card.dart';
 
 /// The technician's side of a pickup or delivery.
 ///
@@ -92,6 +94,11 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
   bool _isLoading = true;
   bool _isSharing = false;
   bool _isBusy = false;
+
+  /// A drop-off job (the client brings the unit in, 2026-11-16) that has not
+  /// arrived yet. There is no trip to start, so the screen waits with one
+  /// action: "Unit received".
+  bool _awaitingDropOff = false;
   String? _error;
   int _fixesSent = 0;
 
@@ -117,6 +124,31 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
     });
 
     try {
+      // A drop-off job has no pickup trip. Until the unit is handed over
+      // there is no tracking row at all, and opening this screen must not
+      // create one at `heading_to_pickup` - that would send the client a
+      // "technician on the way" for a trip nobody is making.
+      if (widget.job.isSelfDropOff) {
+        final JobTracking? existing = await _service.fetch(widget.job.id);
+        // No row, or the client's own trip in (`dropping_off`, 2026-11-17):
+        // either way the unit is not here yet. Wait for it - and follow the
+        // client live once they set off.
+        if (existing == null || existing.stage == TrackingStage.droppingOff) {
+          final ReturnMethod? choice = await _service.returnChoice(
+            widget.job.id,
+          );
+          if (!mounted) return;
+          _followClientTrip(existing?.stage, dropOff: true);
+          setState(() {
+            _awaitingDropOff = true;
+            _tracking = existing;
+            _returnChoice = choice;
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+
       // `start` resumes: it returns an existing row untouched and only
       // inserts when there is none. Re-entering this screen must never move
       // the job back to the first stage - the client is watching the same row.
@@ -127,6 +159,7 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
       setState(() {
         _tracking = tracking;
         _returnChoice = choice;
+        _awaitingDropOff = false;
         _isLoading = false;
       });
       _followClientTrip(tracking.stage);
@@ -141,6 +174,31 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
         _error = failure.message;
         _isLoading = false;
       });
+    }
+  }
+
+  /// The client has handed the unit over at the shop. Tracking starts here,
+  /// at the bench - the pickup legs never happened.
+  Future<void> _receiveUnit() async {
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
+    try {
+      final JobTracking tracking = await _service.start(
+        widget.job.id,
+        stage: TrackingStage.inRepair,
+      );
+      if (!mounted) return;
+      setState(() {
+        _tracking = tracking;
+        _awaitingDropOff = false;
+        _isBusy = false;
+      });
+      // The client's trip in is over: stop following it.
+      _followClientTrip(tracking.stage);
+    } on RbCarsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      UiFeedback.showError(context, failure.message);
     }
   }
 
@@ -238,24 +296,37 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
     }
   }
 
-  /// Watches the row while the client may be travelling to the shop, and
-  /// stops watching at any other stage.
-  void _followClientTrip(TrackingStage stage) {
-    if (stage != TrackingStage.readyForCollection) {
+  /// Watches the row while the client may be travelling to the shop - to
+  /// collect the unit, or ([dropOff]) to bring it in - and stops watching at
+  /// any other stage.
+  ///
+  /// On a drop-off the row may not exist yet: the client's "I'm on my way"
+  /// creates it, and this is how the technician sees them set off.
+  void _followClientTrip(TrackingStage? stage, {bool dropOff = false}) {
+    if (!dropOff && !(stage?.isClientTrip ?? false)) {
       _clientTrip?.cancel();
       _clientTrip = null;
       return;
     }
     if (_clientTrip != null) return;
 
-    _service.myWorkshop().then((LatLng? shop) {
-      if (mounted) setState(() => _workshop = shop);
-    });
+    _service
+        .myWorkshop()
+        .then((LatLng? shop) {
+          if (mounted) setState(() => _workshop = shop);
+        })
+        .catchError((Object _) {});
 
     _clientTrip = _service.watch(widget.job.id).listen(
       (JobTracking? row) {
         if (row == null || !mounted) return;
-        setState(() => _tracking = row);
+        setState(() {
+          _tracking = row;
+          // Received on another device: the wait is over here too.
+          if (_awaitingDropOff && row.stage != TrackingStage.droppingOff) {
+            _awaitingDropOff = false;
+          }
+        });
         // "Your client is running late", once per trip. After this frame,
         // because it opens a dialog.
         if (DelayAlerts.isClientTripAlertable(row)) {
@@ -306,7 +377,11 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const SugoAppBar(title: 'Pickup and delivery'),
+      appBar: SugoAppBar(
+        title: widget.job.isSelfDropOff
+            ? 'Drop-off and collection'
+            : 'Pickup and delivery',
+      ),
       body: SafeArea(child: _body()),
     );
   }
@@ -318,6 +393,25 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
       return const Padding(
         padding: EdgeInsets.all(AppSizes.screenPadding),
         child: SugoSkeletonList(count: 3, showAvatar: false),
+      );
+    }
+
+    if (_awaitingDropOff) {
+      final JobTracking? trip = _tracking;
+      return ListView(
+        padding: const EdgeInsets.all(AppSizes.screenPadding),
+        children: <Widget>[
+          // The client on their way in, live (2026-11-17): where they are,
+          // when they arrive, and - below - the traffic and weather on the
+          // way and why if they run late.
+          ClientTripCard(tracking: trip, workshop: _workshop, dropOff: true),
+          if (trip != null && trip.clientOnTheWay) ...<Widget>[
+            const SizedBox(height: AppSizes.md),
+            TripConditionsCard(tracking: trip, viewer: TripViewer.technician),
+          ],
+          const SizedBox(height: AppSizes.md),
+          _DropOffWaitingCard(busy: _isBusy, onReceived: _receiveUnit),
+        ],
       );
     }
 
@@ -378,6 +472,23 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
                 ? Icons.home_rounded
                 : Icons.storefront_rounded,
           ),
+          // Arrival, weather and traffic for this leg, live from the
+          // server's samples - the same reading the client sees
+          // (2026-11-17).
+          const SizedBox(height: AppSizes.md),
+          LiveTripConditionsCard(
+            jobId: widget.job.id,
+            initial: tracking,
+            service: _service,
+          ),
+        ],
+        // Trip 1 of a pickup and delivery: the road to the client, to collect
+        // the unit (2026-11-17). The return trip has its own route below,
+        // in the delivery card.
+        if (stage == TrackingStage.headingToPickup &&
+            !widget.job.isSelfDropOff) ...<Widget>[
+          const SizedBox(height: AppSizes.md),
+          _PickupTripCard(job: widget.job),
         ],
         const SizedBox(height: AppSizes.lg),
 
@@ -390,6 +501,15 @@ class _TechnicianDeliveryScreenState extends State<TechnicianDeliveryScreen> {
             // where they travel.
             ClientTripCard(tracking: tracking, workshop: _workshop),
             const SizedBox(height: AppSizes.md),
+            // Their traffic, weather and arrival, and why if late
+            // (2026-11-17) - the reading the client sees on their side.
+            if (tracking.clientOnTheWay) ...<Widget>[
+              TripConditionsCard(
+                tracking: tracking,
+                viewer: TripViewer.technician,
+              ),
+              const SizedBox(height: AppSizes.md),
+            ],
           ],
           if (clientCollects)
             const ClientPickupBanner()
@@ -686,6 +806,81 @@ class _DeliveryPlanCard extends StatelessWidget {
   }
 }
 
+/// "Collect it from the client" - the first of a pickup and delivery's two
+/// trips, with the road to the client's address (2026-11-17).
+///
+/// The route is `job-route`'s technician leg: the server resolves the
+/// client's address from the job (a pickup job at `heading_to_pickup`), so
+/// it works only for the technician on this job. The return trip is the
+/// delivery card's, from the bench onwards.
+class _PickupTripCard extends StatelessWidget {
+  const _PickupTripCard({required this.job});
+
+  final Job job;
+
+  @override
+  Widget build(BuildContext context) {
+    return SugoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(AppSizes.radius),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_rounded,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: AppSizes.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Collect it from the client',
+                      style: AppTextStyles.bodyStrong.copyWith(fontSize: 13),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Trip 1 of 2. Bring it back once it is fixed - the '
+                      'pickup and delivery fee covers both trips.',
+                      style: AppTextStyles.caption.copyWith(height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.md),
+          if (job.hasLocation)
+            RouteMapCard(
+              jobId: job.id,
+              latitude: job.latitude!,
+              longitude: job.longitude!,
+              title: 'Client address',
+              address: job.locationLabel,
+            )
+          else
+            Text(
+              'This job has no pinned address, so there is no route to draw. '
+              'Message the client to agree where to meet.',
+              style: AppTextStyles.caption.copyWith(height: 1.35),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SharingCard extends StatelessWidget {
   const _SharingCard({
     required this.isSharing,
@@ -760,20 +955,14 @@ class _SharingCard extends StatelessWidget {
             Text(
               'Nothing is moving at this stage, so the client is not shown a '
               'map. You can leave this off until the next leg.',
-              style: AppTextStyles.caption.copyWith(
-                fontSize: 12,
-                height: 1.35,
-              ),
+              style: AppTextStyles.caption.copyWith(fontSize: 12, height: 1.35),
             ),
           ] else if (!isSharing) ...<Widget>[
             const SizedBox(height: AppSizes.md),
             Text(
               'Turn this on while you are travelling. It stops automatically '
               'when you leave this screen.',
-              style: AppTextStyles.caption.copyWith(
-                fontSize: 12,
-                height: 1.35,
-              ),
+              style: AppTextStyles.caption.copyWith(fontSize: 12, height: 1.35),
             ),
           ],
         ],
@@ -967,6 +1156,61 @@ class _JourneyStep extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A drop-off job before the unit arrives (2026-11-16): the client is
+/// bringing it in, so there is no trip - only "Unit received" once it is in
+/// the technician's hands, which starts tracking at the bench.
+class _DropOffWaitingCard extends StatelessWidget {
+  const _DropOffWaitingCard({required this.busy, required this.onReceived});
+
+  final bool busy;
+  final VoidCallback onReceived;
+
+  @override
+  Widget build(BuildContext context) {
+    return SugoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Icon(
+            Icons.directions_walk_rounded,
+            size: 36,
+            color: AppColors.secondaryDark,
+          ),
+          const SizedBox(height: AppSizes.md),
+          Text(
+            'The client is bringing it to your shop',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.titleSmall,
+          ),
+          const SizedBox(height: AppSizes.xs),
+          Text(
+            'No pickup trip for this job. The client chose to drop it off '
+            'and collect it themselves, so there is no delivery fee. Mark it '
+            'received when it is in your hands.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.caption,
+          ),
+          const SizedBox(height: AppSizes.lg),
+          SizedBox(
+            height: AppSizes.buttonHeight,
+            child: ElevatedButton.icon(
+              onPressed: busy ? null : onReceived,
+              icon: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.inventory_2_rounded, size: 18),
+              label: Text(busy ? 'Saving…' : 'Unit received'),
             ),
           ),
         ],

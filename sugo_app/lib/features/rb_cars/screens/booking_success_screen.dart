@@ -19,7 +19,9 @@ import '../models/job_enums.dart';
 import '../models/labor_price_catalog.dart';
 import '../models/match_result.dart';
 import '../models/technician.dart';
+import '../models/job_price.dart';
 import '../widgets/score_indicator.dart';
+import '../widgets/urgent_countdown.dart';
 
 /// Shown the moment a client picks their technician.
 ///
@@ -92,16 +94,26 @@ class BookingSuccessScreen extends StatelessWidget {
     symptomCode: job.problemSymptom,
   );
 
-  double? get _distanceKm => job.servicePath == ServicePath.homeService
+  /// A shop repair's delivery fee was worked out and saved by the server
+  /// when the request was sent (2026-11-16); it is read back, not redone.
+  bool get _isShopRepair => job.servicePath == ServicePath.pickup;
+
+  double? get _distanceKm => _isShopRepair
+      ? job.distanceKm
+      : job.servicePath == ServicePath.homeService
       ? technician?.distanceKm
       : null;
 
-  int? get _travelFee {
-    final double? distance = _distanceKm;
-    if (distance == null) return null;
-    if (distance <= 3) return 50;
-    return 50 + ((distance - 3).ceil() * 15);
-  }
+  // The same rule as everywhere else - it used to be a copy of it.
+  int? get _travelFee => _isShopRepair
+      ? job.deliveryFee
+      : LaborPriceCatalog.travelFee(_distanceKm);
+
+  String get _feeLabel => !_isShopRepair
+      ? 'Travel fee'
+      : job.deliveryOption == DeliveryOption.self
+      ? 'Delivery fee - bring it myself'
+      : 'Pickup and delivery fee';
 
   @override
   Widget build(BuildContext context) {
@@ -133,6 +145,12 @@ class BookingSuccessScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: AppTextStyles.subtitle,
                   ),
+                  // Urgent: they have five minutes, and what happens if not
+                  // (2026-11-17).
+                  if (job.urgency == Urgency.needToday) ...<Widget>[
+                    const SizedBox(height: AppSizes.lg),
+                    _UrgentSentCard(name: _firstNameStart),
+                  ],
                   const SizedBox(height: AppSizes.xl),
                   _SummaryCard(job: job, technician: technician, match: match),
                   if (match != null) ...<Widget>[
@@ -145,6 +163,11 @@ class BookingSuccessScreen extends StatelessWidget {
                       labor: _laborPrice!,
                       distanceKm: _distanceKm,
                       travelFee: _travelFee,
+                      feeLabel: _feeLabel,
+                      pickupAndDelivery:
+                          _isShopRepair &&
+                          job.deliveryOption == DeliveryOption.delivery,
+                      urgent: job.urgency == Urgency.needToday,
                     ),
                   ],
                   const SizedBox(height: AppSizes.lg),
@@ -249,15 +272,27 @@ class _PriceEstimateCard extends StatelessWidget {
     required this.labor,
     required this.distanceKm,
     required this.travelFee,
+    this.feeLabel = 'Travel fee',
+    this.urgent = false,
+    this.pickupAndDelivery = false,
   });
+
+  /// Two trips: printed as "Pickup trip" and "Delivery trip" (2026-11-17).
+  final bool pickupAndDelivery;
 
   final LaborPrice labor;
   final double? distanceKm;
   final int? travelFee;
 
+  /// Posted as Urgent: 20% of the labor on top (2026-11-17).
+  final bool urgent;
+
+  /// "Travel fee" for a home visit; the delivery wording for a shop repair.
+  final String feeLabel;
+
   @override
   Widget build(BuildContext context) {
-    final bool hasTravel = distanceKm != null && travelFee != null;
+    final bool hasTravel = travelFee != null;
     return SugoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,18 +300,37 @@ class _PriceEstimateCard extends StatelessWidget {
           const SectionHeader(title: 'Price'),
           const SizedBox(height: AppSizes.md),
           _PriceRow(label: 'Labor fee', value: labor.fee),
-          if (hasTravel) ...<Widget>[
+          if (urgent) ...<Widget>[
             const SizedBox(height: AppSizes.sm),
             _PriceRow(
-              label: 'Travel fee (${distanceKm!.toStringAsFixed(1)} km)',
-              value: '₱$travelFee',
+              label: 'Urgent fee (20%)',
+              value: LaborPriceCatalog.urgentFee(labor) == null
+                  ? '+20% of labor'
+                  : '₱${LaborPriceCatalog.urgentFee(labor)}',
             ),
+          ],
+          if (hasTravel) ...<Widget>[
+            for (final ({String label, int amount}) line in JobPrice.feeLines(
+              label: feeLabel,
+              km: distanceKm,
+              fee: travelFee!,
+              pickupAndDelivery: pickupAndDelivery,
+            )) ...<Widget>[
+              const SizedBox(height: AppSizes.sm),
+              _PriceRow(label: line.label, value: '₱${line.amount}'),
+            ],
             const SizedBox(height: AppSizes.sm),
             const Divider(height: 1),
             const SizedBox(height: AppSizes.sm),
             _PriceRow(
               label: 'Estimated total',
-              value: _totalLabel(labor.fee, travelFee!),
+              // The shared rule, urgent fee included - this used to be a
+              // local copy of it.
+              value: LaborPriceCatalog.estimatedTotal(
+                labor: labor,
+                travelFee: travelFee!,
+                urgentFee: urgent ? LaborPriceCatalog.urgentFee(labor) ?? 0 : 0,
+              ),
               bold: true,
             ),
           ],
@@ -288,15 +342,6 @@ class _PriceEstimateCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static String _totalLabel(String laborFee, int travelFee) {
-    final String digits = laborFee.replaceAll(RegExp(r'[^0-9]'), '');
-    final int? amount = int.tryParse(digits);
-    if (amount == null || laborFee.contains('/')) {
-      return 'See labor fee + ₱$travelFee';
-    }
-    return '₱${amount + travelFee}';
   }
 }
 
@@ -563,6 +608,54 @@ class _Row extends StatelessWidget {
               style: AppTextStyles.bodyStrong.copyWith(fontSize: 13),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Ryan has 5:00 to accept. If they do not, we send it to the next
+/// technician automatically." The clock starts when this screen opens, which
+/// is the moment the request was sent - within a second of the server's
+/// `offered_at`, the time the sweep goes by.
+class _UrgentSentCard extends StatefulWidget {
+  const _UrgentSentCard({required this.name});
+
+  final String name;
+
+  @override
+  State<_UrgentSentCard> createState() => _UrgentSentCardState();
+}
+
+class _UrgentSentCardState extends State<_UrgentSentCard> {
+  late final DateTime _deadline = DateTime.now().add(MatchResult.urgentWindow);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.md),
+      decoration: BoxDecoration(
+        color: AppColors.accentSofter,
+        borderRadius: BorderRadius.circular(AppSizes.tileRadius),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.bolt_rounded, color: AppColors.accentDark),
+          const SizedBox(width: AppSizes.sm),
+          Expanded(
+            child: Text(
+              '${widget.name} has 5 minutes to accept your urgent request. '
+              'If they do not, we send it to the next technician '
+              'automatically.',
+              style: AppTextStyles.micro.copyWith(
+                color: AppColors.textPrimary,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSizes.sm),
+          UrgentCountdown(deadline: _deadline),
         ],
       ),
     );

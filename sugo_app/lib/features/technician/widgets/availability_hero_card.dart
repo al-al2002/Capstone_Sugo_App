@@ -27,6 +27,7 @@ class AvailabilityHeroCard extends StatelessWidget {
     required this.onEndVacation,
     required this.onEditDates,
     this.clock,
+    this.onCover = false,
   });
 
   /// The vacation covering today, or null when they are working.
@@ -38,6 +39,12 @@ class AvailabilityHeroCard extends StatelessWidget {
 
   /// Tests only.
   final DateTime Function()? clock;
+
+  /// Drawn as a glass panel inside the dashboard's navy header (2026-11-16),
+  /// instead of a navy card of its own. Same words, same actions, same
+  /// vacation rules - only the drawing changes. A navy card directly under a
+  /// navy header was two heroes for one glance.
+  final bool onCover;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +61,9 @@ class AvailabilityHeroCard extends StatelessWidget {
               child: child,
             ),
           ),
-      child: away == null
+      child: onCover
+          ? _coverStrip(away)
+          : away == null
           ? _Panel(
               key: const ValueKey<String>('working'),
               colors: const <Color>[AppColors.primary, AppColors.primaryDark],
@@ -82,7 +91,8 @@ class AvailabilityHeroCard extends StatelessWidget {
               ],
               badge: 'On vacation',
               title: _awayTitle(away),
-              body: 'Clients can see your profile but cannot book you until '
+              body:
+                  'Clients can see your profile but cannot book you until '
                   'you return.',
               watermark: Icons.beach_access_rounded,
               actions: <Widget>[
@@ -104,6 +114,46 @@ class AvailabilityHeroCard extends StatelessWidget {
 
   /// "3 days left · back Thu, Sep 25", counting today - so a vacation that
   /// ends today reads "1 day left", as a person would say it.
+  Widget _coverStrip(TimeOff? away) {
+    return away == null
+        ? _CoverStrip(
+            key: const ValueKey<String>('cover-working'),
+            dot: _takingJobsGreen,
+            badge: 'Active',
+            title: 'Taking jobs',
+            body: 'Visible and bookable by clients right now.',
+            trailing: _SolidButton(
+              icon: Icons.beach_access_rounded,
+              label: 'Set vacation',
+              foreground: AppColors.primary,
+              onPressed: onSetVacation,
+              compact: true,
+            ),
+          )
+        : _CoverStrip(
+            key: const ValueKey<String>('cover-away'),
+            dot: AppColors.accent,
+            badge: 'On vacation',
+            title: _awayTitle(away),
+            body: 'Clients can see your profile but cannot book you.',
+            actions: <Widget>[
+              _SolidButton(
+                icon: Icons.work_outline_rounded,
+                label: 'End vacation',
+                foreground: AppColors.accentDark,
+                onPressed: onEndVacation,
+                compact: true,
+              ),
+              _GhostButton(
+                icon: Icons.edit_calendar_rounded,
+                label: 'Edit dates',
+                onPressed: onEditDates,
+                compact: true,
+              ),
+            ],
+          );
+  }
+
   String _awayTitle(TimeOff away) {
     final DateTime now = (clock ?? DateTime.now)();
     final DateTime today = DateTime(now.year, now.month, now.day);
@@ -222,12 +272,16 @@ class _SolidButton extends StatelessWidget {
     required this.label,
     required this.foreground,
     required this.onPressed,
+    this.compact = false,
   });
 
   final IconData icon;
   final String label;
   final Color foreground;
   final VoidCallback onPressed;
+
+  /// 40px tall and pill-shaped, for the glass panel in the header.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -238,14 +292,18 @@ class _SolidButton extends StatelessWidget {
       style: FilledButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: foreground,
-        minimumSize: const Size(0, AppSizes.touchTarget),
-        padding: const EdgeInsets.symmetric(horizontal: AppSizes.lg),
+        minimumSize: Size(0, compact ? 40 : AppSizes.touchTarget),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? AppSizes.md : AppSizes.lg,
+        ),
         // The family is named: a button's textStyle *replaces* the inherited
         // one, and without it this label fell back to the phone's font.
         textStyle: _buttonLabel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
-        ),
+        shape: compact
+            ? const StadiumBorder()
+            : RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+              ),
       ),
     );
   }
@@ -263,11 +321,15 @@ class _GhostButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
+    this.compact = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
+
+  /// 40px tall and pill-shaped, for the glass panel in the header.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -280,13 +342,155 @@ class _GhostButton extends StatelessWidget {
         // Explicit: the app's outlined-button theme fills with the surface
         // colour, which would put white text on a white button here.
         backgroundColor: Colors.transparent,
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.75), width: 1.3),
-        minimumSize: const Size(0, AppSizes.touchTarget),
-        padding: const EdgeInsets.symmetric(horizontal: AppSizes.lg),
-        textStyle: _buttonLabel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+        side: BorderSide(
+          color: Colors.white.withValues(alpha: 0.75),
+          width: 1.3,
         ),
+        minimumSize: Size(0, compact ? 40 : AppSizes.touchTarget),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? AppSizes.md : AppSizes.lg,
+        ),
+        textStyle: _buttonLabel,
+        shape: compact
+            ? const StadiumBorder()
+            : RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+              ),
+      ),
+    );
+  }
+}
+
+/// "Taking jobs" green, bright enough to read on the navy header. The
+/// palette's success green is a text colour for white cards (#157F4B) and
+/// all but disappears on navy.
+const Color _takingJobsGreen = Color(0xFF34D399);
+
+/// The availability state as a glass panel on the dashboard's navy header.
+class _CoverStrip extends StatelessWidget {
+  const _CoverStrip({
+    super.key,
+    required this.dot,
+    required this.badge,
+    required this.title,
+    required this.body,
+    this.trailing,
+    this.actions = const <Widget>[],
+  });
+
+  final Color dot;
+  final String badge;
+  final String title;
+  final String body;
+
+  /// One action beside the title.
+  final Widget? trailing;
+
+  /// Several actions, on their own row under the text.
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        // The one action sits beside the title while there is room for it;
+        // on a small phone or at large text it drops under the words rather
+        // than squeezing the title to nothing.
+        final bool inline =
+            trailing != null &&
+            box.maxWidth >= 300 &&
+            MediaQuery.textScalerOf(context).scale(1) <= 1.15;
+        final List<Widget> below = <Widget>[
+          if (trailing != null && !inline) trailing!,
+          ...actions,
+        ];
+        return _build(inline: inline, below: below);
+      },
+    );
+  }
+
+  Widget _build({required bool inline, required List<Widget> below}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSizes.md),
+      // Navy-tinted glass, the same as the figures under it.
+      decoration: BoxDecoration(
+        color: AppColors.navy.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AppSizes.radius + 4),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              // The status light: a dot with a soft halo of its own colour.
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: dot,
+                  shape: BoxShape.circle,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: dot.withValues(alpha: 0.6),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSizes.sm + 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      badge.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: dot,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (inline) ...<Widget>[
+                const SizedBox(width: AppSizes.sm),
+                trailing!,
+              ],
+            ],
+          ),
+          const SizedBox(height: AppSizes.xs + 2),
+          Text(
+            body,
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: Colors.white.withValues(alpha: 0.78),
+            ),
+          ),
+          if (below.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSizes.md),
+            Wrap(
+              spacing: AppSizes.sm,
+              runSpacing: AppSizes.sm,
+              children: below,
+            ),
+          ],
+        ],
       ),
     );
   }

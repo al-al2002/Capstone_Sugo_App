@@ -13,6 +13,7 @@ import '../../rb_cars/models/job_party.dart';
 import '../../rb_cars/models/technician_profile_details.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../rb_cars/widgets/review_card.dart';
+import '../../../core/widgets/sugo_brand_cover.dart';
 import '../widgets/profile_cover_header.dart';
 
 /// A client's public profile.
@@ -251,8 +252,9 @@ class _Hero extends StatelessWidget {
       name: name,
       avatarUrl: avatarUrl,
       verified: idVerified,
+      style: SugoCoverStyle.client,
+      roleLabel: 'Client',
       badges: <Widget>[
-        const ProfileBadge(icon: Icons.person_rounded, label: 'Client'),
         if (idVerified)
           const ProfileBadge(
             icon: Icons.verified_rounded,

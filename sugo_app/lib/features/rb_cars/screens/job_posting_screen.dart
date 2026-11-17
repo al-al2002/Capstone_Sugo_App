@@ -1,17 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../config/service_offers.dart';
 import '../models/device_category.dart';
+import '../models/issue_catalog.dart';
 import '../models/job.dart';
 import '../models/job_enums.dart';
 import '../providers/job_posting_provider.dart';
 import '../theme/posting_text.dart';
 import '../widgets/device_type_grid.dart';
 import '../widgets/posting_scaffold.dart';
-import 'symptom_screen.dart';
+import '../widgets/service_kind_card.dart';
+import '../widgets/service_offer_sheet.dart';
+import 'technician_preferences_screen.dart';
 
-/// Step 1 of 5: what kind of thing is broken?
+/// Step 1 of 6: a repair, a tune-up or a new install?
+///
+/// Two ways in since 2026-11-16 (the user's request): the five device cards
+/// for a repair, and **Maintenance** / **Installation**, the same two doors
+/// the home screen has. Those open the shared [showServiceOfferSheet]; an
+/// answer picks the device and - when it names one - the exact problem, then
+/// moves straight on, because the client has already said everything this
+/// step asks.
 ///
 /// Owns the [JobPostingProvider] for the whole flow. Later screens take it
 /// through their constructors, so the draft survives navigation but is disposed
@@ -59,8 +72,9 @@ class JobPostingScreen extends StatelessWidget {
 
   /// Set when the flow was opened from a home-screen category tile or a
   /// search result. The device is chosen for the client and the flow opens on
-  /// the problem step - with the device step still underneath, so Back lands
-  /// on it with the choice intact rather than leaving the flow.
+  /// the next step - "Your technician" since 2026-11-15 - with the device step
+  /// still underneath, so Back lands on it with the choice intact rather than
+  /// leaving the flow.
   final DeviceCategory? initialCategory;
 
   /// Set when a search result was a specific problem ("Not cooling"). Picked
@@ -126,35 +140,115 @@ class _DeviceStepState extends State<_DeviceStep> {
 
     return PostingScaffold(
       step: 1,
-      title: posting.isEditing ? 'Edit your post' : 'What needs a fix?',
+      title: posting.isEditing ? 'Edit your post' : 'What do you need?',
       subtitle: posting.isEditing
           ? 'Your answers are filled in. Change what you need, then save on '
                 'the last step.'
-          : 'Pick the device so we can narrow the right specialists.',
-      stepName: 'Device',
+          : 'A repair, a tune-up or a new install. Start here.',
+      stepName: 'Service',
       ctaLabel: 'Continue',
-      ctaHint: 'Pick a device type to continue.',
+      ctaHint: 'Pick a device, or choose maintenance or installation.',
       onCta: posting.canLeaveDevice ? () => _continue(context, posting) : null,
       children: <Widget>[
-        const Text(
-          'Pick the type of device or appliance so we can route you to the '
-          'right technician.',
-          style: PostingText.subtitle,
+        const _SectionHeading(
+          overline: 'Repair',
+          title: 'Something broken?',
+          caption: 'Pick the device so we can narrow the right specialists.',
         ),
-        const SizedBox(height: AppSizes.xl),
+        const SizedBox(height: AppSizes.md),
         DeviceTypeGrid(
           selected: posting.deviceCategory,
           onSelect: posting.selectCategory,
+        ),
+        const SizedBox(height: AppSizes.xl),
+        const _SectionHeading(
+          overline: 'Care and set-up',
+          title: 'Maintenance or a new install?',
+          caption: 'Pick one and we take you to it.',
+        ),
+        const SizedBox(height: AppSizes.md),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: ServiceKindCard(
+                  kind: IssueKind.maintenance,
+                  onTap: () => _pickService(IssueKind.maintenance),
+                ),
+              ),
+              const SizedBox(width: AppSizes.md),
+              Expanded(
+                child: ServiceKindCard(
+                  kind: IssueKind.installation,
+                  onTap: () => _pickService(IssueKind.installation),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
+  /// Maintenance or Installation: the shared sheet, then straight on.
+  Future<void> _pickService(IssueKind kind) async {
+    final JobPostingProvider posting = context.read<JobPostingProvider>();
+    final ServiceOffer? offer = await showServiceOfferSheet(context, kind);
+    if (offer == null || !mounted) return;
+
+    posting.selectCategory(offer.category);
+    final String? code = offer.issueCode;
+    if (code != null) posting.selectSymptom(code);
+    _continue(context, posting);
+  }
+
   void _continue(BuildContext context, JobPostingProvider posting) {
     if (initialPath != null) posting.overrideServicePath(initialPath!);
 
+    // Step 2 is the client's preferences for their technician, asked before
+    // the problem is described (the pre-filter brief, 2026-11-15). It pushes
+    // the symptom step itself.
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => SymptomScreen(posting: posting)),
+      PostingRoute<void>(
+        builder: (_) => TechnicianPreferencesScreen(posting: posting),
+      ),
+    );
+  }
+}
+
+/// A small label, a title and one line - the two halves of step 1.
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({
+    required this.overline,
+    required this.title,
+    required this.caption,
+  });
+
+  final String overline;
+  final String title;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          overline.toUpperCase(),
+          style: AppTextStyles.overline.copyWith(
+            color: AppColors.secondaryDark,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Semantics(
+          header: true,
+          child: Text(title, style: AppTextStyles.sectionTitle),
+        ),
+        const SizedBox(height: 2),
+        Text(caption, style: PostingText.subtitle),
+      ],
     );
   }
 }

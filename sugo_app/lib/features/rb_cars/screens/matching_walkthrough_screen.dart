@@ -46,7 +46,9 @@ class MatchingWalkthroughScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ScoreBreakdown? top = matches.isEmpty ? null : matches.first.breakdown;
+    final ScoreBreakdown? top = matches.isEmpty
+        ? null
+        : matches.first.breakdown;
     final RecommendationStage? rec = top?.recommendation;
 
     final List<_Row> rows = considered.isNotEmpty
@@ -83,7 +85,7 @@ class MatchingWalkthroughScreen extends StatelessWidget {
         ),
         children: <Widget>[
           Text(
-            'The RB-CARS pipeline for this request, with the numbers the '
+            'The SUGO matching pipeline for this request, with the numbers the '
             'engine stored. For demonstration and review.',
             style: AppTextStyles.subtitle,
           ),
@@ -112,7 +114,9 @@ class MatchingWalkthroughScreen extends StatelessWidget {
                 'Signals',
                 rec == null || rec.signals.isEmpty
                     ? '—'
-                    : rec.signals.map((String s) => s.replaceAll('_', ' ')).join(', '),
+                    : rec.signals
+                          .map((String s) => s.replaceAll('_', ' '))
+                          .join(', '),
               ),
             ]),
           ),
@@ -147,10 +151,7 @@ class MatchingWalkthroughScreen extends StatelessWidget {
                                   color: AppColors.textSecondary,
                                 ),
                               ),
-                              Text(
-                                rule.label,
-                                style: AppTextStyles.titleSmall,
-                              ),
+                              Text(rule.label, style: AppTextStyles.titleSmall),
                               const SizedBox(height: 2),
                               for (final RuleEffect e in rule.effects)
                                 Text(
@@ -377,7 +378,9 @@ class _ScoreLine extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
-                color: highlight ? AppColors.textPrimary : AppColors.textSecondary,
+                color: highlight
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
               ),
             ),
           ),

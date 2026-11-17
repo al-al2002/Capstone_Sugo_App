@@ -63,7 +63,8 @@ class TechnicianSpecialization {
 
   /// `laptop` -> `Laptop`. Degrades to a title-cased wire value rather than
   /// throwing, because a row can outlive its catalogue entry.
-  String get deviceLabel => catalog.SpecializationCatalog.deviceLabel(deviceType);
+  String get deviceLabel =>
+      catalog.SpecializationCatalog.deviceLabel(deviceType);
 
   /// What the card prints under the name, e.g. `Laptop Repair`.
   String get repairLabel => '$deviceLabel Repair';
@@ -75,11 +76,12 @@ class TechnicianSpecialization {
   /// Others.
   String get badgeLabel {
     final String trimmed = brand.trim();
-    if (trimmed.isEmpty || trimmed.toLowerCase() == 'others') return deviceLabel;
+    if (trimmed.isEmpty || trimmed.toLowerCase() == 'others') {
+      return deviceLabel;
+    }
     return '$deviceLabel · $trimmed';
   }
 
   /// `Expert`, `Intermediate`, `Beginner`, or null when unproven.
-  String? get skillLabel =>
-      catalog.SkillLevel.fromWire(skillLevel)?.label;
+  String? get skillLabel => catalog.SkillLevel.fromWire(skillLevel)?.label;
 }

@@ -10,7 +10,7 @@ import 'registration_flow_controller.dart';
 /// Drives the seven-step technician registration.
 ///
 /// account -> ID + selfie -> specialisation -> assessment -> documents ->
-/// location -> review
+/// work type -> location -> review
 class TechnicianRegistrationController extends RegistrationFlowController {
   TechnicianRegistrationController({
     TechnicianRegistrationService? service,
@@ -30,6 +30,16 @@ class TechnicianRegistrationController extends RegistrationFlowController {
 
   GeoPlace? _basePlace;
   double _radiusKm = TechnicianRegistrationService.defaultRadiusKm;
+
+  // Work type (2026-11-17). Both start off: the step is a choice, not a
+  // default to accept.
+  bool _homeService = false;
+  bool _shopRepair = false;
+  GeoPlace? _shopPlace;
+  String _shopName = '';
+
+  /// Saved as a deliberate choice - see [loadRoleState].
+  bool _workTypeChosen = false;
 
   List<TechnicianSpecialization> get selected =>
       List<TechnicianSpecialization>.unmodifiable(_selected);
@@ -81,6 +91,23 @@ class TechnicianRegistrationController extends RegistrationFlowController {
 
   bool get hasBaseLocation => _basePlace != null;
 
+  bool get homeService => _homeService;
+  bool get shopRepair => _shopRepair;
+  GeoPlace? get shopPlace => _shopPlace;
+  String get shopName => _shopName;
+
+  /// At least one kind of work, and the shop's pin when Shop Repair is on.
+  bool get hasWorkType =>
+      (_homeService || _shopRepair) && (!_shopRepair || _shopPlace != null);
+
+  /// "Home Service and Shop Repair", for the recap.
+  String get workTypeLabel => switch ((_homeService, _shopRepair)) {
+    (true, true) => 'Home Service and Shop Repair',
+    (true, false) => 'Home Service',
+    (false, true) => 'Shop Repair',
+    (false, false) => 'Not chosen',
+  };
+
   // ------------------------------------------------------------- lifecycle
 
   @override
@@ -91,6 +118,30 @@ class TechnicianRegistrationController extends RegistrationFlowController {
 
     final ({double? latitude, double? longitude, double radiusKm}) base =
         await _service.loadBaseLocation();
+
+    final ({
+      bool homeService,
+      bool shopRepair,
+      String? shopName,
+      double? shopLatitude,
+      double? shopLongitude,
+    })
+    work = await _service.loadWorkType();
+    final bool hasShop =
+        work.shopLatitude != null && work.shopLongitude != null;
+    // The columns default to both, so "both with no shop" is an untouched
+    // row, not a choice: show it unchosen. Anything else was saved here.
+    _workTypeChosen = !(work.homeService && work.shopRepair && !hasShop);
+    _homeService = _workTypeChosen && work.homeService;
+    _shopRepair = _workTypeChosen && work.shopRepair;
+    _shopName = work.shopName ?? '';
+    if (hasShop) {
+      _shopPlace = GeoPlace(
+        latitude: work.shopLatitude!,
+        longitude: work.shopLongitude!,
+        addressText: '',
+      );
+    }
 
     _radiusKm = base.radiusKm;
     if (base.latitude != null && base.longitude != null) {
@@ -113,6 +164,7 @@ class TechnicianRegistrationController extends RegistrationFlowController {
       if (_selected.isNotEmpty) OnboardingStepId.specialization,
       if (hasPassedAnyAssessment) OnboardingStepId.assessment,
       if (hasNbiClearance) OnboardingStepId.documents,
+      if (_workTypeChosen && hasWorkType) OnboardingStepId.workType,
       if (hasBaseLocation) OnboardingStepId.location,
     };
   }
@@ -124,6 +176,7 @@ class TechnicianRegistrationController extends RegistrationFlowController {
     OnboardingStepId.specialization => _selected.isNotEmpty,
     OnboardingStepId.assessment => hasPassedAnyAssessment,
     OnboardingStepId.documents => hasNbiClearance,
+    OnboardingStepId.workType => hasWorkType,
     OnboardingStepId.location => hasBaseLocation,
     OnboardingStepId.review => true,
     OnboardingStepId.email => true, // Not in the technician flow.
@@ -141,6 +194,28 @@ class TechnicianRegistrationController extends RegistrationFlowController {
         // Reload so newly saved rows carry their database ids - the assessment
         // step cannot submit without them.
         _assessments = await _service.loadAssessments();
+        notifyListeners();
+        return true;
+
+      case OnboardingStepId.workType:
+        if (!hasWorkType) return false;
+        final bool? saved = await guard<bool>(() async {
+          await _service.saveWorkType(
+            homeService: _homeService,
+            shopRepair: _shopRepair,
+            shopName: _shopName,
+            shopLatitude: _shopPlace?.latitude,
+            shopLongitude: _shopPlace?.longitude,
+          );
+          return true;
+        });
+        if (saved != true) return false;
+        _workTypeChosen = true;
+        // A shop-only technician works from the shop: their service area
+        // starts there unless they already pinned a base.
+        if (_basePlace == null && _shopRepair && _shopPlace != null) {
+          _basePlace = _shopPlace;
+        }
         notifyListeners();
         return true;
 
@@ -215,6 +290,30 @@ class TechnicianRegistrationController extends RegistrationFlowController {
   }
 
   TechnicianRegistrationService get service => _service;
+
+  // -------------------------------------------------------------- work type
+
+  void setHomeService(bool value) {
+    _homeService = value;
+    clearError();
+    notifyListeners();
+  }
+
+  void setShopRepair(bool value) {
+    _shopRepair = value;
+    clearError();
+    notifyListeners();
+  }
+
+  void setShopPlace(GeoPlace place) {
+    _shopPlace = place;
+    clearError();
+    notifyListeners();
+  }
+
+  void setShopName(String value) {
+    _shopName = value;
+  }
 
   // --------------------------------------------------------------- location
 

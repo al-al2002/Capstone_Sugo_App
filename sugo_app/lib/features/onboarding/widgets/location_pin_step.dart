@@ -13,6 +13,7 @@ import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/client_onboarding_models.dart';
 import '../services/geocoding_service.dart';
 import '../../../core/widgets/sugo_map.dart';
+import 'onboarding_step_intro.dart';
 
 /// Map-based location picker with address search and a current-location button.
 ///
@@ -33,6 +34,16 @@ import '../../../core/widgets/sugo_map.dart';
 ///     not, but needs a network and Nominatim's rate limit to cooperate.
 ///
 /// A single method would strand a real user in each of those cases.
+///
+/// ## Finding the user on its own (2026-11-17)
+///
+/// With nothing pinned yet, the step asks for the current location as soon as
+/// it opens ([autoLocate]) - most people register where they work - and the
+/// pin and the map land there without a tap. If that fails (permission
+/// declined, GPS off, no fix indoors) nothing is shown as an error: search
+/// and the button are right there. The map also follows a location set from
+/// outside the step (a shop pin reused as the base), and a move asked for
+/// before the map has drawn waits for it instead of being lost.
 class LocationPinStep extends StatefulWidget {
   const LocationPinStep({
     super.key,
@@ -44,7 +55,15 @@ class LocationPinStep extends StatefulWidget {
     this.title = 'Pin your location',
     this.subtitle,
     this.mapHeight = 260,
+    this.autoLocate = true,
+    @visibleForTesting this.geocoding,
   });
+
+  /// Tests only: a fake geocoder. The app passes none.
+  final GeocodingService? geocoding;
+
+  /// Ask for the current location when the step opens with nothing pinned.
+  final bool autoLocate;
 
   /// The current pin. Null opens the map at the default view.
   final GeoPlace? place;
@@ -66,7 +85,8 @@ class LocationPinStep extends StatefulWidget {
 }
 
 class _LocationPinStepState extends State<LocationPinStep> {
-  final GeocodingService _geocoding = GeocodingService();
+  late final GeocodingService _geocoding =
+      widget.geocoding ?? GeocodingService();
   final TextEditingController _searchController = TextEditingController();
   final MapController _mapController = MapController();
 
@@ -75,6 +95,15 @@ class _LocationPinStepState extends State<LocationPinStep> {
   bool _isSearching = false;
   bool _isLocating = false;
   bool _isReverseGeocoding = false;
+
+  /// The map's controller can only move a map that has been drawn. A move
+  /// asked for earlier - an auto-located fix landing first - waits here.
+  bool _mapReady = false;
+  LatLng? _pendingCenter;
+
+  /// Where this step last put the pin itself, so a rebuild carrying that same
+  /// point back does not yank the camera to where the user just tapped.
+  LatLng? _selfPlaced;
 
   /// Nominatim allows about one request per second. Typing "Matina Crossing"
   /// is fifteen keystrokes; without a debounce that is fifteen requests and an
@@ -86,6 +115,43 @@ class _LocationPinStepState extends State<LocationPinStep> {
     widget.place?.latitude ?? AppEnv.defaultLatitude,
     widget.place?.longitude ?? AppEnv.defaultLongitude,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoLocate && widget.place == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.place == null) _useCurrentLocation(quiet: true);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(LocationPinStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final GeoPlace? now = widget.place;
+    if (now == null) return;
+    final LatLng point = LatLng(now.latitude, now.longitude);
+    final GeoPlace? before = oldWidget.place;
+    final bool moved =
+        before == null ||
+        before.latitude != now.latitude ||
+        before.longitude != now.longitude;
+    if (moved && point != _selfPlaced) _moveTo(point, 16);
+  }
+
+  /// Moves the camera, now or as soon as the map has drawn.
+  void _moveTo(LatLng point, double zoom) {
+    if (!_mapReady) {
+      _pendingCenter = point;
+      return;
+    }
+    try {
+      _mapController.move(point, zoom);
+    } catch (_) {
+      // A map torn down between frames: the next build centres on the pin.
+    }
+  }
 
   @override
   void dispose() {
@@ -129,22 +195,36 @@ class _LocationPinStepState extends State<LocationPinStep> {
     setState(() => _results = const <GeoPlace>[]);
     FocusScope.of(context).unfocus();
 
+    final LatLng point = LatLng(place.latitude, place.longitude);
+    _selfPlaced = point;
     widget.onPlaceChanged(place);
-    _mapController.move(LatLng(place.latitude, place.longitude), 16);
+    _moveTo(point, 16);
   }
 
   // ------------------------------------------------------------- current fix
 
-  Future<void> _useCurrentLocation() async {
+  /// [quiet] is the automatic attempt on opening: a failure there is not the
+  /// user's doing, so it is not shown as an error.
+  Future<void> _useCurrentLocation({bool quiet = false}) async {
     setState(() => _isLocating = true);
 
     try {
       final GeoPlace place = await _geocoding.currentLocation();
       if (!mounted) return;
+      // Pinned by hand while the fix was coming: theirs wins.
+      if (quiet && widget.place != null) return;
       _choose(place);
     } on RbCarsFailure catch (failure) {
-      if (!mounted) return;
+      if (!mounted || quiet) return;
       UiFeedback.showError(context, failure.message);
+    } catch (_) {
+      // Anything else (no location plugin, say) on the automatic attempt is
+      // silent; from the button it reads as the usual message.
+      if (!mounted || quiet) return;
+      UiFeedback.showError(
+        context,
+        'Could not read your location. Drop the pin on the map instead.',
+      );
     } finally {
       if (mounted) setState(() => _isLocating = false);
     }
@@ -158,6 +238,7 @@ class _LocationPinStepState extends State<LocationPinStep> {
   /// after. Waiting for Nominatim before moving the marker would make every
   /// tap feel laggy, and the pin is the part the user is actually aiming.
   Future<void> _placePin(LatLng point) async {
+    _selfPlaced = point;
     widget.onPlaceChanged(
       GeoPlace(
         latitude: point.latitude,
@@ -186,11 +267,11 @@ class _LocationPinStepState extends State<LocationPinStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(widget.title, style: AppTextStyles.headline),
-        if (widget.subtitle != null) ...<Widget>[
-          const SizedBox(height: AppSizes.sm),
-          Text(widget.subtitle!, style: AppTextStyles.subtitle),
-        ],
+        OnboardingStepIntro(
+          icon: Icons.place_rounded,
+          title: widget.title,
+          subtitle: widget.subtitle,
+        ),
         const SizedBox(height: AppSizes.lg),
 
         _searchField(),
@@ -294,7 +375,9 @@ class _LocationPinStepState extends State<LocationPinStep> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.my_location_rounded, size: 17),
-      label: Text(_isLocating ? 'Finding you...' : 'Use my current location'),
+      label: Text(
+        _isLocating ? 'Finding your location...' : 'Use my current location',
+      ),
     );
   }
 
@@ -315,6 +398,12 @@ class _LocationPinStepState extends State<LocationPinStep> {
                 minZoom: 5,
                 maxZoom: 18,
                 onTap: (TapPosition _, LatLng point) => _placePin(point),
+                onMapReady: () {
+                  _mapReady = true;
+                  final LatLng? pending = _pendingCenter;
+                  _pendingCenter = null;
+                  if (pending != null) _moveTo(pending, 16);
+                },
               ),
               children: <Widget>[
                 const SugoMapTiles(),

@@ -101,7 +101,8 @@ void main() {
             if (withCaveat)
               <String, dynamic>{
                 'code': 'over_budget',
-                'text': 'Typical rate (about ₱1,650) is above your ₱1,500 budget',
+                'text':
+                    'Typical rate (about ₱1,650) is above your ₱1,500 budget',
                 'kind': 'caveat',
               },
           ],
@@ -112,8 +113,14 @@ void main() {
           'workload': 0,
           'urgency': 'need_today',
           'service_path': 'home_service',
-          'traffic': <String, dynamic>{'label': 'heavy traffic', 'congestion': 0.7},
-          'weather': <String, dynamic>{'label': 'moderate rain', 'severity': 0.55},
+          'traffic': <String, dynamic>{
+            'label': 'heavy traffic',
+            'congestion': 0.7,
+          },
+          'weather': <String, dynamic>{
+            'label': 'moderate rain',
+            'severity': 0.55,
+          },
         },
         'explainability': <String>['covers laptop', '2.1km away'],
         'technician': <String, dynamic>{
@@ -137,7 +144,10 @@ void main() {
       expect(rec.signals, contains('rain'));
       expect(rec.rules.single.label, 'Urgent visit in the rain');
       expect(rec.rules.single.effects.single.multiplier, 1.6);
-      expect(b.reasons.where((RecommendationReason r) => r.isCaveat), hasLength(1));
+      expect(
+        b.reasons.where((RecommendationReason r) => r.isCaveat),
+        hasLength(1),
+      );
       expect(b.stage2.factors.first.reweighted, isTrue);
       expect(b.stage1.factors.first.reweighted, isFalse);
     });
@@ -155,11 +165,14 @@ void main() {
         'explainability': <String>['5 similar repairs', '2.1km away'],
       });
       expect(old.recommendation, isNull);
+      expect(old.reasons.map((RecommendationReason r) => r.text), <String>[
+        '5 similar repairs',
+        '2.1km away',
+      ]);
       expect(
-        old.reasons.map((RecommendationReason r) => r.text),
-        <String>['5 similar repairs', '2.1km away'],
+        old.reasons.every((RecommendationReason r) => !r.isCaveat),
+        isTrue,
       );
-      expect(old.reasons.every((RecommendationReason r) => !r.isCaveat), isTrue);
     });
 
     test('rank labels are neutral - nobody is called the best', () {
@@ -170,20 +183,23 @@ void main() {
   });
 
   group('context chips', () {
-    test('rain, heavy traffic and urgency are emphasised; the rest are not', () {
-      final List<ContextChipData> chips = contextChipsFor(<MatchResult>[
-        v2(),
-        v2(rank: 2, distance: 4.6),
-      ], null);
+    test(
+      'rain, heavy traffic and urgency are emphasised; the rest are not',
+      () {
+        final List<ContextChipData> chips = contextChipsFor(<MatchResult>[
+          v2(),
+          v2(rank: 2, distance: 4.6),
+        ], null);
 
-      final Map<String, bool> byLabel = <String, bool>{
-        for (final ContextChipData c in chips) c.label: c.emphasised,
-      };
-      expect(byLabel['Moderate rain'], isTrue);
-      expect(byLabel['Heavy traffic'], isTrue);
-      expect(byLabel['Urgent'], isTrue);
-      expect(byLabel['2.1–4.6 km'], isFalse);
-    });
+        final Map<String, bool> byLabel = <String, bool>{
+          for (final ContextChipData c in chips) c.label: c.emphasised,
+        };
+        expect(byLabel['Moderate rain'], isTrue);
+        expect(byLabel['Heavy traffic'], isTrue);
+        expect(byLabel['Urgent'], isTrue);
+        expect(byLabel['2.1–4.6 km'], isFalse);
+      },
+    );
 
     test('a missing weather reading draws no weather chip, not a guess', () {
       final MatchResult noWeather = MatchResult.fromJson(<String, dynamic>{
@@ -196,10 +212,9 @@ void main() {
           'context': <String, dynamic>{'urgency': 'can_wait'},
         },
       });
-      final List<ContextChipData> chips = contextChipsFor(
-        <MatchResult>[noWeather],
-        null,
-      );
+      final List<ContextChipData> chips = contextChipsFor(<MatchResult>[
+        noWeather,
+      ], null);
       expect(chips.map((ContextChipData c) => c.label), <String>['Can wait']);
     });
   });
@@ -279,9 +294,7 @@ void main() {
   testWidgets('Why sheet lists reasons, then the caveats under Good to know', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(
-      host(RecommendationReasonsSheet(match: v2())),
-    );
+    await tester.pumpWidget(host(RecommendationReasonsSheet(match: v2())));
     await tester.pumpAndSettle();
 
     expect(find.text('Free to take an urgent job today'), findsOneWidget);
@@ -307,7 +320,10 @@ void main() {
       MaterialApp(
         theme: AppTheme.light,
         home: MatchingWalkthroughScreen(
-          matches: <MatchResult>[v2(), v2(rank: 2, name: 'Mark Dela Cruz')],
+          matches: <MatchResult>[
+            v2(),
+            v2(rank: 2, name: 'Mark Dela Cruz'),
+          ],
         ),
       ),
     );
@@ -315,7 +331,10 @@ void main() {
 
     expect(find.text('Rule-based weight selection'), findsOneWidget);
     expect(find.text('Urgent visit in the rain'), findsOneWidget);
-    expect(find.textContaining('IF urgent AND rain AND on site'), findsOneWidget);
+    expect(
+      find.textContaining('IF urgent AND rain AND on site'),
+      findsOneWidget,
+    );
 
     await tester.scrollUntilVisible(find.text('Final Top 3'), 300);
     expect(find.text('Recommended - Ryan Santos'), findsOneWidget);

@@ -48,10 +48,7 @@ void main() {
       expect(d.isOpen, isTrue);
       expect(d.photoPaths, <String>['j1/1.jpg']);
 
-      expect(
-        DisputeReason.fromWire('something_new'),
-        DisputeReason.other,
-      );
+      expect(DisputeReason.fromWire('something_new'), DisputeReason.other);
     });
 
     test('each side is offered only the reasons that fit it', () {
@@ -71,9 +68,7 @@ void main() {
     ) async {
       final _FakeDisputes service = _FakeDisputes();
       await tester.pumpWidget(
-        host(
-          ReportProblemSheet(jobId: 'j1', isClient: true, service: service),
-        ),
+        host(ReportProblemSheet(jobId: 'j1', isClient: true, service: service)),
       );
 
       bool sendEnabled() =>
@@ -120,7 +115,8 @@ void main() {
       WidgetTester tester,
     ) async {
       final _FakeDisputes service = _FakeDisputes(
-        refuse: 'Reports close 7 days after a booking is completed. Contact '
+        refuse:
+            'Reports close 7 days after a booking is completed. Contact '
             'SUGO support instead.',
       );
       await tester.pumpWidget(

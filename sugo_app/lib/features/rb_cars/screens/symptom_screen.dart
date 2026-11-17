@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/theme/app_motion.dart';
 import '../models/device_category.dart';
 import '../models/issue_catalog.dart';
 import '../models/labor_price_catalog.dart';
@@ -8,13 +9,15 @@ import '../models/job_enums.dart';
 import '../models/problem_catalog.dart';
 import '../providers/job_posting_provider.dart';
 import '../theme/posting_text.dart';
+import '../widgets/basic_problem_card.dart';
 import '../widgets/posting_field.dart';
 import '../widgets/posting_scaffold.dart';
 import '../widgets/service_path_card.dart';
-import 'device_details_screen.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import 'device_details_screen.dart';
 
-/// Step 2 of 5: what is it doing, and where should that send it?
+/// Step 3 of 6: what is it doing, and where should that send it?
 ///
 /// This screen is the visible half of the classification rule base in
 /// `ProblemCatalog`. The suggested path, the confidence and the sentence
@@ -50,25 +53,32 @@ class SymptomScreen extends StatelessWidget {
 
     final ClassificationResult? result = posting.draft.classification;
     final ServicePath? selected = posting.draft.servicePath;
+    final IssueOption? issue = IssueCatalog.byCode(
+      posting.draft.problemSymptom,
+    );
+    // A cleaning or an install has no damage to ask about (2026-11-16).
+    final bool asksAboutDamage =
+        posting.draft.problemSymptom != null &&
+        (issue?.kind.asksAboutDamage ?? true);
 
     return PostingScaffold(
-      step: 2,
-      title: "Tell us what's wrong",
-      subtitle: 'Closest match is fine — a technician confirms on arrival.',
-      stepName: 'Symptom',
+      step: 3,
+      title: 'What needs doing?',
+      subtitle: 'Closest match is fine. A technician confirms on arrival.',
+      stepName: 'Problem',
       ctaLabel: selected == null
           ? 'Continue'
-          : 'Continue with ${selected.label}',
-      ctaHint: 'Pick the closest symptom to continue.',
+          : 'Continue with ${ServicePathSuggestion.titleFor(selected)}',
+      ctaHint: 'Pick the closest problem or service to continue.',
       onCta: posting.canLeaveSymptom
           ? () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
+              PostingRoute<void>(
                 builder: (_) => DeviceDetailsScreen(posting: posting),
               ),
             )
           : null,
       children: <Widget>[
-        const PostingLabel('Symptom'),
+        const PostingLabel('Problem or service'),
         const SizedBox(height: AppSizes.sm),
         _SymptomDropdown(
           category: category,
@@ -76,7 +86,7 @@ class SymptomScreen extends StatelessWidget {
           onSelect: posting.selectSymptom,
         ),
 
-        if (posting.draft.problemSymptom != null) ...<Widget>[
+        if (asksAboutDamage) ...<Widget>[
           const SizedBox(height: AppSizes.xl),
           const PostingLabel('Is there visible physical damage?'),
           const SizedBox(height: AppSizes.xs),
@@ -94,12 +104,37 @@ class SymptomScreen extends StatelessWidget {
         ],
 
         if (result != null && selected != null) ...<Widget>[
+          // The basic-problem suggestion (2026-11-16): above the options, so
+          // it is read before choosing - but it only suggests. The client
+          // still picks one of the three below. Shown exactly when the
+          // community carries the "Suggested" badge (2026-11-17).
+          AnimatedSize(
+            duration: AppMotion.base,
+            curve: AppMotion.standard,
+            alignment: Alignment.topCenter,
+            child: !posting.basicProblem
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(top: AppSizes.xl),
+                    child: BasicProblemCard(
+                      communitySelected: selected == ServicePath.itCommunity,
+                      onTryCommunity: () =>
+                          posting.overrideServicePath(ServicePath.itCommunity),
+                    ),
+                  ),
+          ),
           const SizedBox(height: AppSizes.xl),
-          const Text(
-            "Based on your answer, here's what we suggest:",
+          Text(
+            // "Fixed" only fits a repair; an aircon cleaning is "done".
+            (issue?.kind ?? IssueKind.repair) == IssueKind.repair
+                ? 'How do you want it fixed? Choose one:'
+                : 'How do you want it done? Choose one:',
             style: PostingText.subtitle,
           ),
           const SizedBox(height: AppSizes.md),
+          // No "bring it myself / shop pickup" choice here any more
+          // (2026-11-17): it is asked once, in the booking dialog, where the
+          // chosen technician's shop gives the exact fee.
           ServicePathSuggestion(
             result: result,
             selected: selected,
@@ -129,6 +164,8 @@ class _SymptomDropdown extends StatelessWidget {
     // CCTV rather than Wi-Fi by virtue of its `cctv_` code.
     final List<IssueOption> issues = category.issues;
     final IssueOption? picked = IssueCatalog.byCode(selected);
+    final bool grouped =
+        issues.map((IssueOption i) => i.kind).toSet().length > 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -141,12 +178,25 @@ class _SymptomDropdown extends StatelessWidget {
             hintText: 'Pick the closest description',
           ),
           items: <DropdownMenuItem<String>>[
-            ...issues.map(
-              (IssueOption issue) => DropdownMenuItem<String>(
-                value: issue.code,
-                child: _SymptomOption(issue: issue),
-              ),
-            ),
+            // Grouped by kind (2026-11-16): repairs first, then maintenance
+            // and installation, each under a heading that cannot be picked.
+            // A device with only repairs shows no heading at all.
+            for (final IssueKind kind in IssueKind.values)
+              if (issues.where((IssueOption i) => i.kind == kind).toList()
+                  case final List<IssueOption> group
+                  when group.isNotEmpty) ...<DropdownMenuItem<String>>[
+                if (grouped)
+                  DropdownMenuItem<String>(
+                    value: '_group_${kind.name}',
+                    enabled: false,
+                    child: _GroupHeading(kind),
+                  ),
+                for (final IssueOption issue in group)
+                  DropdownMenuItem<String>(
+                    value: issue.code,
+                    child: _SymptomOption(issue: issue),
+                  ),
+              ],
             // The escape hatch. Choosing this routes the job to the technician
             // community with low confidence, instead of guessing a path.
             const DropdownMenuItem<String>(
@@ -194,6 +244,10 @@ class _SymptomDropdown extends StatelessWidget {
         ] else if (selected == ProblemCatalog.notSureCode) ...<Widget>[
           const SizedBox(height: AppSizes.sm),
           const _NotSureNote(),
+        ] else if (picked != null &&
+            picked.kind != IssueKind.repair) ...<Widget>[
+          const SizedBox(height: AppSizes.sm),
+          _IncludedNote(issue: picked),
         ],
       ],
     );
@@ -233,6 +287,72 @@ class _SymptomOption extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// "MAINTENANCE" above its rows in the dropdown. Not selectable.
+class _GroupHeading extends StatelessWidget {
+  const _GroupHeading(this.kind);
+
+  final IssueKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      kind.label.toUpperCase(),
+      style: AppTextStyles.overline.copyWith(
+        color: AppColors.secondaryDark,
+        letterSpacing: 1,
+      ),
+    );
+  }
+}
+
+/// What a maintenance or installation visit covers, under the dropdown - the
+/// question a client actually has once they have picked "Aircon cleaning".
+class _IncludedNote extends StatelessWidget {
+  const _IncludedNote({required this.issue});
+
+  final IssueOption issue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.md),
+      decoration: BoxDecoration(
+        color: AppColors.successSoft,
+        borderRadius: BorderRadius.circular(AppSizes.tileRadius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Icon(
+            Icons.checklist_rounded,
+            size: 16,
+            color: AppColors.success,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: <InlineSpan>[
+                  const TextSpan(
+                    text: 'Included: ',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  TextSpan(text: issue.hintText),
+                ],
+              ),
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: AppColors.success,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

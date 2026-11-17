@@ -18,16 +18,23 @@ import '../../../core/widgets/sugo_skeleton.dart';
 import '../../bookings/models/booking_route.dart';
 import '../models/job.dart';
 import '../models/job_enums.dart';
+import '../models/job_price.dart';
 import '../models/labor_price_catalog.dart';
 import '../models/match_result.dart';
+import '../models/score_breakdown.dart';
 import '../models/schedule_preference.dart';
+import '../models/technician_preferences.dart';
 import '../providers/job_posting_provider.dart';
 import '../providers/match_provider.dart';
 import '../services/rb_cars_service.dart';
+import '../widgets/booking_pause.dart';
+import '../widgets/booking_request_sheet.dart';
 import '../widgets/context_summary.dart';
+import '../widgets/delivery_option_selector.dart';
 import '../widgets/match_score_card.dart';
 import '../widgets/more_technicians_section.dart';
 import '../widgets/recommendation_reasons_sheet.dart';
+import '../widgets/relax_preferences_panel.dart';
 import '../widgets/technician_matching_loader.dart';
 import 'matching_walkthrough_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
@@ -261,6 +268,10 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
         jobId: jobId,
         service: widget.service,
         initialNotice: widget.draft?.matchingNotice,
+        // Null when opened from the dashboard - "not known yet", which
+        // `load()` resolves from the job itself.
+        initialPreferencesBlocked: widget.draft?.preferencesBlocked,
+        initialRelaxHints: widget.draft?.relaxHints ?? const [],
       )..load(),
       child: _ClientReviewView(
         preselectedTechnicianId: widget.preselectedTechnicianId,
@@ -346,8 +357,8 @@ class _TechnicianCommunityPostedView extends StatelessWidget {
               const SizedBox(height: AppSizes.sm),
               const Text(
                 'Technicians can comment with steps to try. If you cannot do '
-                'the fix yourself, you can then choose home service or shop '
-                'pickup.',
+                'the fix yourself, you can then choose Home Service or Shop '
+                'Repair.',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.subtitle,
               ),
@@ -363,13 +374,13 @@ class _TechnicianCommunityPostedView extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: () => onChooseService(ServicePath.homeService),
                 icon: const Icon(Icons.home_repair_service_rounded),
-                label: const Text('Book home service'),
+                label: const Text('Book Home Service'),
               ),
               const SizedBox(height: AppSizes.sm),
               OutlinedButton.icon(
                 onPressed: () => onChooseService(ServicePath.pickup),
                 icon: const Icon(Icons.local_shipping_rounded),
-                label: const Text('Choose shop pickup'),
+                label: const Text('Book Shop Repair'),
               ),
               const SizedBox(height: AppSizes.lg),
               PrimaryButton(
@@ -614,6 +625,21 @@ class _ClientReviewView extends StatelessWidget {
       );
     }
 
+    // The client's own preferences left nobody (the engine's
+    // `no_match_relax_preferences`). Offer to relax them, one chip each,
+    // rather than an empty list - the brief's impossible-combination case.
+    if (matching.showRelaxPreferences && job != null) {
+      return _Centered(
+        child: RelaxPreferencesPanel(
+          preferences: job.preferences,
+          hints: matching.relaxHints,
+          message: matching.notice,
+          onRelax: matching.relaxPreferences,
+          onSearchAgain: matching.rematch,
+        ),
+      );
+    }
+
     if (matching.isEmpty) {
       return _Centered(
         child: Column(
@@ -657,6 +683,15 @@ class _ClientReviewView extends StatelessWidget {
         AppSizes.xxl,
       ),
       children: <Widget>[
+        // Book-and-cancel cooldown (2026-11-17): first thing on screen, so
+        // the wait is explained before a Book button is tapped.
+        if (matching.bookingPausedUntil != null) ...<Widget>[
+          BookingPauseBanner(
+            until: matching.bookingPausedUntil!,
+            onDone: matching.clearBookingPause,
+          ),
+          const SizedBox(height: AppSizes.md),
+        ],
         if (job != null)
           _JobSummary(
             job: job,
@@ -664,6 +699,17 @@ class _ClientReviewView extends StatelessWidget {
               (MatchResult m) => m.isAwaitingTechnician,
             ),
           ),
+        // The client's own must-haves, read back where they take effect: the
+        // list below is already filtered by them (2026-11-17).
+        if (job != null && job.preferences.hasAny) ...<Widget>[
+          const SizedBox(height: AppSizes.md),
+          _MustHaves(
+            preferences: job.preferences,
+            onEdit: _canEdit(job, matching)
+                ? () => _editPost(context, job, matching)
+                : null,
+          ),
+        ],
         const SizedBox(height: AppSizes.xl),
 
         // A rerouted job travels to the shop and back, so the client gets a
@@ -722,6 +768,14 @@ class _ClientReviewView extends StatelessWidget {
           const SizedBox(height: AppSizes.lg),
         ],
 
+        // Nobody within the client's distance limit: the matcher showed the
+        // nearest who meet everything else, and says so (2026-11-17).
+        if (_fallbackOf(matching.matches)
+            case final PreferenceFallback fb) ...<Widget>[
+          _DistanceFallbackBanner(fallback: fb),
+          const SizedBox(height: AppSizes.lg),
+        ],
+
         // Cards rise in one after another - a short, quiet entrance that
         // reads as "here are your three" rather than a list popping in.
         StaggeredEntrance(
@@ -729,6 +783,7 @@ class _ClientReviewView extends StatelessWidget {
             for (final MatchResult match in matching.matches)
               MatchScoreCard(
                 match: match,
+                preferences: job?.preferences,
                 highlighted: match.technicianId == preselectedTechnicianId,
                 onTap: () => _openDetail(context, match),
                 onWhyTap: () => RecommendationReasonsSheet.show(context, match),
@@ -788,7 +843,7 @@ class _ClientReviewView extends StatelessWidget {
           ),
           const SizedBox(height: AppSizes.xs),
           Text(
-            'The whole pool that passed the hard gates, in the order RB-CARS '
+            'The whole pool that passed the hard gates, in the order SUGO '
             'ranked it. Only the top three can be offered the job.',
             style: AppTextStyles.subtitle,
           ),
@@ -929,6 +984,19 @@ class _ClientReviewView extends StatelessWidget {
   Future<void> _book(BuildContext context, MatchResult match) async {
     final MatchProvider matching = context.read<MatchProvider>();
 
+    // Book-and-cancel cooldown (2026-11-17). The banner above already shows
+    // the countdown; this stops the booking sheet opening for a request the
+    // server would refuse.
+    final DateTime? paused = matching.bookingPausedUntil;
+    if (paused != null) {
+      UiFeedback.showInfo(
+        context,
+        'You can book again in '
+        '${bookingPauseLabel(paused.difference(DateTime.now()))}.',
+      );
+      return;
+    }
+
     // The card hides its button for a technician on vacation; this covers any
     // other route here. The server refuses the request regardless.
     final String? away = match.technician?.awayLabel;
@@ -955,72 +1023,57 @@ class _ClientReviewView extends StatelessWidget {
     // job was matched (2026-09-29). They can still be requested: the client
     // is told, and chooses to wait or to pick someone else. The technician
     // cannot accept until their current job is done - the server holds that.
-    final bool busy = await matching.technicianBusy(match.id);
+    //
+    // The same call brings the distance to this technician's shop for a shop
+    // repair (2026-11-16), so the delivery fee is on screen before Send.
+    final TechnicianStatus status = await matching.technicianStatus(match.id);
+    final bool busy = status.busy;
     if (!context.mounted) return;
 
-    final bool? confirmed = await showDialog<bool>(
+    // Shop repair: "bring it myself" or "shop pickup/delivery". Asked HERE
+    // only - the posting flow stopped asking on 2026-11-17 - starting from
+    // delivery (or what an earlier booking saved), switchable, with the fee
+    // updating as they switch. Sent with the request; the server saves it
+    // with the fee it works out from the same distance.
+    final bool isShopRepair = priceJob?.servicePath == ServicePath.pickup;
+    DeliveryOption deliveryOption =
+        priceJob?.deliveryOption ?? DeliveryOption.delivery;
+
+    Widget content(StateSetter setDialogState, {bool busy = false}) =>
+        _BookingPriceContent(
+          technicianName: name,
+          labor: labor,
+          distanceKm: distanceKm,
+          travelFee: travelFee,
+          urgent: priceJob?.urgency == Urgency.needToday,
+          busy: busy,
+          deliveryChooser: isShopRepair
+              ? DeliveryOptionSelector(
+                  value: deliveryOption,
+                  distanceKm: status.shopDistanceKm,
+                  onChanged: (DeliveryOption option) =>
+                      setDialogState(() => deliveryOption = option),
+                )
+              : null,
+        );
+
+    // The send-request moment is a sheet about the technician, not a system
+    // dialog - see `showBookingRequestSheet`.
+    final bool? confirmed = await showBookingRequestSheet(
       context: context,
-      builder: (BuildContext dialogContext) => busy
-          ? AlertDialog(
-              // Centred, or the dialog's icon slot stretches the tile.
-              icon: Center(
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: AppColors.warningSoft,
-                    borderRadius: BorderRadius.circular(AppSizes.radius),
-                  ),
-                  child: const Icon(
-                    Icons.handyman_rounded,
-                    size: 28,
-                    color: AppColors.warning,
-                  ),
-                ),
-              ),
-              title: Text('$name is on another job'),
-              content: _BookingPriceContent(
-                technicianName: name,
-                labor: labor,
-                distanceKm: distanceKm,
-                travelFee: travelFee,
-                busy: true,
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Choose someone else'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Send and wait'),
-                ),
-              ],
-            )
-          : AlertDialog(
-              title: Text('Book $name?'),
-              content: _BookingPriceContent(
-                technicianName: name,
-                labor: labor,
-                distanceKm: distanceKm,
-                travelFee: travelFee,
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Keep looking'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Send request'),
-                ),
-              ],
-            ),
+      technician: match.technician,
+      name: name,
+      busy: busy,
+      contentBuilder: (StateSetter setSheetState) =>
+          content(setSheetState, busy: busy),
     );
 
     if (confirmed != true || !context.mounted) return;
 
-    final bool ok = await matching.selectTechnician(match.id);
+    final bool ok = await matching.selectTechnician(
+      match.id,
+      deliveryOption: isShopRepair ? deliveryOption : null,
+    );
     if (!context.mounted) return;
 
     if (ok) {
@@ -1050,6 +1103,13 @@ class _ClientReviewView extends StatelessWidget {
         job: job,
         technician: match.technician,
         match: match,
+      );
+    } else if (matching.bookingPausedUntil != null) {
+      // Refused by the cooldown (a pause started on another phone, say): the
+      // banner has appeared with the countdown, so a short pointer is enough.
+      UiFeedback.showInfo(
+        context,
+        'Booking is paused for a moment. See the timer at the top.',
       );
     } else {
       UiFeedback.showError(
@@ -1255,29 +1315,143 @@ class _JobSummary extends StatelessWidget {
   }
 }
 
+/// "Your must-haves" - the preferences the client set while posting, shown
+/// above the matches they filtered. Tapping Edit reopens the post.
+class _MustHaves extends StatelessWidget {
+  const _MustHaves({required this.preferences, required this.onEdit});
+
+  final TechnicianPreferences preferences;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.md,
+        AppSizes.sm,
+        AppSizes.xs,
+        AppSizes.md,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primarySofter,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.primarySoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.tune_rounded,
+                size: 16,
+                color: AppColors.primaryDark,
+              ),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Your must-haves',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+              ),
+              if (onEdit != null)
+                TextButton(onPressed: onEdit, child: const Text('Edit')),
+            ],
+          ),
+          Wrap(
+            spacing: AppSizes.xs,
+            runSpacing: AppSizes.xs,
+            children: <Widget>[
+              for (final PreferenceField field in preferences.active)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Text(
+                    preferences.labelFor(field),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.xs),
+          Text(
+            'Only technicians who meet all of these are shown.',
+            style: AppTextStyles.micro,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BookingPriceContent extends StatelessWidget {
   const _BookingPriceContent({
     required this.technicianName,
     required this.labor,
     required this.distanceKm,
     required this.travelFee,
+    this.urgent = false,
     this.busy = false,
+    this.deliveryChooser,
   });
 
   final String technicianName;
   final LaborPrice? labor;
   final double? distanceKm;
   final int? travelFee;
+
+  /// Posted as Urgent: 20% of the labor on top (2026-11-17).
+  final bool urgent;
   final bool busy;
+
+  /// Shop repairs: the bring-it-myself / delivery choice with its live fee.
+  final Widget? deliveryChooser;
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> children = <Widget>[
       if (labor != null) ...<Widget>[
+        // The problem as a normal line of text. It used to be a label/value
+        // row, where a long symptom squeezed the label into "Sy / mpt / om".
+        const Text(
+          'Problem',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          labor!.symptom,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const Divider(height: AppSizes.lg),
         const Text('Price', style: TextStyle(fontWeight: FontWeight.w800)),
         const SizedBox(height: AppSizes.sm),
-        _PriceLine(label: 'Symptom', value: labor!.symptom),
         _PriceLine(label: 'Labor fee', value: labor!.fee),
+        if (urgent)
+          _PriceLine(
+            label: JobPrice.urgentFeeLabel,
+            value: LaborPriceCatalog.urgentFee(labor!) == null
+                ? '+20% of labor'
+                : '₱${LaborPriceCatalog.urgentFee(labor!)}',
+          ),
         if (travelFee != null) ...<Widget>[
           _PriceLine(
             label: 'Travel fee (${distanceKm!.toStringAsFixed(1)} km)',
@@ -1289,10 +1463,20 @@ class _BookingPriceContent extends StatelessWidget {
             value: LaborPriceCatalog.estimatedTotal(
               labor: labor!,
               travelFee: travelFee!,
+              urgentFee: urgent ? LaborPriceCatalog.urgentFee(labor!) ?? 0 : 0,
             ),
             bold: true,
           ),
         ],
+        const SizedBox(height: AppSizes.md),
+      ],
+      if (deliveryChooser != null) ...<Widget>[
+        const Text(
+          'Getting it to the shop',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: AppSizes.sm),
+        deliveryChooser!,
         const SizedBox(height: AppSizes.md),
       ],
       Text(
@@ -1331,10 +1515,17 @@ class _PriceLine extends StatelessWidget {
     );
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSizes.xs),
+      // Both sides may wrap. A fixed value used to take all the width it
+      // wanted and crush the label into a column of syllables.
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Expanded(child: Text(label)),
-          Text(value, style: style),
+          Expanded(flex: 3, child: Text(label)),
+          const SizedBox(width: AppSizes.sm),
+          Flexible(
+            flex: 2,
+            child: Text(value, style: style, textAlign: TextAlign.right),
+          ),
         ],
       ),
     );
@@ -1378,7 +1569,7 @@ class _MetaPill extends StatelessWidget {
   }
 }
 
-/// "RB-CARS" beside the section title: who did the ranking.
+/// "SUGO" beside the section title: who did the ranking.
 class _RankedByPill extends StatelessWidget {
   const _RankedByPill();
 
@@ -1400,7 +1591,7 @@ class _RankedByPill extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            'RB-CARS',
+            'SUGO',
             style: AppTextStyles.micro.copyWith(
               fontWeight: FontWeight.w800,
               color: AppColors.primary,
@@ -1503,6 +1694,69 @@ class _EditPostBar extends StatelessWidget {
           // name the family or the label falls back to the phone's font.
           textStyle: AppTextStyles.button,
         ),
+      ),
+    );
+  }
+}
+
+/// The distance fallback the shortlist was built with, if any. Read from the
+/// first match that carries it - the engine writes it on every row of a run.
+PreferenceFallback? _fallbackOf(List<MatchResult> matches) {
+  for (final MatchResult m in matches) {
+    if (m.breakdown.preferenceFallback != null) {
+      return m.breakdown.preferenceFallback;
+    }
+  }
+  return null;
+}
+
+/// "No technician within 5 km - the nearest is 12 km away."
+class _DistanceFallbackBanner extends StatelessWidget {
+  const _DistanceFallbackBanner({required this.fallback});
+
+  final PreferenceFallback fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.md),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(AppSizes.tileRadius),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Icon(
+            Icons.near_me_disabled_rounded,
+            size: 20,
+            color: AppColors.warning,
+          ),
+          const SizedBox(width: AppSizes.sm + 2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  fallback.message,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'These are the closest technicians who meet your other '
+                  'preferences. Their travel fee is for the longer distance.',
+                  style: AppTextStyles.micro.copyWith(height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

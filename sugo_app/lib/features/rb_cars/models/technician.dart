@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../onboarding/models/specialization_catalog.dart' as catalog;
 import 'job_enums.dart';
 import 'json_utils.dart';
+import 'technician_preferences.dart';
 import 'technician_specialization.dart';
 
 /// A service provider: one row of `technicians` joined to its `profiles` row.
@@ -48,6 +49,7 @@ class Technician {
     this.isTopMatch = false,
     this.isNewFromServer,
     this.awayUntil,
+    this.trustBadgeForJob,
   });
 
   /// Parses either a direct `technicians` row (with an embedded `profiles`
@@ -99,6 +101,11 @@ class Technician {
       // listings do not carry it; the directory service merges it in from
       // `technicians_away()` instead - see TechnicianDirectoryService.
       awayUntil: _parseDay(json['away_until']),
+      // Only the match snapshot sends it (20261115000002): the badge as it
+      // applies to that one job.
+      trustBadgeForJob: TrustBadge.fromWire(
+        json['trust_badge_for_job'] as String?,
+      ),
     );
   }
 
@@ -121,7 +128,16 @@ class Technician {
   final TechnicianTier tier;
   final bool isVerified;
 
+  /// `technicians.badge`: the Progressive Trust Badge wire value
+  /// (`id_verified` | `skill_verified` | `community_trusted`), or null. Read
+  /// it through [trustBadge]; never print it raw.
   final String? badge;
+
+  /// The trust badge as it applies to ONE job, from the match snapshot. A
+  /// Community Trusted technician who is not skill verified for that job's
+  /// device holds ID verified here. Null outside a match.
+  final TrustBadge? trustBadgeForJob;
+
   final double rating;
   final int totalJobs;
   final int currentWorkload;
@@ -224,8 +240,22 @@ class Technician {
       isTopMatch: isTopMatch,
       isNewFromServer: isNewFromServer,
       awayUntil: awayUntil ?? this.awayUntil,
+      trustBadgeForJob: trustBadgeForJob,
     );
   }
+
+  /// The account-wide Progressive Trust Badge.
+  TrustBadge? get trustBadge => TrustBadge.fromWire(badge);
+
+  /// Which of the five client-facing specialisations are skill verified, from
+  /// the verified rows of `technician_specializations` - the same record the
+  /// server reads. Empty for sources that do not carry the rows.
+  List<PreferredSpecialization> get skillVerifiedSpecializations =>
+      PreferredSpecialization.provenBy(
+        registeredSpecializations
+            .where((TechnicianSpecialization s) => s.verified)
+            .map((TechnicianSpecialization s) => s.deviceType),
+      );
 
   String get displayName {
     final String? name = fullName?.trim();
@@ -401,8 +431,10 @@ class Technician {
       (indicativeHourlyFee * 2, indicativeHourlyFee * 4);
 
   String get badgeLabel {
-    final String? explicit = badge?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
+    // Since 20261115000002 `badge` holds a trust badge wire value, so it is
+    // named through the enum - printed raw it would read "skill_verified".
+    final TrustBadge? trust = trustBadge;
+    if (trust != null) return trust.label;
     if (tier == TechnicianTier.elite) return 'Elite';
     if (tier == TechnicianTier.pro) return 'Pro';
     return isVerified ? 'Verified' : 'New';

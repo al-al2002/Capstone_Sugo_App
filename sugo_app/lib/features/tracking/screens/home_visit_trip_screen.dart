@@ -19,6 +19,7 @@ import '../models/job_tracking.dart';
 import '../services/tracking_service.dart';
 import '../widgets/location_feedback.dart';
 import '../widgets/route_map_card.dart';
+import '../widgets/trip_conditions_card.dart';
 
 /// The technician's side of a home visit: the drive to the client's door.
 ///
@@ -287,6 +288,14 @@ class _HomeVisitTripScreenState extends State<HomeVisitTripScreen> {
           SugoTruckDrive(
             moving: _isSharing,
             destinationIcon: Icons.home_rounded,
+          ),
+          // Arrival, weather and traffic, live from the server's samples -
+          // the same reading the client sees (2026-11-17).
+          const SizedBox(height: AppSizes.md),
+          LiveTripConditionsCard(
+            jobId: widget.job.id,
+            initial: _tracking!,
+            service: _service,
           ),
         ],
         const SizedBox(height: AppSizes.lg),

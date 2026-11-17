@@ -23,7 +23,12 @@ import '../models/score_breakdown.dart';
 /// urgency). Everything else is neutral - orange on every chip would stop
 /// meaning anything.
 class ContextSummary extends StatelessWidget {
-  const ContextSummary({super.key, required this.matches, this.job, this.onLongPress});
+  const ContextSummary({
+    super.key,
+    required this.matches,
+    this.job,
+    this.onLongPress,
+  });
 
   final List<MatchResult> matches;
   final Job? job;
@@ -37,7 +42,8 @@ class ContextSummary extends StatelessWidget {
     final List<ContextChipData> chips = contextChipsFor(matches, job);
     final List<String> rules = matches.isEmpty
         ? const <String>[]
-        : (matches.first.breakdown.recommendation?.rules ?? const <AppliedRule>[])
+        : (matches.first.breakdown.recommendation?.rules ??
+                  const <AppliedRule>[])
               .map((AppliedRule r) => r.label)
               .toList();
 
@@ -118,13 +124,13 @@ List<ContextChipData> contextChipsFor(List<MatchResult> matches, Job? job) {
 
   final ScoreBreakdown top = matches.first.breakdown;
   final MatchContext ctx = top.context;
-  final Set<String> signals =
-      (top.recommendation?.signals ?? const <String>[]).toSet();
+  final Set<String> signals = (top.recommendation?.signals ?? const <String>[])
+      .toSet();
 
   final String? weather = ctx.weatherLabel;
   if (weather != null && weather.isNotEmpty) {
-    final bool rain = signals.contains('rain') ||
-        (ctx.weatherSeverity ?? 0) >= 0.5;
+    final bool rain =
+        signals.contains('rain') || (ctx.weatherSeverity ?? 0) >= 0.5;
     chips.add(
       ContextChipData(
         icon: rain ? Icons.water_drop_rounded : Icons.wb_sunny_outlined,
@@ -136,8 +142,8 @@ List<ContextChipData> contextChipsFor(List<MatchResult> matches, Job? job) {
 
   final String? traffic = ctx.trafficLabel;
   if (traffic != null && traffic.isNotEmpty) {
-    final bool heavy = signals.contains('heavy_traffic') ||
-        (ctx.congestion ?? 0) >= 0.6;
+    final bool heavy =
+        signals.contains('heavy_traffic') || (ctx.congestion ?? 0) >= 0.6;
     chips.add(
       ContextChipData(
         icon: Icons.directions_car_filled_outlined,
@@ -173,7 +179,8 @@ List<ContextChipData> contextChipsFor(List<MatchResult> matches, Job? job) {
 
   final List<double> distances = <double>[
     for (final MatchResult m in matches)
-      if (m.breakdown.context.distanceKm != null) m.breakdown.context.distanceKm!,
+      if (m.breakdown.context.distanceKm != null)
+        m.breakdown.context.distanceKm!,
   ];
   if (distances.isNotEmpty) {
     distances.sort();

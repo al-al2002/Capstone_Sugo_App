@@ -7,6 +7,7 @@ import '../models/match_result.dart';
 import '../models/issue_catalog.dart';
 import '../models/job_enums.dart';
 import '../models/schedule_preference.dart';
+import '../models/technician_preferences.dart';
 import '../services/rb_cars_service.dart';
 import '../../community/models/community_models.dart';
 import '../../community/services/community_service.dart';
@@ -26,7 +27,7 @@ class JobPostingProvider extends ChangeNotifier {
        _communityService = communityService ?? CommunityService(),
        editingJob = null;
 
-  /// "Edit post": the same five steps, opened on an existing job with every
+  /// "Edit post": the same six steps, opened on an existing job with every
   /// answer already filled in. Saving updates that job instead of posting a
   /// new one, and matching runs again for the changed details.
   JobPostingProvider.editing(
@@ -96,6 +97,16 @@ class JobPostingProvider extends ChangeNotifier {
   String? _matchingNotice;
   String? get matchingNotice => _matchingNotice;
 
+  /// True when the first matching run found nobody *because of the client's
+  /// own preferences* - the engine's `no_match_relax_preferences`. The review
+  /// screen then opens on "try relaxing them" instead of an empty list.
+  bool _preferencesBlocked = false;
+  bool get preferencesBlocked => _preferencesBlocked;
+
+  /// How many technicians removing each single preference would bring back.
+  List<RelaxHint> _relaxHints = const <RelaxHint>[];
+  List<RelaxHint> get relaxHints => _relaxHints;
+
   /// How many of the new photos did not reach storage on the last save. The
   /// job was still saved; the screen says so.
   int get photosFailed => _photosFailed;
@@ -120,6 +131,10 @@ class JobPostingProvider extends ChangeNotifier {
       ..budgetMin = job.budgetMin
       ..budgetMax = job.budgetMax
       ..preferredSchedule = job.preferredSchedule
+      // The Availability question was removed from step 2 (2026-11-17). A job
+      // posted before that may still carry it, and the client could neither
+      // see nor clear it here, so editing the post drops it.
+      ..preferences = job.preferences.without(PreferenceField.availability)
       ..restoreDescription(job.description);
 
     // Re-derive the suggestion, then put back the path the client actually
@@ -149,9 +164,35 @@ class JobPostingProvider extends ChangeNotifier {
     // Symptoms are device-specific, so an old selection is now meaningless.
     draft.problemSymptom = null;
     draft.classification = null;
+    // So is a specialisation the new device cannot use - "Phone/Tablet"
+    // carried onto an aircon job could only ever produce an empty list. The
+    // other preferences are about the technician, not the device, and stay.
+    final PreferredSpecialization? wanted = draft.preferences.specialization;
+    if (wanted != null &&
+        !PreferredSpecialization.forCategory(category).contains(wanted)) {
+      draft.preferences = draft.preferences.copyWith(
+        specialization: () => null,
+      );
+    }
     _error = null;
     notifyListeners();
   }
+
+  // -------------------------------------------- step 2: your technician
+
+  /// The client's minimum requirements. See [TechnicianPreferences].
+  TechnicianPreferences get preferences => draft.preferences;
+
+  /// Replaces the whole set. The step builds the next value with
+  /// [TechnicianPreferences.copyWith], so every control goes through one door.
+  void setPreferences(TechnicianPreferences next) {
+    if (next == draft.preferences) return;
+    draft.preferences = next;
+    notifyListeners();
+  }
+
+  /// Every field back to "No preference".
+  void resetPreferences() => setPreferences(TechnicianPreferences.none);
 
   /// Records the chosen issue, and answers what the issue already implies.
   ///
@@ -171,6 +212,15 @@ class JobPostingProvider extends ChangeNotifier {
     final IssueOption? issue = IssueCatalog.byCode(symptomCode);
 
     draft.problemSymptom = symptomCode;
+
+    // A cleaning or an install has no damage to report, and the question is
+    // not shown for one (2026-11-16) - so a "yes, damaged" left over from a
+    // repair picked earlier must not reroute an aircon cleaning to the shop.
+    // Cleared before classifying, because damage is a rule-base input.
+    if (issue != null && !issue.kind.asksAboutDamage) {
+      draft.hasPhysicalDamage = false;
+    }
+
     // Classified here rather than on "Continue", because the suggestion is now
     // shown on the same screen as the symptom. The client picks "Won't turn on"
     // and the three path cards re-rank underneath their finger.
@@ -214,6 +264,13 @@ class JobPostingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether the picked issue is basic enough that the rule base suggests the
+  /// Technician Community (`ClassificationResult.isBasic`). The problem step
+  /// shows the basic-problem card exactly when this is true, so the card and
+  /// the "Suggested" badge never disagree - before 2026-11-17 the card said
+  /// "try the community" while Home Service carried the badge.
+  bool get basicProblem => draft.classification?.isBasic ?? false;
+
   /// Changes a technician-community request into a service request while
   /// keeping the client's device details, location, photos and notes.
   void chooseServicePath(ServicePath path) {
@@ -251,7 +308,7 @@ class JobPostingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The "Flexible / This week / Urgent" control, which writes both
+  /// The "Flexible / Urgent" control, which writes both
   /// `jobs.urgency` and `jobs.preferred_schedule`. See [SchedulePreference].
   SchedulePreference get schedulePreference => SchedulePreference.fromJob(
     urgency: draft.urgency,
@@ -311,17 +368,21 @@ class JobPostingProvider extends ChangeNotifier {
   /// Step 1 - a device card is lit.
   bool get canLeaveDevice => deviceCategory != null;
 
-  /// Step 2 - a symptom is chosen, so the rule base has something to run on.
+  /// Step 2 - nothing is required; every preference is optional. The one way
+  /// to be stuck is "Pick a date" without a date, which could not be checked.
+  bool get canLeavePreferences => !draft.preferences.isMissingDate;
+
+  /// Step 3 - a symptom is chosen, so the rule base has something to run on.
   bool get canLeaveSymptom =>
       draft.problemSymptom != null && draft.servicePath != null;
 
-  /// Step 3 - nothing is required. Brand, model and description are all
+  /// Step 4 - nothing is required. Brand, model and description are all
   /// optional: the matcher degrades to device-category matching without them,
   /// and blocking the flow on a model number nobody can find is worse than a
   /// slightly weaker match.
   bool get canLeaveDeviceDetails => true;
 
-  /// Step 4 - the map has a pin. Proximity, traffic and weather all key off it,
+  /// Step 5 - the map has a pin. Proximity, traffic and weather all key off it,
   /// so this is the one answer the matcher cannot do without.
   bool get canLeaveWhereAndWhen => draft.latitude != null;
 
@@ -409,6 +470,8 @@ class JobPostingProvider extends ChangeNotifier {
       // on arrival, and a reason that exists only in this response would
       // otherwise be thrown away at the one moment it is most useful.
       _matchingNotice = run.matches.isEmpty ? run.message : null;
+      _preferencesBlocked = run.matches.isEmpty && run.preferencesBlocked;
+      _relaxHints = _preferencesBlocked ? run.relaxHints : const <RelaxHint>[];
 
       return job;
     } on RbCarsFailure catch (failure) {

@@ -13,6 +13,7 @@ import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../../core/widgets/sugo_avatar.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../../../core/widgets/sugo_sheet.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
 import '../../rb_cars/models/job_enums.dart';
@@ -95,6 +96,14 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   String? _firstUnreadId;
   bool _unreadResolved = false;
 
+  /// Every message id already on screen, and the ones that just arrived
+  /// from the other person while the thread was open (2026-11-17). Only
+  /// those animate in - the history that was there on opening does not, and
+  /// neither do my own messages, which already animated in as pending
+  /// bubbles and must not arrive twice.
+  final Set<String> _seenIds = <String>{};
+  final Set<String> _arriving = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -123,7 +132,17 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                     .where((ChatMessage m) => !m.isMine(me) && !m.isRead)
                     .firstOrNull
                     ?.id;
+              } else {
+                _arriving.addAll(
+                  messages
+                      .where(
+                        (ChatMessage m) =>
+                            !m.isMine(me) && !_seenIds.contains(m.id),
+                      )
+                      .map((ChatMessage m) => m.id),
+                );
               }
+              _seenIds.addAll(messages.map((ChatMessage m) => m.id));
               _messages = messages;
               _isLoading = false;
               _error = null;
@@ -355,7 +374,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       body: SafeArea(
         child: Column(
           children: <Widget>[
-            Expanded(child: _body()),
+            Expanded(
+              child: CustomPaint(painter: const _DotBackdrop(), child: _body()),
+            ),
             _composer(),
           ],
         ),
@@ -444,28 +465,39 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
             children: <Widget>[
               if (showDay) _DayDivider(date: message.createdAt),
               if (message.id == _firstUnreadId) const _UnreadDivider(),
-              ChatBubble(
-                body: message.body,
+              _ArrivingBubble(
+                key: ValueKey<String>(message.id),
                 mine: mine,
-                imagePath: message.imagePath,
-                service: _service,
-                timestamp: message.createdAt,
-                isRead: message.isRead,
-                lastInGroup: lastInGroup,
+                animate: _arriving.contains(message.id),
+                child: ChatBubble(
+                  body: message.body,
+                  mine: mine,
+                  imagePath: message.imagePath,
+                  service: _service,
+                  timestamp: message.createdAt,
+                  isRead: message.isRead,
+                  lastInGroup: lastInGroup,
+                ),
               ),
             ],
           );
         }
 
         final PendingMessage pending = _pending[index - _messages.length];
-        return ChatBubble(
-          body: pending.body,
+        // A message I just sent always arrives - this is its one entrance.
+        return _ArrivingBubble(
+          key: ValueKey<String>('pending-${pending.localId}'),
           mine: true,
-          imageBytes: pending.imageBytes,
-          pending: !pending.failed,
-          uploading: pending.uploading,
-          failed: pending.failed,
-          onRetry: pending.failed ? () => _retry(pending) : null,
+          animate: true,
+          child: ChatBubble(
+            body: pending.body,
+            mine: true,
+            imageBytes: pending.imageBytes,
+            pending: !pending.failed,
+            uploading: pending.uploading,
+            failed: pending.failed,
+            onRetry: pending.failed ? () => _retry(pending) : null,
+          ),
         );
       },
     );
@@ -485,9 +517,20 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
         AppSizes.sm,
         AppSizes.sm,
       ),
-      decoration: const BoxDecoration(
+      // A floating tray: rounded on top and lifted by a soft shadow, so the
+      // composer reads as the thing you hold rather than the page's footer.
+      decoration: BoxDecoration(
         color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.divider)),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppSizes.sheetRadius),
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -560,12 +603,21 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
-              IconButton(
-                tooltip: 'Attach a photo',
-                onPressed: _openAttachSheet,
-                icon: const Icon(Icons.add_photo_alternate_rounded, size: 24),
-                color: AppColors.primary,
+              Container(
+                width: AppSizes.touchTarget,
+                height: AppSizes.touchTarget,
+                decoration: const BoxDecoration(
+                  color: AppColors.primarySofter,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  tooltip: 'Attach a photo',
+                  onPressed: _openAttachSheet,
+                  icon: const Icon(Icons.add_photo_alternate_rounded, size: 22),
+                  color: AppColors.primary,
+                ),
               ),
+              const SizedBox(width: AppSizes.sm),
               Expanded(
                 child: TextField(
                   controller: _input,
@@ -603,27 +655,43 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                 builder: (BuildContext context, TextEditingValue value, _) {
                   final bool canSend =
                       value.text.trim().isNotEmpty || _attachmentBytes != null;
+                  // Grows in and leans forward when there is something to
+                  // send, in the brand gradient (2026-11-17); grey and level
+                  // when there is not. 48 across, the touch floor.
                   return AnimatedScale(
                     scale: canSend ? 1 : 0.88,
                     duration: AppMotion.fast,
                     curve: AppMotion.standard,
-                    // 48 across, the touch floor; flat navy since the Dispatch
-                    // redesign - it used to glow in its own colour.
-                    child: AnimatedContainer(
+                    child: AnimatedRotation(
+                      turns: canSend ? -0.06 : 0,
                       duration: AppMotion.base,
-                      width: AppSizes.touchTarget,
-                      height: AppSizes.touchTarget,
-                      decoration: BoxDecoration(
-                        color: canSend ? AppColors.primary : AppColors.border,
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        tooltip: 'Send',
-                        onPressed: canSend ? _send : null,
-                        icon: const Icon(
-                          Icons.send_rounded,
-                          size: 20,
-                          color: Colors.white,
+                      curve: AppMotion.emphasized,
+                      child: AnimatedContainer(
+                        duration: AppMotion.base,
+                        width: AppSizes.touchTarget,
+                        height: AppSizes.touchTarget,
+                        decoration: BoxDecoration(
+                          gradient: canSend
+                              ? const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: <Color>[
+                                    AppColors.primary,
+                                    AppColors.secondary,
+                                  ],
+                                )
+                              : null,
+                          color: canSend ? null : AppColors.border,
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          tooltip: 'Send',
+                          onPressed: canSend ? _send : null,
+                          icon: const Icon(
+                            Icons.send_rounded,
+                            size: 20,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -705,6 +773,100 @@ class _UnreadDivider extends StatelessWidget {
   }
 }
 
+/// A bubble arriving: it grows from its speaker's side of the thread - the
+/// corner its tail points at - and fades in, once (2026-11-17).
+class _ArrivingBubble extends StatefulWidget {
+  const _ArrivingBubble({
+    super.key,
+    required this.mine,
+    required this.animate,
+    required this.child,
+  });
+
+  final bool mine;
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_ArrivingBubble> createState() => _ArrivingBubbleState();
+}
+
+class _ArrivingBubbleState extends State<_ArrivingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: AppMotion.slow,
+  );
+  late final Animation<double> _t = CurvedAnimation(
+    parent: _c,
+    curve: AppMotion.emphasized,
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (widget.animate && !AppMotion.reduced(context)) {
+      _c.forward();
+    } else {
+      _c.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Alignment corner = widget.mine
+        ? Alignment.bottomRight
+        : Alignment.bottomLeft;
+    return AnimatedBuilder(
+      animation: _t,
+      child: widget.child,
+      builder: (BuildContext context, Widget? child) => Opacity(
+        opacity: _t.value.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset((1 - _t.value) * (widget.mine ? 18 : -18), 0),
+          child: Transform.scale(
+            scale: 0.86 + 0.14 * _t.value,
+            alignment: corner,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The faint dot grid behind a conversation: a texture, so the thread reads
+/// as its own space rather than a plain page, without competing with text.
+class _DotBackdrop extends CustomPainter {
+  const _DotBackdrop();
+
+  static const double _gap = 22;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint dot = Paint()
+      ..color = AppColors.primary.withValues(alpha: 0.055);
+    for (double y = _gap / 2; y < size.height; y += _gap) {
+      final double shift = ((y / _gap).floor().isOdd) ? _gap / 2 : 0;
+      for (double x = _gap / 2 + shift; x < size.width; x += _gap) {
+        canvas.drawCircle(Offset(x, y), 1.3, dot);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotBackdrop oldDelegate) => false;
+}
+
 /// Opens a thread for a job, from anywhere.
 Future<void> openChatThread(
   BuildContext context, {
@@ -757,32 +919,52 @@ class _EmptyThread extends StatelessWidget {
       padding: const EdgeInsets.all(AppSizes.xl),
       children: <Widget>[
         const SizedBox(height: AppSizes.xl),
-        Center(
-          child: Container(
-            width: 68,
-            height: 68,
-            decoration: const BoxDecoration(
-              color: AppColors.primarySoft,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.waving_hand_rounded,
-              size: 32,
-              color: AppColors.primary,
+        // The hand waves three times and settles (2026-11-17), on a soft
+        // gradient disc - a greeting, not a loading spinner.
+        SugoRiseIn(
+          child: Center(
+            child: Container(
+              width: 84,
+              height: 84,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[AppColors.primarySoft, AppColors.cyanSoft],
+                ),
+              ),
+              child: const SugoWiggle(
+                alignment: Alignment(0.3, 0.8), // the wrist
+                angle: 0.38,
+                child: Icon(
+                  Icons.waving_hand_rounded,
+                  size: 38,
+                  color: AppColors.accent,
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(height: AppSizes.lg),
-        Text(
-          'Say hello to $name',
-          textAlign: TextAlign.center,
-          style: AppTextStyles.title,
-        ),
-        const SizedBox(height: AppSizes.xs),
-        Text(
-          'Agree a time, confirm the address, or send a photo of the problem.',
-          textAlign: TextAlign.center,
-          style: AppTextStyles.subtitle,
+        SugoRiseIn(
+          delay: AppMotion.staggerDelay(1),
+          child: Column(
+            children: <Widget>[
+              Text(
+                'Say hello to $name',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.title,
+              ),
+              const SizedBox(height: AppSizes.xs),
+              Text(
+                'Agree a time, confirm the address, or send a photo of the '
+                'problem.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.subtitle,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: AppSizes.xl),
         Wrap(
@@ -790,19 +972,27 @@ class _EmptyThread extends StatelessWidget {
           spacing: AppSizes.sm,
           runSpacing: AppSizes.sm,
           children: <Widget>[
-            for (final String starter in _starters)
-              ActionChip(
-                label: Text(starter),
-                onPressed: () => onStarter(starter),
-                backgroundColor: AppColors.surface,
-                side: const BorderSide(color: AppColors.primarySoft),
-                labelStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+            for (int i = 0; i < _starters.length; i++)
+              SugoRiseIn(
+                delay: AppMotion.staggerDelay(i + 2),
+                child: ActionChip(
+                  avatar: const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 15,
+                    color: AppColors.secondary,
+                  ),
+                  label: Text(_starters[i]),
+                  onPressed: () => onStarter(_starters[i]),
+                  backgroundColor: AppColors.surface,
+                  side: const BorderSide(color: AppColors.primarySoft),
+                  labelStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+                  ),
                 ),
               ),
           ],

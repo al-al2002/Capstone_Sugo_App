@@ -3,17 +3,21 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/contact_launcher.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../../core/widgets/sugo_button.dart';
+import '../../../core/theme/app_motion.dart';
 import '../../../core/widgets/sugo_card.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/sugo_delete_animation.dart';
 import '../../../core/widgets/sugo_image_viewer.dart';
 import '../../../core/widgets/sugo_sheet.dart';
 import '../../../core/widgets/sugo_timeline.dart';
 import '../../chat/screens/chat_thread_screen.dart';
+import '../../chat/services/chat_service.dart';
 import '../../client/widgets/home_sections.dart';
 import '../models/booking_route.dart';
 import '../../disputes/models/job_dispute.dart';
@@ -23,16 +27,20 @@ import '../../disputes/widgets/report_problem_sheet.dart';
 import '../../rb_cars/models/device_category.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
+import '../../rb_cars/models/job_price.dart';
+import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/screens/client_review_screen.dart';
 import '../../rb_cars/screens/job_posting_screen.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
+import '../../rb_cars/services/technician_directory_service.dart';
 import '../../tracking/models/job_tracking.dart';
 import '../../tracking/screens/home_visit_trip_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
 import '../../tracking/screens/technician_delivery_screen.dart';
-import '../../technician/widgets/active_job_card.dart';
+import '../../technician/widgets/complete_job_sheet.dart';
 import '../../technician/widgets/technician_job_actions.dart';
 import '../../tracking/services/tracking_service.dart';
+import '../../tracking/widgets/drop_off_route_card.dart';
 import '../../tracking/widgets/return_method_card.dart';
 import 'bookings_list_view.dart';
 import '../../rb_cars/models/technician_profile_details.dart';
@@ -41,7 +49,9 @@ import '../../rb_cars/widgets/review_card.dart';
 import '../../profile/profile_navigation.dart';
 import '../../../core/widgets/sugo_avatar.dart';
 import '../../../core/widgets/sugo_route_line.dart';
+import '../../../core/widgets/sugo_fold_card.dart';
 import '../widgets/rate_job_sheet.dart';
+import '../../rb_cars/widgets/booking_pause.dart';
 
 /// Everything about one booking, from either end.
 ///
@@ -73,7 +83,26 @@ import '../widgets/rate_job_sheet.dart';
 ///   technician - and the card says so rather than implying an invoice
 ///   exists.
 class JobDetailScreen extends StatefulWidget {
-  const JobDetailScreen({super.key, required this.job, required this.role});
+  const JobDetailScreen({
+    super.key,
+    required this.job,
+    required this.role,
+    @visibleForTesting this.service,
+    @visibleForTesting this.tracking,
+    @visibleForTesting this.disputes,
+    @visibleForTesting this.chat,
+    @visibleForTesting this.directory,
+  });
+
+  /// Tests only (2026-11-17): fakes for the services the screen talks to, so
+  /// it can be rendered offline. The app passes none and gets the real ones.
+  final RbCarsService? service;
+  final TrackingService? tracking;
+  final DisputeService? disputes;
+  final ChatService? chat;
+
+  /// The drop-off card's read of the technician's shop.
+  final TechnicianDirectoryService? directory;
 
   /// The row as the list already had it. Used to paint immediately, then
   /// replaced by a fresh read - a list can be minutes old, and a status is the
@@ -87,8 +116,8 @@ class JobDetailScreen extends StatefulWidget {
 }
 
 class _JobDetailScreenState extends State<JobDetailScreen> {
-  final RbCarsService _service = RbCarsService();
-  final TrackingService _tracking = TrackingService();
+  late final RbCarsService _service = widget.service ?? RbCarsService();
+  late final TrackingService _tracking = widget.tracking ?? TrackingService();
 
   /// Built once, never in `build`.
   ///
@@ -116,7 +145,20 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   /// Both people on the job, resolved by `job_parties`. Null until loaded.
   JobParty? _party;
 
-  final DisputeService _disputeService = DisputeService();
+  /// The client's phone, on the technician's copy of an active job
+  /// (2026-11-17). Released by `job_client_phone` only to the assigned
+  /// technician while the job is confirmed or in progress.
+  String? _clientPhone;
+
+  /// A home visit's distance to the technician, from the accepted match -
+  /// the number the client's travel fee was quoted on before they sent the
+  /// request. Shop repairs carry theirs on the job itself.
+  double? _homeDistanceKm;
+
+  JobPrice get _price => JobPrice.forJob(_job, homeDistanceKm: _homeDistanceKm);
+
+  late final DisputeService _disputeService =
+      widget.disputes ?? DisputeService();
 
   /// Problems reported on this booking, by either side. Newest first.
   List<JobDispute> _disputes = const <JobDispute>[];
@@ -142,12 +184,29 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   /// diagnosis has none.
   bool get _needsTracking => TrackingJourney.tracks(_job.servicePath);
 
+  /// The client's way to the shop, on a drop-off the technician has accepted
+  /// but not yet received (2026-11-17). Nothing is tracked in that window -
+  /// the client is the one travelling - so the "Delivery" card's "tracking
+  /// opens once your technician sets off" would promise a trip that never
+  /// happens on this job. The route card takes its place, high on the page.
+  bool _showsDropOffRoute(JobTracking? tracking) =>
+      _isClient &&
+      _job.isSelfDropOff &&
+      // No row yet, or the client's own trip in (2026-11-17).
+      (tracking == null || tracking.stage == TrackingStage.droppingOff) &&
+      _job.assignedTechnicianId != null &&
+      (_job.status == JobStatus.confirmed ||
+          _job.status == JobStatus.inProgress);
+
   TrackingJourney get _journey => TrackingJourney.of(_job.servicePath);
 
   bool get _isHomeVisit => _journey == TrackingJourney.homeVisit;
 
   /// The last tracking stage this screen saw. See the stream builder.
   TrackingStage? _seenStage;
+
+  /// The sections deal in once, on the first build (2026-11-17).
+  bool _entrancePlayed = false;
 
   /// Chat opens once there is somebody on the other end - which since
   /// `20260923000003_negotiation_chat.sql` includes a technician the client
@@ -185,6 +244,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final CompletionAnswers? answers = await CompleteJobSheet.show(
       context,
       _job,
+      homeDistanceKm: _homeDistanceKm,
     );
     if (answers == null || !mounted) return;
 
@@ -193,13 +253,35 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       await _service.completeJob(
         _job.id,
         diagnosisCorrect: answers.diagnosisCorrect,
-        reroutedMidJob: answers.reroutedMidJob,
       );
+      // The aftercare note goes to the chat only once the job really is
+      // closed, so a failed completion never leaves the client reading
+      // "Job done". A failed send does not undo the completion.
+      final String? wrapUp = answers.wrapUpMessage;
+      bool noteSent = false;
+      if (wrapUp != null) {
+        try {
+          await (widget.chat ?? ChatService()).send(_job.id, wrapUp);
+          noteSent = true;
+        } catch (_) {
+          // Reported below; the job is closed either way.
+        }
+      }
       if (!mounted) return;
-      UiFeedback.showSuccess(
-        context,
-        'Job completed. The client can now rate it.',
-      );
+      if (wrapUp != null && !noteSent) {
+        UiFeedback.showWarning(
+          context,
+          'Job completed, but the note could not be sent. Message the '
+          'client from the chat.',
+        );
+      } else {
+        UiFeedback.showSuccess(
+          context,
+          noteSent
+              ? 'Job completed. Your note is in the chat.'
+              : 'Job completed. The client can now rate it.',
+        );
+      }
       await _refresh();
       if (mounted && _canReview && _myReview == null) await _openReview();
     } on RbCarsFailure catch (failure) {
@@ -267,6 +349,34 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       // technician". Never fatal.
       final Map<String, JobParty> parties = await _service.jobParties();
       if (mounted) setState(() => _party = parties[_job.id]);
+
+      // The client's number, for the technician on this job. Never fatal.
+      if (!_isClient && _job.assignedTechnicianId != null) {
+        final String? phone = await _service.clientPhone(_job.id);
+        if (mounted) setState(() => _clientPhone = phone);
+      }
+
+      // The travel fee's distance, for a home visit with a technician on it.
+      // Read from their match: RLS lets both the client and that technician
+      // see it. Never fatal - the card shows the labor fee without it.
+      if (_job.servicePath == ServicePath.homeService &&
+          _job.assignedTechnicianId != null) {
+        try {
+          final List<MatchResult> matches = await _service.fetchMatches(
+            _job.id,
+          );
+          double? km;
+          for (final MatchResult match in matches) {
+            if (match.technicianId == _job.assignedTechnicianId) {
+              km = match.breakdown.context.distanceKm;
+              break;
+            }
+          }
+          if (mounted) setState(() => _homeDistanceKm = km);
+        } catch (_) {
+          // Leave the distance unknown.
+        }
+      }
 
       if (_canReview) {
         final TechnicianReview? mine = _isClient
@@ -435,8 +545,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     setState(() => _busy = true);
     try {
       // The bin animation says "Request deleted" itself, so no snackbar.
-      await runWithDeleteAnimation(context, _service.deleteJob(_job.id));
+      final DateTime? paused = (await runWithDeleteAnimation(
+        context,
+        _service.deleteJob(_job.id),
+      )).bookingPausedUntil;
       if (!mounted) return;
+      // Deleting while a technician was booked counts as a cancel.
+      if (paused != null) showBookingPausedNotice(context, paused);
       Navigator.of(context).pop();
     } on RbCarsFailure catch (failure) {
       if (!mounted) return;
@@ -454,7 +569,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       title: 'Cancel your request to $name?',
       message:
           'They have not answered yet, so nothing is lost — and this is not '
-          'recorded against them. Your other matches stay ready.',
+          'recorded against them. Your other matches stay ready. Cancelling '
+          '2 requests within an hour pauses booking for 2 minutes.',
       confirmLabel: 'Cancel request',
       cancelLabel: 'Keep waiting',
       destructive: true,
@@ -463,13 +579,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
     setState(() => _busy = true);
     try {
-      await _service.withdrawTechnician(_job.id);
+      final DateTime? paused = await _service.withdrawTechnician(_job.id);
       if (!mounted) return;
       setState(() => _busy = false);
-      UiFeedback.showSuccess(
-        context,
-        'Request cancelled. Pick another technician.',
-      );
+      if (paused != null) {
+        showBookingPausedNotice(context, paused);
+      } else {
+        UiFeedback.showSuccess(
+          context,
+          'Request cancelled. Pick another technician.',
+        );
+      }
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ClientReviewScreen(jobId: _job.id),
@@ -509,7 +629,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               label: 'Scheduled',
               value: Fmt.dateTime(_job.preferredSchedule!),
             ),
-          _SummaryRow(label: 'Budget', value: _job.budgetLabel),
+          _SummaryRow(label: 'Price', value: _price.headline),
           _SummaryRow(
             label: 'Location',
             value: _job.hasLocation ? _job.locationLabel : 'Not pinned',
@@ -594,6 +714,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   });
                 }
 
+                // The sections deal in top to bottom the first time the screen
+                // opens (2026-11-17). After that - every tracking update
+                // rebuilds this list - they simply stay put.
+                final bool animate = !_entrancePlayed;
+                if (animate) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _entrancePlayed = true;
+                  });
+                }
+
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(
                     AppSizes.screenPadding,
@@ -601,13 +731,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     AppSizes.screenPadding,
                     AppSizes.xxl,
                   ),
-                  children: <Widget>[
+                  children: _dealtIn(animate, <Widget>[
                     if (_error != null) ...<Widget>[
                       _ErrorNote(message: _error!),
                       const SizedBox(height: AppSizes.md),
                     ],
                     _statusHero(tracking),
                     const SizedBox(height: AppSizes.md),
+                    if (_showsDropOffRoute(tracking)) ...<Widget>[
+                      DropOffRouteCard(
+                        jobId: _job.id,
+                        technicianId: _job.assignedTechnicianId!,
+                        trip: tracking,
+                        directory: widget.directory,
+                        tracking: _tracking,
+                      ),
+                      const SizedBox(height: AppSizes.md),
+                    ],
                     // The technician's actions on a job they are on - moved
                     // here from the dashboard card on 2026-09-29.
                     if (_isWorking) ...<Widget>[
@@ -618,6 +758,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         onNeedsShop: _takeToShop,
                         isCompleting: _completing,
                         isMovingToShop: _movingToShop,
+                        distanceKm: _homeDistanceKm,
                       ),
                       const SizedBox(height: AppSizes.md),
                     ],
@@ -649,13 +790,25 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         onReport: _reportProblem,
                       ),
                     ],
-                  ],
+                  ]),
                 );
               },
         ),
       ),
     );
   }
+
+  /// [children], each rising in after the one before it when [animate].
+  /// Spacers are dealt in too; they are invisible, so it costs nothing and
+  /// keeps the stagger in step with the cards.
+  List<Widget> _dealtIn(bool animate, List<Widget> children) => <Widget>[
+    for (int i = 0; i < children.length; i++)
+      SugoRiseIn(
+        enabled: animate,
+        delay: AppMotion.staggerDelay(i ~/ 2),
+        child: children[i],
+      ),
+  ];
 
   // ------------------------------------------------------------- the hero
 
@@ -695,7 +848,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         : switch (_job.status) {
             JobStatus.pending =>
               _isClient
-                  ? 'RB-CARS is ranking the three best technicians for this job.'
+                  ? 'SUGO is ranking the three best technicians for this job.'
                   : 'This job has not been matched yet.',
             JobStatus.matched =>
               _isClient
@@ -713,57 +866,92 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             JobStatus.completed =>
               _isClient
                   ? 'The repair is finished. Rate your technician below.'
-                  : 'Closed, and the outcome fed back to RB-CARS.',
+                  : 'Closed, and the outcome fed back to SUGO.',
             JobStatus.cancelled =>
               'This booking was cancelled. It is kept for reference and does '
                   'not count against anyone.',
           };
 
-    return SugoCard(
+    // Since 2026-11-17 the hero opens on a gradient band in the booking's
+    // own colour - brand while it is live, green when it is fixed, slate
+    // when it was cancelled - so the state reads before a word does. The
+    // words are the same ones the card always carried.
+    const Radius corner = Radius.circular(AppSizes.cardRadius);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.all(corner),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: jobStatusBadge(_job.status),
+          SugoHeroBand(
+            colors: _heroColors,
+            borderRadius: const BorderRadius.vertical(top: corner),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: jobStatusBadge(_job.status),
+                      ),
+                    ),
+                    // Only while someone is moving: once they have arrived,
+                    // or the unit is on the bench, the last position is just
+                    // old.
+                    if (travelling) _FreshnessPill(tracking: tracking),
+                  ],
                 ),
-              ),
-              // Only while someone is moving: once they have arrived, or the
-              // unit is on the bench, the last position is just old.
-              if (travelling)
+                const SizedBox(height: AppSizes.md),
                 Text(
-                  tracking.freshnessLabel,
-                  style: AppTextStyles.micro.copyWith(
-                    color: tracking.isLive
-                        ? AppColors.success
-                        : AppColors.textSecondary,
-                    fontWeight: FontWeight.w700,
+                  headline,
+                  style: AppTextStyles.title.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: AppSizes.xs),
+                Text(
+                  blurb,
+                  style: AppTextStyles.subtitle.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: AppSizes.md),
-          Text(headline, style: AppTextStyles.title),
-          const SizedBox(height: AppSizes.xs),
-          Text(blurb, style: AppTextStyles.subtitle),
-          // The booking as a trip, the same drawing the home card and the
-          // "Request sent" screen use. Placed from `jobs.status` - refined to
-          // "under way" while a tracking row is live - and absent for a
-          // cancelled booking, which is not on its way anywhere.
-          if (_routePosition(showStage)
-              case final SugoRoutePosition at) ...<Widget>[
-            const SizedBox(height: AppSizes.lg),
-            SugoRouteLine(stops: BookingRoute.stops, position: at),
-          ],
-          const SizedBox(height: AppSizes.lg),
-          _actions(travelling),
+          Padding(
+            padding: const EdgeInsets.all(AppSizes.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                // The booking as a trip, the same drawing the home card and
+                // the "Request sent" screen use. Placed from `jobs.status` -
+                // refined to "under way" while a tracking row is live - and
+                // absent for a cancelled booking, which is not on its way
+                // anywhere.
+                if (_routePosition(showStage)
+                    case final SugoRoutePosition at) ...<Widget>[
+                  SugoRouteLine(stops: BookingRoute.stops, position: at),
+                  const SizedBox(height: AppSizes.lg),
+                ],
+                _actions(travelling, tracking),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+
+  /// The hero band's colours: the booking's state at a glance.
+  List<Color> get _heroColors => switch (_job.status) {
+    JobStatus.completed => const <Color>[Color(0xFF0F6B3E), AppColors.success],
+    JobStatus.cancelled => const <Color>[Color(0xFF475569), Color(0xFF94A3B8)],
+    _ => SugoHeroBand.brand,
+  };
 
   /// Where this booking sits on its route, or null when it has none.
   SugoRoutePosition? _routePosition(bool travelling) {
@@ -775,12 +963,14 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   /// The two or three things worth doing from here, in priority order.
-  Widget _actions(bool travelling) {
+  Widget _actions(bool travelling, JobTracking? tracking) {
     final List<Widget> buttons = <Widget>[];
 
     // The technician's trip button lives in their work card, just below.
+    // A drop-off's route card does the same for the client.
     if (_needsTracking &&
         !_isWorking &&
+        !_showsDropOffRoute(tracking) &&
         (travelling ||
             _job.status == JobStatus.confirmed ||
             _job.status == JobStatus.inProgress)) {
@@ -901,16 +1091,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   /// The booking's lifecycle, with the delivery stages folded in where they
   /// belong rather than shown as a second, separate progress list.
+  /// Folded to its current step (2026-11-17) - the hero above already says
+  /// where the booking is; the full route is one tap away.
   Widget _timelineCard(JobTracking? tracking) {
-    return SugoCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const SectionHeader(title: 'Progress'),
-          const SizedBox(height: AppSizes.lg),
-          SugoTimeline(steps: _steps(tracking), compact: true),
-        ],
-      ),
+    final List<SugoTimelineStep> steps = _steps(tracking);
+    final SugoTimelineStep? now =
+        steps
+            .where((SugoTimelineStep s) => s.state == SugoStepState.current)
+            .firstOrNull ??
+        steps
+            .where((SugoTimelineStep s) => s.state == SugoStepState.done)
+            .lastOrNull;
+    return SugoFoldCard(
+      icon: Icons.timeline_rounded,
+      title: 'Progress',
+      summary: now?.title,
+      child: SugoTimeline(steps: steps, compact: true),
     );
   }
 
@@ -954,7 +1150,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         state: stateFor(0),
         icon: Icons.send_rounded,
         subtitle: _job.createdAt == null
-            ? 'Posted to RB-CARS.'
+            ? 'Posted to SUGO.'
             : Fmt.dateTime(_job.createdAt!),
       ),
       SugoTimelineStep(
@@ -982,6 +1178,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       final List<TrackingStage> route = TrackingStage.timelineFor(
         tracking.stage,
         journey: _journey,
+        dropOff: _job.isSelfDropOff,
       );
       final int stageIndex = route.indexOf(tracking.stage);
       for (int i = 0; i < route.length; i++) {
@@ -1020,7 +1217,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         icon: Icons.verified_rounded,
         subtitle: _isClient
             ? 'Rate your technician when it is done.'
-            : 'Closed, and fed back to RB-CARS.',
+            : 'Closed, and fed back to SUGO.',
       ),
     );
 
@@ -1033,6 +1230,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   /// back?"
   List<Widget> _trackingSection(JobTracking? tracking) {
     if (tracking == null && !_needsTracking) return const <Widget>[];
+    // Shown higher up instead - see `_showsDropOffRoute`.
+    if (_showsDropOffRoute(tracking)) return const <Widget>[];
     // A finished home visit's trip ended at "Repairing at your home", which
     // would read as still going. The status card says it is done.
     if (_isHomeVisit &&
@@ -1047,8 +1246,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     // Only while the unit is on the bench - see `asksReturnChoice`. Before
     // that there is nothing to bring back yet; after it, the unit has already
     // been moved and the server will not accept a change of mind.
+    // Never on a drop-off (2026-11-17): the client chose "I'll bring it",
+    // which covers the way back too - collection was set when they booked.
+    // Asking "deliver it to me?" would offer a trip that is not part of the
+    // job and a fee nobody agreed.
     final bool canChooseReturn =
         _isClient &&
+        !_job.isSelfDropOff &&
         technicianId != null &&
         (_job.status == JobStatus.confirmed ||
             _job.status == JobStatus.inProgress) &&
@@ -1059,7 +1263,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            SectionHeader(title: _isHomeVisit ? 'Trip' : 'Delivery'),
+            SectionHeader(
+              title: _isHomeVisit
+                  ? 'Trip'
+                  : _job.isSelfDropOff
+                  ? 'Drop-off and collection'
+                  : 'Delivery',
+            ),
             const SizedBox(height: AppSizes.md),
             if (stage == null)
               Text(
@@ -1107,7 +1317,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             // The technician is told, on the job itself, when there is no
             // delivery trip to make.
             if (!_isClient && !_isHomeVisit)
-              _ClientCollectsNote(jobId: _job.id),
+              _ClientCollectsNote(jobId: _job.id, tracking: _tracking),
             // A working technician already has this in their work card.
             if (!_isWorking) ...<Widget>[
               const SizedBox(height: AppSizes.lg),
@@ -1115,8 +1325,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 label: _isClient
                     ? (_isHomeVisit
                           ? 'Track your technician'
+                          : _job.isSelfDropOff
+                          ? (stage == TrackingStage.readyForCollection
+                                ? 'Route to the shop'
+                                : 'Repair progress')
                           : 'Track your appliance')
-                    : (_isHomeVisit ? 'Trip to the client' : 'Delivery controls'),
+                    : (_isHomeVisit
+                          ? 'Trip to the client'
+                          : _job.isSelfDropOff
+                          ? 'Drop-off and collection'
+                          : 'Delivery controls'),
                 icon: _isClient
                     ? Icons.location_on_outlined
                     : Icons.navigation_outlined,
@@ -1134,6 +1352,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           technicianId: technicianId,
           stage: stage,
         ),
+        const SizedBox(height: AppSizes.md),
+      ],
+      // What a drop-off client gets instead of the question: the answer
+      // they already gave, said once.
+      if (_isClient &&
+          _job.isSelfDropOff &&
+          stage != null &&
+          !stage.isFinished &&
+          stage != TrackingStage.readyForCollection &&
+          stage != TrackingStage.droppingOff) ...<Widget>[
+        const _CollectAtShopNote(),
         const SizedBox(height: AppSizes.md),
       ],
     ];
@@ -1157,46 +1386,60 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               name: name,
               avatarUrl: _counterpartAvatar,
             ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SugoAvatar(name: name, imageUrl: _counterpartAvatar, size: 46),
-          const SizedBox(width: AppSizes.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  _isClient
-                      ? (party.technicianIsRequest
-                            ? 'Requested technician'
-                            : 'Your technician')
-                      : 'Your client',
-                  style: AppTextStyles.overline,
+          Row(
+            children: <Widget>[
+              SugoAvatar(name: name, imageUrl: _counterpartAvatar, size: 46),
+              const SizedBox(width: AppSizes.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      _isClient
+                          ? (party.technicianIsRequest
+                                ? 'Requested technician'
+                                : 'Your technician')
+                          : 'Your client',
+                      style: AppTextStyles.overline,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.titleSmall,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleSmall,
+              ),
+              const SizedBox(width: AppSizes.sm),
+              Text(
+                'View profile',
+                style: AppTextStyles.micro.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.secondaryDark,
                 ),
-              ],
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppColors.secondaryDark,
+              ),
+            ],
+          ),
+          // The client's number, on the technician's side (2026-11-17), with
+          // a Call button - to say they are running late or to find the house.
+          if (!_isClient && _clientPhone != null) ...<Widget>[
+            const Divider(height: AppSizes.xl),
+            _ClientPhoneRow(
+              phone: _clientPhone!,
+              onCall: () => ContactLauncher.call(context, _clientPhone),
             ),
-          ),
-          const SizedBox(width: AppSizes.sm),
-          Text(
-            'View profile',
-            style: AppTextStyles.micro.copyWith(
-              fontWeight: FontWeight.w700,
-              color: AppColors.secondaryDark,
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 18,
-            color: AppColors.secondaryDark,
-          ),
+          ],
         ],
       ),
     );
@@ -1302,29 +1545,62 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   /// What this costs, and who is paid.
   ///
-  /// SUGO records a *budget range* the client set when posting, and nothing
-  /// else: there is no payments table, no invoice and no platform fee,
-  /// because money changes hands directly between the two people. The card
-  /// therefore shows the budget as a budget, states the payment arrangement
-  /// plainly, and does not invent a "service fee" line to look complete.
+  /// The price the client was quoted (2026-11-17): the labor fee for the
+  /// symptom, the travel or delivery fee for the distance, and the estimated
+  /// total. It replaced the client's own budget range, which was a guess
+  /// made before anyone was matched. Money still changes hands directly
+  /// between the two people - the note below says so - so there is no
+  /// invented "service fee" line.
+  /// Folded to the one number (2026-11-17): the estimated total, or the
+  /// labor fee until the total is known.
   Widget _priceCard() {
-    return SugoCard(
+    final JobPrice price = _price;
+
+    return SugoFoldCard(
+      icon: Icons.payments_outlined,
+      title: 'Price',
+      summary: price.total != null
+          ? 'Estimated total ${price.total}'
+          : price.laborWithUrgent != null
+          ? 'Labor fee ${price.laborWithUrgent}'
+          : 'To be confirmed',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const SectionHeader(title: 'Price'),
-          const SizedBox(height: AppSizes.md),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'Your budget',
-                  style: AppTextStyles.subtitle.copyWith(fontSize: 13),
-                ),
-              ),
-              Text(_job.budgetLabel, style: AppTextStyles.price),
-            ],
-          ),
+          if (price.labor == null)
+            _PriceRow(label: 'Labor fee', value: 'To be confirmed')
+          else ...<Widget>[
+            Text(
+              price.labor!.symptom,
+              style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: AppSizes.sm),
+            _PriceRow(label: 'Labor fee', value: price.labor!.fee),
+          ],
+          // Urgent jobs: 20% of the labor on top (2026-11-17).
+          if (price.hasUrgentFee)
+            _PriceRow(
+              label: JobPrice.urgentFeeLabel,
+              value: price.urgentFeeText!,
+            ),
+          // Pickup and delivery prints as its two trips (2026-11-17).
+          if (price.distanceFeeLines
+              case final List<({String label, int amount})> lines)
+            for (final ({String label, int amount}) line in lines)
+              _PriceRow(label: line.label, value: '₱${line.amount}')
+          else if (price.feeLabel != null)
+            _PriceRow(
+              label: price.distanceFeeLabel!,
+              value: 'Agreed with the technician',
+            ),
+          if (price.total != null) ...<Widget>[
+            const Divider(height: AppSizes.lg),
+            _PriceRow(
+              label: 'Estimated total',
+              value: price.total!,
+              bold: true,
+            ),
+          ],
           const SizedBox(height: AppSizes.md),
           Container(
             padding: const EdgeInsets.all(AppSizes.md),
@@ -1367,15 +1643,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   // ------------------------------------------------------------- details
 
+  /// Folded to the device and the problem (2026-11-17).
   Widget _detailsCard() {
     final Job job = _job;
 
-    return SugoCard(
+    return SugoFoldCard(
+      icon: Icons.description_outlined,
+      title: 'Details',
+      summary: '${job.deviceType.label} · ${job.symptomLabel}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const SectionHeader(title: 'Details'),
-          const SizedBox(height: AppSizes.md),
           _DetailRow(label: 'Device', value: job.deviceType.label),
           _DetailRow(label: 'Problem', value: job.symptomLabel),
           _DetailRow(
@@ -1412,16 +1690,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
+  /// Folded to how many there are (2026-11-17).
   Widget _photosCard() {
-    return SugoCard(
+    return SugoFoldCard(
+      icon: Icons.photo_library_outlined,
+      title: 'Photos',
+      summary: '${_job.photoUrls.length} attached · tap to enlarge',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SectionHeader(
-            title: 'Photos',
-            subtitle: '${_job.photoUrls.length} attached · tap to enlarge',
-          ),
-          const SizedBox(height: AppSizes.md),
           SizedBox(
             height: 96,
             child: ListView.separated(
@@ -1471,6 +1748,49 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ),
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Live" or "Updated 4 min ago", as a glass pill on the hero band, with a
+/// green dot while the position is fresh.
+class _FreshnessPill extends StatelessWidget {
+  const _FreshnessPill({required this.tracking});
+
+  final JobTracking tracking;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: tracking.isLive
+                  ? const Color(0xFF4ADE80)
+                  : Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            tracking.freshnessLabel,
+            style: AppTextStyles.micro.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -1575,14 +1895,17 @@ class _ErrorNote extends StatelessWidget {
 /// otherwise, including while it loads: the default is delivery, and a note
 /// that flickered in and out would be worse than one that simply appears.
 class _ClientCollectsNote extends StatelessWidget {
-  const _ClientCollectsNote({required this.jobId});
+  const _ClientCollectsNote({required this.jobId, required this.tracking});
 
   final String jobId;
+
+  /// The screen's own service, so a test's fake answers here too.
+  final TrackingService tracking;
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<ReturnMethod>(
-      future: TrackingService().returnMethod(jobId),
+      future: tracking.returnMethod(jobId),
       builder: (BuildContext context, AsyncSnapshot<ReturnMethod> snapshot) {
         if (snapshot.data != ReturnMethod.clientPickup) {
           return const SizedBox.shrink();
@@ -1592,6 +1915,161 @@ class _ClientCollectsNote extends StatelessWidget {
           child: ClientPickupBanner(),
         );
       },
+    );
+  }
+}
+
+/// "You'll collect it at the shop" - a drop-off client's answer to "how do
+/// you want it back?", which they gave when they booked "I'll bring it"
+/// (2026-11-17). Replaces the delivery-or-pickup choice on this job.
+class _CollectAtShopNote extends StatelessWidget {
+  const _CollectAtShopNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return SugoCard(
+      background: AppColors.primarySofter,
+      borderColor: AppColors.primarySoft,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: AppSizes.iconTile,
+            height: AppSizes.iconTile,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppSizes.radius),
+            ),
+            child: const Icon(
+              Icons.storefront_rounded,
+              color: AppColors.primary,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: AppSizes.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  "You'll collect it at the shop",
+                  style: AppTextStyles.titleSmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'You chose to bring it in yourself, so there is no '
+                  'delivery and no delivery fee. We will tell you when it is '
+                  'ready for collection, and show you the way.',
+                  style: AppTextStyles.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One line of the price card: label left, amount right, both free to wrap.
+class _PriceRow extends StatelessWidget {
+  const _PriceRow({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSizes.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            flex: 3,
+            child: Text(
+              label,
+              style: AppTextStyles.subtitle.copyWith(fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: AppSizes.sm),
+          Flexible(
+            flex: 2,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: bold
+                  ? AppTextStyles.price
+                  : const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Phone · 0917 123 4567" with a Call button, under the client's name.
+class _ClientPhoneRow extends StatelessWidget {
+  const _ClientPhoneRow({required this.phone, required this.onCall});
+
+  final String phone;
+  final VoidCallback onCall;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppColors.successSoft,
+            borderRadius: BorderRadius.circular(AppSizes.sm + 2),
+          ),
+          child: const Icon(
+            Icons.phone_rounded,
+            size: 18,
+            color: AppColors.success,
+          ),
+        ),
+        const SizedBox(width: AppSizes.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('Phone', style: AppTextStyles.micro),
+              SelectableText(
+                phone,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSizes.sm),
+        FilledButton.icon(
+          onPressed: onCall,
+          icon: const Icon(Icons.call_rounded, size: 18),
+          label: const Text('Call'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.success,
+            minimumSize: const Size(0, AppSizes.touchTarget),
+          ),
+        ),
+      ],
     );
   }
 }

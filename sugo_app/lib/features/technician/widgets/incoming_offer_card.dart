@@ -6,8 +6,11 @@ import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_loading.dart';
 import '../../../core/widgets/sugo_pill.dart';
 import '../../rb_cars/models/job.dart';
+import '../../rb_cars/models/job_price.dart';
 import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/widgets/explainability_chip.dart';
+import '../../rb_cars/widgets/urgent_countdown.dart';
+import 'accept_job_dialog.dart';
 
 /// One job offered to this technician: Accept or Decline.
 ///
@@ -79,15 +82,29 @@ class IncomingOfferCard extends StatelessWidget {
     return '${elapsed.inDays} d ago';
   }
 
+  /// Accept asks "Ready to take this job?" first (2026-11-17).
+  ///
+  /// This is the same dialog as "Accept this job" in View task: the earnings,
+  /// the weather and the traffic on the way, and tips. Before, the card
+  /// accepted on one tap, so a technician who accepted from the dashboard
+  /// never saw the conditions the matcher had weighed. Now both ways in end
+  /// at the same last look, and [onAccept] runs only on "Accept job".
+  Future<void> _confirmAccept(BuildContext context) async {
+    final bool? proceed = await showAcceptJobDialog(context, match: match);
+    if (proceed == true) onAccept();
+  }
+
   @override
   Widget build(BuildContext context) {
     final JobSnapshot? job = match.job;
+    final DateTime? deadline = match.urgentDeadline;
 
     return SugoCard(
       margin: const EdgeInsets.only(bottom: AppSizes.md),
-      borderColor: job?.isUrgent ?? false
-          ? AppColors.accent.withValues(alpha: 0.45)
-          : null,
+      // An urgent request is the one thing on the dashboard with a clock on
+      // it (2026-11-17), so it is the one card that looks like it.
+      borderColor: job?.isUrgent ?? false ? AppColors.accent : null,
+      borderWidth: job?.isUrgent ?? false ? 1.6 : 1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -95,7 +112,7 @@ class IncomingOfferCard extends StatelessWidget {
             children: <Widget>[
               if (job?.isUrgent ?? false)
                 const SugoPill.badge(
-                  label: 'Needed today',
+                  label: 'URGENT',
                   icon: Icons.bolt_rounded,
                   tint: AppColors.accentSoft,
                   foreground: AppColors.accentDark,
@@ -108,22 +125,38 @@ class IncomingOfferCard extends StatelessWidget {
                   foreground: AppColors.primaryDark,
                 ),
               const Spacer(),
-              Icon(
-                Icons.hourglass_bottom_rounded,
-                size: 13,
-                color: AppColors.hint,
-              ),
-              const SizedBox(width: 3),
-              Text(
-                _waitingLabel,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
+              // Urgent: the five minutes they have to accept, counting down.
+              if (deadline != null)
+                UrgentCountdown(deadline: deadline)
+              else ...<Widget>[
+                Icon(
+                  Icons.hourglass_bottom_rounded,
+                  size: 13,
+                  color: AppColors.hint,
                 ),
-              ),
+                const SizedBox(width: 3),
+                Text(
+                  _waitingLabel,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ],
           ),
+          if (deadline != null) ...<Widget>[
+            const SizedBox(height: AppSizes.sm),
+            const Text(
+              'Accept within 5 minutes or it goes to another technician.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accentDark,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSizes.md),
 
           Row(
@@ -168,15 +201,25 @@ class IncomingOfferCard extends StatelessWidget {
                             icon: job!.servicePath!.icon,
                             label: job.servicePath!.label,
                           ),
+                        // Before accepting (2026-11-16): a drop-off job means
+                        // no pickup or delivery trip.
+                        if (job?.isSelfDropOff ?? false)
+                          const _Meta(
+                            icon: Icons.directions_walk_rounded,
+                            label: 'Client drops off',
+                          ),
                         if (match.breakdown.context.distanceLabel != null)
                           _Meta(
                             icon: Icons.place_rounded,
                             label: match.breakdown.context.distanceLabel!,
                           ),
+                        // The labor fee for the symptom (2026-11-17), in place
+                        // of the client's budget range - the price the job
+                        // was actually quoted at.
                         if (job != null)
                           _Meta(
                             icon: Icons.payments_outlined,
-                            label: job.budgetLabel,
+                            label: _laborLabel(job),
                           ),
                       ],
                     ),
@@ -190,7 +233,10 @@ class IncomingOfferCard extends StatelessWidget {
 
           if (job?.hasPhysicalDamage ?? false) ...<Widget>[
             const SizedBox(height: AppSizes.sm),
+            // Same trap as `_Meta`: without Expanded this line overflows on a
+            // narrow phone instead of wrapping.
             const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Icon(
                   Icons.warning_amber_rounded,
@@ -198,12 +244,14 @@ class IncomingOfferCard extends StatelessWidget {
                   color: AppColors.warning,
                 ),
                 SizedBox(width: 5),
-                Text(
-                  'Client reported visible physical damage',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.warning,
+                Expanded(
+                  child: Text(
+                    'Client reported visible physical damage',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.warning,
+                    ),
                   ),
                 ),
               ],
@@ -265,7 +313,7 @@ class IncomingOfferCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: ElevatedButton(
-                  onPressed: isBusy ? null : onAccept,
+                  onPressed: isBusy ? null : () => _confirmAccept(context),
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(42),
                     // Half a row is narrow: at the theme's padding the
@@ -372,22 +420,47 @@ class _Meta extends StatelessWidget {
   final IconData icon;
   final String label;
 
+  /// The label is [Flexible] so a long one wraps instead of overflowing.
+  ///
+  /// A [Wrap] gives each child at most its own width, but a bare [Text] in a
+  /// [Row] ignores that and paints past the edge. On a narrow phone, with the
+  /// "Top pick" chip beside this column, "Labor ₱500 + urgent ₱100" was 21 px
+  /// too wide. It wraps rather than ellipsising because the urgent fee is
+  /// part of the decision the technician is making.
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
+      // Top-aligned, so the icon stays on the first line when the label wraps.
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Icon(icon, size: 13, color: AppColors.textSecondary),
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 13, color: AppColors.textSecondary),
+        ),
         const SizedBox(width: 3),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
           ),
         ),
       ],
     );
   }
+}
+
+/// "Labor ₱600", "Labor ₱600 + urgent ₱120" on an urgent job (2026-11-17),
+/// or "Price to be confirmed" for a symptom with no catalogue price.
+String _laborLabel(JobSnapshot job) {
+  final JobPrice price = JobPrice.forSnapshot(job);
+  final String? fee = price.labor?.fee;
+  if (fee == null) return 'Price to be confirmed';
+  return price.hasUrgentFee
+      ? 'Labor $fee + urgent ${price.urgentFeeText}'
+      : 'Labor $fee';
 }

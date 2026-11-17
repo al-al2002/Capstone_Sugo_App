@@ -25,9 +25,9 @@ void main() {
     );
 
     // The asset load fails asynchronously; let it, then rebuild.
-    await tester.runAsync(() => Future<void>.delayed(
-          const Duration(milliseconds: 50),
-        ));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
     await tester.pump();
 
     expect(find.byType(SugoLogoMark), findsOneWidget);

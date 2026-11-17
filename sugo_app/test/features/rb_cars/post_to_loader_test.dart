@@ -36,9 +36,10 @@ void main() {
       service: _GatedService(gate),
     );
     posting.selectCategory(DeviceCategory.laptop);
-    // Keep this loader test on the normal matching path. Ambiguous symptoms
-    // now intentionally post to the technician community first.
-    posting.selectSymptom('laptop_slow_or_freezing');
+    // Keep this loader test on the normal matching path. A basic issue
+    // ("Very slow or freezing") suggests the technician community since
+    // 2026-11-17, so this uses one that is matched.
+    posting.selectSymptom('laptop_overheating');
     posting.setLocation(latitude: 7.0731, longitude: 125.6128);
     return (posting: posting, gate: gate);
   }

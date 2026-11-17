@@ -120,9 +120,7 @@ class _SugoTruckDriveState extends State<SugoTruckDrive>
                   children: <Widget>[
                     Positioned.fill(
                       child: CustomPaint(
-                        painter: _RoadPainter(
-                          offset: widget.moving ? t : 0,
-                        ),
+                        painter: _RoadPainter(offset: widget.moving ? t : 0),
                       ),
                     ),
                     if (widget.moving)

@@ -53,6 +53,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   double? _shopLat;
   double? _shopLng;
 
+  /// The work this technician takes (2026-11-17). Matching only offers them
+  /// jobs of a kind they take, so this is editable here, not only at
+  /// registration - a technician who opens a shop later must be able to say.
+  bool _homeService = true;
+  bool _shopRepair = true;
+
   bool _loadingWorkshop = true;
   bool _saving = false;
 
@@ -83,6 +89,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       _shopName.text = workshop?.name ?? '';
       _shopLat = workshop?.latitude;
       _shopLng = workshop?.longitude;
+      _homeService = workshop?.homeService ?? true;
+      _shopRepair = workshop?.shopRepair ?? true;
       _loadingWorkshop = false;
     });
   }
@@ -106,6 +114,19 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   Future<void> _finish({required bool skip}) async {
     if (_saving) return;
+    if (!skip && _isTechnician) {
+      if (!_homeService && !_shopRepair) {
+        UiFeedback.showError(context, 'Choose at least one kind of work.');
+        return;
+      }
+      if (_shopRepair && (_shopLat == null || _shopLng == null)) {
+        UiFeedback.showError(
+          context,
+          'Pin your workshop on the map to take Shop Repair jobs.',
+        );
+        return;
+      }
+    }
     setState(() => _saving = true);
 
     final SessionController session = context.read<SessionController>();
@@ -121,6 +142,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         shopName: skip || !_isTechnician ? null : _shopName.text,
         shopLatitude: skip ? null : _shopLat,
         shopLongitude: skip ? null : _shopLng,
+        homeService: skip || !_isTechnician ? null : _homeService,
+        shopRepair: skip || !_isTechnician ? null : _shopRepair,
         isTechnician: _isTechnician,
         markComplete: widget.isFirstRun,
       );
@@ -243,6 +266,47 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             if (_isTechnician) ...<Widget>[
               const SizedBox(height: AppSizes.xl),
               const Text(
+                'Work you take',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'You are only offered jobs of the kind you take. Shop Repair '
+                'needs your workshop pinned below.',
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: AppSizes.sm),
+              SwitchListTile.adaptive(
+                key: const ValueKey<String>('takes-home-service'),
+                contentPadding: EdgeInsets.zero,
+                value: _homeService,
+                onChanged: _saving || _loadingWorkshop
+                    ? null
+                    : (bool v) => setState(() => _homeService = v),
+                title: const Text('Home Service'),
+                subtitle: const Text('You go to the client and fix it there.'),
+              ),
+              SwitchListTile.adaptive(
+                key: const ValueKey<String>('takes-shop-repair'),
+                contentPadding: EdgeInsets.zero,
+                value: _shopRepair,
+                onChanged: _saving || _loadingWorkshop
+                    ? null
+                    : (bool v) => setState(() => _shopRepair = v),
+                title: const Text('Shop Repair'),
+                subtitle: const Text(
+                  'The unit comes to your workshop: dropped off or collected.',
+                ),
+              ),
+              const SizedBox(height: AppSizes.lg),
+              const Text(
                 'Your workshop',
                 style: TextStyle(
                   fontSize: 15,
@@ -255,7 +319,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 'Where you repair units that cannot be fixed on site. Clients '
                 'who collect a repaired appliance are routed here, and it is '
                 'only shared with clients who have booked you.',
-                style: AppTextStyles.caption.copyWith(fontSize: 12, height: 1.4),
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 12,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: AppSizes.md),
               TextField(

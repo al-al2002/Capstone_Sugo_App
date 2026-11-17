@@ -31,7 +31,10 @@ void main() {
     });
 
     test('knows when the traveller has left it', () {
-      expect(distanceToRoute(const LatLng(7.0720, 125.6100), route), lessThan(5));
+      expect(
+        distanceToRoute(const LatLng(7.0720, 125.6100), route),
+        lessThan(5),
+      );
       // About 330 m east of the street: past the 200 m re-route threshold.
       expect(
         distanceToRoute(const LatLng(7.0720, 125.6130), route),
@@ -41,8 +44,9 @@ void main() {
   });
 
   group('the travelling marker', () {
-    Widget host(Widget child) =>
-        MaterialApp(home: Scaffold(body: Center(child: child)));
+    Widget host(Widget child) => MaterialApp(
+      home: Scaffold(body: Center(child: child)),
+    );
 
     testWidgets('pulses while live', (WidgetTester tester) async {
       await tester.pumpWidget(

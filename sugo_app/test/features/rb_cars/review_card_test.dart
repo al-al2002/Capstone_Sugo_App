@@ -155,7 +155,9 @@ void main() {
       await small(tester);
       await tester.pumpWidget(
         inList(<Widget>[
-          ReviewCard(review: TechnicianReview.fromJson(reviewJson(comment: ''))),
+          ReviewCard(
+            review: TechnicianReview.fromJson(reviewJson(comment: '')),
+          ),
         ]),
       );
       await tester.pumpAndSettle();
@@ -209,16 +211,16 @@ void main() {
                 children: <Widget>[
                   const PastWorkSummary(
                     entries: <WorkHistoryEntry>[
-                      WorkHistoryEntry(deviceType: DeviceType.network, jobs: 112),
+                      WorkHistoryEntry(
+                        deviceType: DeviceType.network,
+                        jobs: 112,
+                      ),
                       WorkHistoryEntry(deviceType: DeviceType.laptop, jobs: 9),
                     ],
                   ),
                   ReviewCard(
                     review: TechnicianReview.fromJson(
-                      reviewJson(
-                        brand: 'Samsung Galaxy',
-                        path: 'it_community',
-                      ),
+                      reviewJson(brand: 'Samsung Galaxy', path: 'it_community'),
                     ),
                   ),
                 ],

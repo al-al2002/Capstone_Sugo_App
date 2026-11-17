@@ -11,6 +11,7 @@ import '../models/technician_specialization.dart';
 import '../services/rb_cars_service.dart';
 import '../services/technician_directory_service.dart';
 import '../widgets/review_card.dart';
+import '../../../core/widgets/sugo_brand_cover.dart';
 import '../../profile/widgets/profile_cover_header.dart';
 import '../models/job_enums.dart';
 
@@ -183,21 +184,14 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
       backgroundColor: AppColors.background,
       appBar: const SugoAppBar(title: 'Technician', surface: true),
       body: header == null
-          ? _FullScreenState(
-              loading: _loading,
-              error: _error,
-              onRetry: _load,
-            )
+          ? _FullScreenState(loading: _loading, error: _error, onRetry: _load)
           : RefreshIndicator(
               onRefresh: _load,
               child: CustomScrollView(
                 controller: _scroll,
                 slivers: <Widget>[
                   SliverToBoxAdapter(
-                    child: _Header(
-                      technician: header,
-                      details: details,
-                    ),
+                    child: _Header(technician: header, details: details),
                   ),
 
                   // The banner appears only when the extra data failed but the
@@ -237,9 +231,7 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
                             AppSizes.screenPadding,
                             0,
                           ),
-                          child: PastWorkSummary(
-                            entries: details.workHistory,
-                          ),
+                          child: PastWorkSummary(entries: details.workHistory),
                         ),
                       ),
 
@@ -296,7 +288,9 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
                       ),
                   ],
 
-                  const SliverToBoxAdapter(child: SizedBox(height: AppSizes.xxl)),
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: AppSizes.xxl),
+                  ),
                 ],
               ),
             ),
@@ -336,16 +330,39 @@ class _Header extends StatelessWidget {
             name: technician.displayName,
             avatarUrl: technician.avatarUrl,
             verified: technician.isVerified,
+            style: SugoCoverStyle.technician,
+            roleLabel: 'Technician',
+            // The three figures, inside the panel since 2026-11-16 (they
+            // were three separate boxes under it).
+            stats: <ProfileStat>[
+              ProfileStat(
+                label: 'Rating',
+                value: technician.rating > 0
+                    ? technician.rating.toStringAsFixed(1)
+                    : '—',
+                icon: Icons.star_rounded,
+                color: AppColors.accent,
+              ),
+              ProfileStat(
+                label: 'Jobs done',
+                value: '${technician.totalJobs}',
+                count: technician.totalJobs,
+                icon: Icons.task_alt_rounded,
+                color: AppColors.success,
+              ),
+              ProfileStat(
+                label: 'Reviews',
+                value: '${details?.reviewCount ?? technician.reviewCount}',
+                count: details?.reviewCount ?? technician.reviewCount,
+                icon: Icons.reviews_outlined,
+              ),
+            ],
             subtitle: <String>[
               technician.specializationLabel,
               if (technician.distanceAwayLabel != null)
                 technician.distanceAwayLabel!,
             ].join('  ·  '),
             badges: <Widget>[
-              const ProfileBadge(
-                icon: Icons.engineering_rounded,
-                label: 'Technician',
-              ),
               ProfileBadge(
                 icon: Icons.workspace_premium_rounded,
                 label: technician.tier.label,
@@ -362,71 +379,7 @@ class _Header extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: AppSizes.md),
-          Row(
-            children: <Widget>[
-              _Stat(
-                value: technician.rating > 0
-                    ? technician.rating.toStringAsFixed(1)
-                    : '—',
-                label: 'Rating',
-              ),
-              const SizedBox(width: AppSizes.sm),
-              _Stat(
-                value: '${technician.totalJobs}',
-                label: 'Jobs done',
-              ),
-              const SizedBox(width: AppSizes.sm),
-              _Stat(
-                value: '${details?.reviewCount ?? technician.reviewCount}',
-                label: 'Reviews',
-              ),
-            ],
-          ),
         ],
-      ),
-    );
-  }
-}
-
-/// One figure in the header's three-up stat row.
-class _Stat extends StatelessWidget {
-  const _Stat({required this.value, required this.label});
-
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: AppSizes.md),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-        ),
-        child: Column(
-          children: <Widget>[
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -457,7 +410,9 @@ class _Specializations extends StatelessWidget {
             spacing: AppSizes.sm,
             runSpacing: AppSizes.sm,
             children: items
-                .map((TechnicianSpecialization s) => _SpecializationBadge(spec: s))
+                .map(
+                  (TechnicianSpecialization s) => _SpecializationBadge(spec: s),
+                )
                 .toList(growable: false),
           ),
         ),
@@ -483,10 +438,7 @@ class _SpecializationBadge extends StatelessWidget {
     final String? level = spec.skillLabel;
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.md,
-        vertical: 7,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: 7),
       decoration: BoxDecoration(
         color: verified ? AppColors.primarySoft : AppColors.surface,
         borderRadius: BorderRadius.circular(AppSizes.pillRadius),
@@ -946,7 +898,11 @@ class _FullScreenState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(Icons.person_off_outlined, size: 34, color: AppColors.hint),
+            const Icon(
+              Icons.person_off_outlined,
+              size: 34,
+              color: AppColors.hint,
+            ),
             const SizedBox(height: AppSizes.md),
             Text(
               error ?? 'This technician is no longer listed.',

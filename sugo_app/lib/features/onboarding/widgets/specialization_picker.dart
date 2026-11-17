@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../models/specialization_catalog.dart';
+import 'onboarding_step_intro.dart';
 
 /// Device -> brand multi-select, across both categories at once.
 ///
@@ -138,12 +139,12 @@ class _SpecializationPickerState extends State<SpecializationPicker> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('What do you repair?', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'Pick every device you work on, then the brands you know best. '
-          'You can choose from both groups — most technicians do.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.handyman_rounded,
+          title: 'What do you repair?',
+          subtitle:
+              'Pick every device you work on, then the brands you know best. '
+              'You can choose from both groups — most technicians do.',
         ),
         const SizedBox(height: AppSizes.xl),
 

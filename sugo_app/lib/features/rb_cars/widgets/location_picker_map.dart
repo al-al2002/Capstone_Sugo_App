@@ -34,6 +34,7 @@ class LocationPickerMap extends StatefulWidget {
 
   final double? latitude;
   final double? longitude;
+
   /// Fires with the coordinates, and with an address once one is known.
   ///
   /// Called TWICE for a map tap: immediately with a null address so the pin and
@@ -154,7 +155,10 @@ class _LocationPickerMapState extends State<LocationPickerMap> {
     }
 
     setState(() => _searching = true);
-    _debounce = Timer(const Duration(milliseconds: 450), () => _runSearch(query));
+    _debounce = Timer(
+      const Duration(milliseconds: 450),
+      () => _runSearch(query),
+    );
   }
 
   Future<void> _runSearch(String query) async {

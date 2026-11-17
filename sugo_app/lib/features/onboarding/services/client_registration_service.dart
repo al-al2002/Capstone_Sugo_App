@@ -331,10 +331,7 @@ class ClientRegistrationService {
   /// rewrites the history of a booking that used it.
   Future<void> deleteAddress(String addressId) async {
     try {
-      await _client
-          .from('client_saved_addresses')
-          .delete()
-          .eq('id', addressId);
+      await _client.from('client_saved_addresses').delete().eq('id', addressId);
     } on PostgrestException catch (error) {
       _log('deleteAddress', error);
       throw RbCarsFailure(_describe(error, 'Could not delete that address.'));

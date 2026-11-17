@@ -9,15 +9,16 @@ import 'job_enums.dart';
 /// **suggestion vocabulary**, not a column: it says what the rule base thinks
 /// should happen, and [servicePath] is how that gets written down.
 ///
-/// Two routes collapse onto `it_community`, the technician community route, and the pair is still
-/// distinguishable because they disagree about [confidence]:
+/// Two routes share a storable path with another and are told apart by
+/// [confidence]:
 ///
-/// * [remoteAssist] - we are confident nobody needs to travel. High confidence.
-/// * [needsDiagnosis] - nobody can tell yet what this is. Low confidence.
-///
-/// That is the same distinction the original catalog drew with its `isAmbiguous`
-/// flag, so nothing about how RB-CARS reasons has changed; the vocabulary just
-/// names it out loud instead of leaving it implied by a boolean.
+/// * [remoteAssist] - we are confident nobody needs to travel. Writes
+///   `it_community` at high confidence: a question for the technician
+///   community, not a booking.
+/// * [needsDiagnosis] - nobody can tell yet what this is. Writes
+///   `home_service` at LOW confidence: RB-CARS matches a technician to come
+///   and look. (Until 2026-11-15 this also wrote `it_community`, so those
+///   jobs were never matched - see the enum value.)
 enum ServiceRoute {
   homeService(
     'Home service',
@@ -37,10 +38,18 @@ enum ServiceRoute {
     ServicePath.itCommunity,
     ClassificationConfidence.high,
   ),
+  // Home service, at LOW confidence (2026-11-15). This route used to write
+  // `it_community`, which posted the job as a community question and never
+  // ran RB-CARS - so a client reporting a blue screen or a dead laptop got
+  // advice instead of a technician. A diagnosis needs hands on the device:
+  // a matched technician comes to look, and if it turns out to need the
+  // bench, the existing "take to shop" reroute moves it to pickup. The low
+  // confidence still records that the rule base could not tell what it was.
   needsDiagnosis(
     'Needs diagnosis',
-    'The symptom alone does not say what is wrong. It gets a look first.',
-    ServicePath.itCommunity,
+    'The symptom alone does not say what is wrong, so a technician comes to '
+        'diagnose it first.',
+    ServicePath.homeService,
     ClassificationConfidence.low,
   );
 
@@ -54,6 +63,33 @@ enum ServiceRoute {
 
   /// What this route implies about how sure the rule base is.
   final ClassificationConfidence confidence;
+}
+
+/// What kind of work an issue is (2026-11-16).
+///
+/// The home screen always offered "Maintenance" and "Installation" beside the
+/// device tiles, but the catalogue only knew faults, so those tiles could only
+/// pick a device and leave the client hunting for a problem that was not
+/// there. Now the catalogue carries the work itself - an aircon cleaning, a
+/// TV mounted, a laptop tune-up - and the problem picker groups the list by
+/// kind.
+///
+/// Presentation only: `jobs.problem_symptom` stores the code as before, and
+/// RB-CARS matches on the device, so a maintenance job reaches exactly the
+/// technicians a repair on the same device would.
+enum IssueKind {
+  repair('Repairs'),
+  maintenance('Maintenance'),
+  installation('Installation');
+
+  const IssueKind(this.label);
+
+  /// The group heading in the problem picker.
+  final String label;
+
+  /// A fault can involve damage; a cleaning or an install cannot, so the
+  /// damage question is only asked for repairs.
+  bool get asksAboutDamage => this == IssueKind.repair;
 }
 
 /// One selectable answer to "What is it doing?".
@@ -71,6 +107,7 @@ class IssueOption {
     required this.hintText,
     this.isUrgent = false,
     this.impliesPhysicalDamage = false,
+    this.kind = IssueKind.repair,
   });
 
   /// Stored in `jobs.problem_symptom`.
@@ -96,6 +133,9 @@ class IssueOption {
   /// damage?". A cracked screen is damage by definition, and making someone
   /// tick a box to confirm what they just said is a question with one answer.
   final bool impliesPhysicalDamage;
+
+  /// Repair, maintenance or installation. See [IssueKind].
+  final IssueKind kind;
 }
 
 /// The selectable issues, grouped by device type.
@@ -178,6 +218,16 @@ class IssueCatalog {
       suggestedRoute: ServiceRoute.pickup,
       hintText: 'Recovery work needs bench equipment and time.',
     ),
+    IssueOption(
+      code: 'laptop_cleaning_tune_up',
+      label: 'Tune-up and cleaning',
+      deviceType: DeviceType.laptop,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'Dust cleaned out, fresh thermal paste and a speed check, done at '
+          'your place.',
+      kind: IssueKind.maintenance,
+    ),
 
     // --------------------------------------------------------- phone / tablet
     IssueOption(
@@ -244,6 +294,16 @@ class IssueCatalog {
           'Could be a blocked grille or a dead module. Both are bench '
           'work.',
     ),
+    IssueOption(
+      code: 'phone_checkup',
+      label: 'Battery and charging-port check-up',
+      deviceType: DeviceType.phone,
+      suggestedRoute: ServiceRoute.pickup,
+      hintText:
+          'A battery health check and a port clean-out. Quick enough to wait '
+          'for at the shop.',
+      kind: IssueKind.maintenance,
+    ),
 
     // --------------------------------------------------------------- appliance
     IssueOption(
@@ -297,6 +357,64 @@ class IssueCatalog {
           'The part has to be identified and sourced before a visit is '
           'worth booking.',
     ),
+    IssueOption(
+      code: 'appliance_aircon_cleaning',
+      label: 'Aircon cleaning',
+      deviceType: DeviceType.appliance,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'Filters, coils and drain cleaned where it hangs. A window type '
+          'costs less than a split type.',
+      kind: IssueKind.maintenance,
+    ),
+    IssueOption(
+      code: 'appliance_checkup',
+      label: 'Appliance check-up',
+      deviceType: DeviceType.appliance,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'An on-site inspection, so a small problem is caught before it '
+          'becomes a repair.',
+      kind: IssueKind.maintenance,
+    ),
+    IssueOption(
+      code: 'appliance_aircon_install_window',
+      label: 'Aircon installation: window type',
+      deviceType: DeviceType.appliance,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'Mounted, sealed and test-run. Cutting the wall or adding an outlet '
+          'costs extra.',
+      kind: IssueKind.installation,
+    ),
+    IssueOption(
+      code: 'appliance_aircon_install_split',
+      label: 'Aircon installation: split type',
+      deviceType: DeviceType.appliance,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'Indoor and outdoor units with about 3 m of piping. A longer pipe '
+          'run costs extra.',
+      kind: IssueKind.installation,
+    ),
+    IssueOption(
+      code: 'appliance_tv_mounting',
+      label: 'TV wall mounting',
+      deviceType: DeviceType.appliance,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'The bracket fixed to the wall and the TV hung level. Have the '
+          'bracket ready, or ask the technician to bring one.',
+      kind: IssueKind.installation,
+    ),
+    IssueOption(
+      code: 'appliance_washer_install',
+      label: 'Washing machine installation',
+      deviceType: DeviceType.appliance,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText: 'Water inlet and drain hose connected, then a test cycle.',
+      kind: IssueKind.installation,
+    ),
 
     // ----------------------------------------------------------- network / WiFi
     IssueOption(
@@ -328,6 +446,17 @@ class IssueCatalog {
       deviceType: DeviceType.network,
       suggestedRoute: ServiceRoute.homeService,
       hintText: 'Cabling and placement are decided in the building itself.',
+      kind: IssueKind.installation,
+    ),
+    IssueOption(
+      code: 'network_checkup',
+      label: 'Wi-Fi check-up',
+      deviceType: DeviceType.network,
+      suggestedRoute: ServiceRoute.homeService,
+      hintText:
+          'Speed tested in every room and the router placed to clear dead '
+          'spots.',
+      kind: IssueKind.maintenance,
     ),
     // ------------------------------------------------------------ CCTV
     //
@@ -344,6 +473,7 @@ class IssueCatalog {
       hintText:
           'Camera placement and cable runs are decided in the building '
           'itself, so this always starts with a visit.',
+      kind: IssueKind.installation,
     ),
     IssueOption(
       code: 'cctv_no_video',
@@ -399,6 +529,7 @@ class IssueCatalog {
       hintText:
           'The technician checks the recorder has free channels and '
           'the power supply has headroom before quoting.',
+      kind: IssueKind.installation,
     ),
 
     IssueOption(

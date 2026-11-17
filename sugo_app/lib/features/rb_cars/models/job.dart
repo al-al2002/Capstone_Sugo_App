@@ -2,6 +2,7 @@ import '../../../core/utils/formatters.dart';
 import 'job_enums.dart';
 import 'json_utils.dart';
 import 'problem_catalog.dart';
+import 'technician_preferences.dart';
 
 /// One row of the `jobs` table: a repair request posted by a client.
 class Job {
@@ -27,6 +28,10 @@ class Job {
     this.photoUrls = const <String>[],
     this.assignedTechnicianId,
     this.createdAt,
+    this.preferences = TechnicianPreferences.none,
+    this.deliveryOption,
+    this.distanceKm,
+    this.deliveryFee,
   });
 
   factory Job.fromJson(Map<String, dynamic> json) {
@@ -56,6 +61,12 @@ class Job {
       status: JobStatus.fromWire(json['status'] as String?),
       assignedTechnicianId: json['assigned_technician_id'] as String?,
       createdAt: asDate(json['created_at']),
+      preferences: TechnicianPreferences.fromJson(json),
+      deliveryOption: DeliveryOption.fromWire(
+        json['delivery_option'] as String?,
+      ),
+      distanceKm: asNullableDouble(json['distance_km']),
+      deliveryFee: asNullableInt(json['delivery_fee']),
     );
   }
 
@@ -89,6 +100,26 @@ class Job {
   final JobStatus status;
   final String? assignedTechnicianId;
   final DateTime? createdAt;
+
+  /// The client's hard requirements for their technician (the `pref_*`
+  /// columns). [TechnicianPreferences.none] on a job that set none, and on
+  /// every job posted before 20261115.
+  final TechnicianPreferences preferences;
+
+  /// Shop repairs only (20261116000001): self = the client drops it off and
+  /// collects it; delivery = the technician collects and returns it. Null on
+  /// other jobs, and on shop jobs from before it existed (they are delivery).
+  final DeliveryOption? deliveryOption;
+
+  /// Km from the job to the chosen technician's shop, and the fee that
+  /// implies - both written by the server when the client sends the request.
+  final double? distanceKm;
+  final int? deliveryFee;
+
+  /// A shop repair the client is bringing in themselves.
+  bool get isSelfDropOff =>
+      servicePath == ServicePath.pickup &&
+      deliveryOption == DeliveryOption.self;
 
   String get symptomLabel => ProblemCatalog.labelFor(problemSymptom);
 
@@ -178,7 +209,11 @@ class JobDraft {
       ..budgetMax = job.budgetMax
       ..preferredSchedule = job.preferredSchedule
       ..description = job.description
-      ..photoUrls = List<String>.of(job.photoUrls);
+      ..photoUrls = List<String>.of(job.photoUrls)
+      ..preferences = job.preferences
+      // As saved - null until the client books, so an edit never invents
+      // a choice the booking dialog has not asked yet.
+      ..deliveryOption = job.deliveryOption;
     draft.classification = ClassificationResult.evaluate(
       symptomCode: job.problemSymptom,
       hasPhysicalDamage: job.hasPhysicalDamage,
@@ -231,6 +266,21 @@ class JobDraft {
 
   List<String> photoUrls = <String>[];
 
+  /// Minimum requirements for the technician, from the "Your technician"
+  /// step. All optional; [TechnicianPreferences.none] matches as before.
+  TechnicianPreferences preferences = TechnicianPreferences.none;
+
+  /// How a shop repair travels. Null on a new post: since 2026-11-17 the
+  /// posting flow does not ask - the booking dialog does, with the exact fee
+  /// for the chosen technician's shop, and `job-response` saves the answer.
+  /// Set only by "Edit post", from the saved job, so an edit keeps it. Only
+  /// written when the path IS a shop repair - see [_columns].
+  DeliveryOption? deliveryOption;
+
+  /// [deliveryOption] when this is a shop repair, else null.
+  DeliveryOption? get effectiveDeliveryOption =>
+      servicePath == ServicePath.pickup ? deliveryOption : null;
+
   ServicePath? get servicePath =>
       servicePathOverride ?? classification?.servicePath;
 
@@ -281,6 +331,10 @@ class JobDraft {
     return <String, dynamic>{
       'client_id': clientId,
       ..._columns(),
+      // Only when the client set one. The columns default to null anyway, and
+      // leaving them out keeps a no-preference post working against a
+      // database the 20261115 migration has not reached yet.
+      if (preferences.hasAny) ...preferences.toColumns(),
       'status': JobStatus.pending.wire,
     };
   }
@@ -288,7 +342,17 @@ class JobDraft {
   /// The edited columns for "Edit post" - everything [toInsert] writes except
   /// who owns the job and where it is in its lifecycle, neither of which an
   /// edit may change. `handleUpdateJob` whitelists the same set.
-  Map<String, dynamic> toUpdate() => _columns();
+  ///
+  /// All six preference columns are always sent, nulls included, so an edit
+  /// that removes a preference clears it on the job instead of leaving the
+  /// old value in place.
+  Map<String, dynamic> toUpdate() => <String, dynamic>{
+    ..._columns(),
+    ...preferences.toColumns(),
+    // Always, null included: the database refuses a delivery option on a
+    // job that is no longer a shop repair.
+    'delivery_option': effectiveDeliveryOption?.wire,
+  };
 
   /// The columns the client fills in. One list shared by posting and editing,
   /// so the two can never disagree about what a job is made of.
@@ -315,6 +379,12 @@ class JobDraft {
       'preferred_schedule': preferredSchedule?.toUtc().toIso8601String(),
       'description': composedDescription,
       'photo_urls': photoUrls,
+      // 20261116000001. Only when this is a shop repair: leaving the key out
+      // otherwise keeps every other post working against a database the
+      // migration has not reached yet. [toUpdate] always sends it, so an
+      // edit away from Shop Repair clears it.
+      if (effectiveDeliveryOption case final DeliveryOption option)
+        'delivery_option': option.wire,
     };
   }
 
@@ -372,6 +442,9 @@ class JobSnapshot {
     this.preferredSchedule,
     this.description,
     this.photoUrls = const <String>[],
+    this.deliveryOption,
+    this.distanceKm,
+    this.deliveryFee,
   });
 
   factory JobSnapshot.fromJson(Map<String, dynamic> json) {
@@ -398,6 +471,11 @@ class JobSnapshot {
       preferredSchedule: asDate(json['preferred_schedule']),
       description: json['description'] as String?,
       photoUrls: asStringList(json['photo_urls']),
+      deliveryOption: DeliveryOption.fromWire(
+        json['delivery_option'] as String?,
+      ),
+      distanceKm: asNullableDouble(json['distance_km']),
+      deliveryFee: asNullableInt(json['delivery_fee']),
     );
   }
 
@@ -405,6 +483,20 @@ class JobSnapshot {
   final DeviceType deviceType;
   final String problemSymptom;
   final bool hasPhysicalDamage;
+
+  /// Shop repairs: the distance to this technician's shop and the delivery
+  /// fee, as the server worked them out when the client sent the request.
+  final double? distanceKm;
+  final int? deliveryFee;
+
+  /// Shop repairs: whether the client drops it off themselves. Set on the
+  /// chosen technician's offer when the client confirms, so the offer card
+  /// can say so before they accept.
+  final DeliveryOption? deliveryOption;
+
+  bool get isSelfDropOff =>
+      servicePath == ServicePath.pickup &&
+      deliveryOption == DeliveryOption.self;
 
   /// The exact machine and its make, as the client typed them - "ThinkPad
   /// T480", "Acer". Both nullable: the posting flow does not insist on either,

@@ -90,7 +90,8 @@ class _MoreTechniciansSectionState extends State<MoreTechniciansSection> {
   void _openProfile(Technician technician) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => TechnicianProfileScreen.fromCard(technician: technician),
+        builder: (_) =>
+            TechnicianProfileScreen.fromCard(technician: technician),
       ),
     );
   }

@@ -38,17 +38,9 @@ void main() {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  BudgetRangeField(
-                    min: null,
-                    max: null,
-                    onChanged: (_, __) {},
-                  ),
+                  BudgetRangeField(min: null, max: null, onChanged: (_, __) {}),
                   const SizedBox(height: AppSizes.xxl),
-                  BudgetRangeField(
-                    min: 800,
-                    max: 1650,
-                    onChanged: (_, __) {},
-                  ),
+                  BudgetRangeField(min: 800, max: 1650, onChanged: (_, __) {}),
                 ],
               ),
             ),

@@ -38,9 +38,8 @@ class DisputeSection extends StatelessWidget {
   final bool canReport;
   final VoidCallback onReport;
 
-  bool get _hasOpenReportOfMine => disputes.any(
-    (JobDispute d) => d.isOpen && d.raisedByClient == isClient,
-  );
+  bool get _hasOpenReportOfMine =>
+      disputes.any((JobDispute d) => d.isOpen && d.raisedByClient == isClient);
 
   @override
   Widget build(BuildContext context) {

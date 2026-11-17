@@ -38,7 +38,8 @@ void main() {
     // fake-async zone or the banner captures blank.
     await tester.runAsync(() async {
       await precacheImage(
-        const AssetImage(AppAssets.brandHeader),
+        // The header is drawn since 2026-11-16; its one image is the emblem.
+        const AssetImage(AppAssets.brandEmblem),
         tester.binding.rootElement!,
       );
     });

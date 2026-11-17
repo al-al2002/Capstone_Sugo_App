@@ -2,7 +2,7 @@ import '../../rb_cars/models/json_utils.dart';
 
 /// Conditions at the destination of the current tracking leg.
 ///
-/// Comes from the `job-weather` edge function, which holds the OpenWeatherMap
+/// Read from the `job-weather` edge function, which holds the OpenWeatherMap
 /// key server-side and resolves which coordinate matters from the leg. The app
 /// never calls the provider directly and never learns the key.
 class TrackingWeather {

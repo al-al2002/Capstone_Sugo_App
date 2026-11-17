@@ -24,6 +24,7 @@ class JobTechnician {
     this.rating = 0,
     this.isVerified = false,
     this.matchedAt,
+    this.offeredAt,
   });
 
   factory JobTechnician.fromJson(Map<String, dynamic> json) {
@@ -46,6 +47,9 @@ class JobTechnician {
       matchedAt: DateTime.tryParse(
         json['matched_at'] as String? ?? '',
       )?.toLocal(),
+      offeredAt: DateTime.tryParse(
+        json['offered_at'] as String? ?? '',
+      )?.toLocal(),
     );
   }
 
@@ -63,6 +67,10 @@ class JobTechnician {
   /// waiting, which is the fact that makes "cancel" feel justified rather
   /// than impatient.
   final DateTime? matchedAt;
+
+  /// When the client's request was sent (2026-11-17), for the urgent
+  /// five-minute clock. Null before the view carried it, or once accepted.
+  final DateTime? offeredAt;
 
   String get displayName {
     final String? name = fullName?.trim();

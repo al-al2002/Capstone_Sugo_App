@@ -9,6 +9,7 @@ import '../models/job_enums.dart';
 import '../models/job_party.dart';
 import '../models/json_utils.dart';
 import '../models/match_result.dart';
+import '../models/technician_preferences.dart';
 import '../models/technician_profile_details.dart';
 
 /// Raised when a job cannot be posted or matched. Carries copy that is safe to
@@ -22,6 +23,24 @@ class RbCarsFailure implements Exception {
   @override
   String toString() => 'RbCarsFailure($message)';
 }
+
+/// The server refused a booking because the client is in the book-and-cancel
+/// cooldown (2026-11-17): 2 cancels within an hour pause booking for 2
+/// minutes. [until] is when they may book again, for the countdown.
+class BookingPausedFailure extends RbCarsFailure {
+  const BookingPausedFailure(
+    super.message, {
+    required this.until,
+    super.detail,
+  });
+
+  final DateTime until;
+}
+
+/// A pause end as the server sends it (an ISO timestamp), in local time, or
+/// null for anything else - null always means "may book now".
+DateTime? parseBookingPause(Object? value) =>
+    value is String ? DateTime.tryParse(value)?.toLocal() : null;
 
 /// The Flutter side of RB-CARS.
 ///
@@ -119,7 +138,9 @@ class RbCarsService {
 
     final Object? row = data['job'];
     if (row is! Map<String, dynamic>) {
-      throw const RbCarsFailure('Could not save your changes. Please try again.');
+      throw const RbCarsFailure(
+        'Could not save your changes. Please try again.',
+      );
     }
     return Job.fromJson(row);
   }
@@ -210,12 +231,18 @@ class RbCarsService {
   /// Goes through an RPC rather than the `job-response` edge function because
   /// it touches nothing the caller cannot already see. See migration
   /// 20260921000003 for the full reasoning.
-  Future<void> withdrawTechnician(String jobId) async {
+  ///
+  /// Returns when booking is paused until, if this cancel started the
+  /// book-and-cancel cooldown (2026-11-17); null otherwise.
+  Future<DateTime?> withdrawTechnician(String jobId) async {
     try {
-      await _client.rpc<void>(
+      final Object? result = await _client.rpc<Object?>(
         'withdraw_technician_offer',
         params: <String, dynamic>{'p_job_id': jobId},
       );
+      return result is Map
+          ? parseBookingPause(result['booking_paused_until'])
+          : null;
     } on PostgrestException catch (error, stackTrace) {
       _log('withdrawTechnician', error, stackTrace);
 
@@ -232,6 +259,26 @@ class RbCarsService {
       throw const RbCarsFailure(
         'Could not cancel that request. Check your connection.',
       );
+    }
+  }
+
+  /// When the signed-in client may book again, or null if they may now - the
+  /// book-and-cancel cooldown (2026-11-17), as `booking_cooldown_until`
+  /// works it out.
+  ///
+  /// Never throws: a failed check reads as "not paused". The server enforces
+  /// the pause on `select` regardless, so the worst a failed check can do is
+  /// let the booking sheet open and end in the server's refusal.
+  Future<DateTime?> bookingPausedUntil() async {
+    try {
+      final Object? result = await _client.rpc<Object?>(
+        'booking_cooldown_until',
+        params: <String, dynamic>{'p_client_id': _uid},
+      );
+      return parseBookingPause(result);
+    } catch (error, stackTrace) {
+      _log('bookingPausedUntil', error, stackTrace);
+      return null;
     }
   }
 
@@ -280,6 +327,8 @@ class RbCarsService {
               .toList(growable: false)
         : const <ConsideredTechnician>[];
 
+    final Object? filter = response['preference_filter'];
+
     return MatchingRun(
       // Read the rows back through RLS rather than trusting the function's
       // echo. Same data, but it proves the client can actually see what was
@@ -288,7 +337,39 @@ class RbCarsService {
       considered: considered,
       message: response['message'] as String?,
       evaluated: asInt(response['evaluated']),
+      preferencesBlocked: response['no_match_relax_preferences'] == true,
+      relaxHints: filter is Map<String, dynamic>
+          ? RelaxHint.listFrom(filter['relax_hints'])
+          : const <RelaxHint>[],
     );
+  }
+
+  /// Saves new technician preferences on a job nobody has taken, from the
+  /// "try relaxing them" screen. The caller re-runs matching straight after.
+  ///
+  /// The same `update_job` action as "Edit post", sending only the six
+  /// `pref_*` columns: `jobs` has no client update policy, and the server
+  /// applies the same "nobody has accepted yet" rule either way.
+  Future<Job> updatePreferences(
+    String jobId,
+    TechnicianPreferences preferences,
+  ) async {
+    final Map<String, dynamic> data = await _invoke(
+      _responseFunction,
+      <String, dynamic>{
+        'job_id': jobId,
+        'action': 'update_job',
+        'job': preferences.toColumns(),
+      },
+    );
+
+    final Object? row = data['job'];
+    if (row is! Map<String, dynamic>) {
+      throw const RbCarsFailure(
+        'Could not update your preferences. Please try again.',
+      );
+    }
+    return Job.fromJson(row);
   }
 
   /// The offers for a job, best rank first.
@@ -327,8 +408,39 @@ class RbCarsService {
   /// retires the other two offers, so only the chosen one is asked. The
   /// technician still has to accept, reroute or decline from their own
   /// dashboard - those three actions never belong on a client screen.
-  Future<JobResponseOutcome> selectTechnician(String matchId) {
-    return _respond(<String, dynamic>{'match_id': matchId, 'action': 'select'});
+  /// [deliveryOption] is the client's final answer for a shop repair, from
+  /// the booking dialog (2026-11-16). The server saves it with the distance
+  /// to this technician's shop and the fee it works out itself.
+  Future<JobResponseOutcome> selectTechnician(
+    String matchId, {
+    DeliveryOption? deliveryOption,
+  }) {
+    return _respond(<String, dynamic>{
+      'match_id': matchId,
+      'action': 'select',
+      if (deliveryOption != null) 'delivery_option': deliveryOption.wire,
+    });
+  }
+
+  /// Whether the technician is busy, and - for a shop repair - how far their
+  /// shop is from the job (2026-11-16), so the booking dialog can show the
+  /// delivery fee before the client sends. A distance only; the shop's
+  /// location stays private until they book.
+  ///
+  /// Never throws: a failed check reads as "free, distance unknown".
+  Future<TechnicianStatus> technicianStatus(String matchId) async {
+    try {
+      final Map<String, dynamic> data = await _invoke(
+        _responseFunction,
+        <String, dynamic>{'match_id': matchId, 'action': 'technician_status'},
+      );
+      return TechnicianStatus(
+        busy: data['busy'] == true,
+        shopDistanceKm: asNullableDouble(data['shop_distance_km']),
+      );
+    } catch (_) {
+      return const TechnicianStatus(busy: false);
+    }
   }
 
   /// Whether the technician behind [matchId] is busy with another, unfinished
@@ -337,17 +449,8 @@ class RbCarsService {
   /// Never throws: a failed check reads as "free". It only decides whether the
   /// client is warned; the rule itself - one job at a time - is enforced when
   /// the technician accepts.
-  Future<bool> technicianIsBusy(String matchId) async {
-    try {
-      final Map<String, dynamic> data = await _invoke(
-        _responseFunction,
-        <String, dynamic>{'match_id': matchId, 'action': 'technician_status'},
-      );
-      return data['busy'] == true;
-    } catch (_) {
-      return false;
-    }
-  }
+  Future<bool> technicianIsBusy(String matchId) async =>
+      (await technicianStatus(matchId)).busy;
 
   /// Technician accepts an offer and will fix it on site.
   Future<JobResponseOutcome> acceptOffer(String matchId) {
@@ -454,6 +557,25 @@ class RbCarsService {
     } catch (error, stackTrace) {
       _log('jobParties', error, stackTrace);
       return <String, JobParty>{};
+    }
+  }
+
+  /// The client's phone, for the technician assigned to [jobId] while the
+  /// job is confirmed or in progress (`job_client_phone`, 2026-11-17).
+  ///
+  /// Null for anyone else, when the client gave no number, or if the call
+  /// fails - the card then simply shows no number.
+  Future<String?> clientPhone(String jobId) async {
+    try {
+      final Object? data = await _client.rpc<Object?>(
+        'job_client_phone',
+        params: <String, dynamic>{'p_job_id': jobId},
+      );
+      final String? phone = (data as String?)?.trim();
+      return phone == null || phone.isEmpty ? null : phone;
+    } catch (error, stackTrace) {
+      _log('clientPhone', error, stackTrace);
+      return null;
     }
   }
 
@@ -564,10 +686,7 @@ class RbCarsService {
   /// assigned - the server refuses once anyone has accepted, because by then
   /// the record belongs to the technician too. See `handleDeleteJob`.
   Future<JobResponseOutcome> deleteJob(String jobId) {
-    return _respond(<String, dynamic>{
-      'job_id': jobId,
-      'action': 'delete_job',
-    });
+    return _respond(<String, dynamic>{'job_id': jobId, 'action': 'delete_job'});
   }
 
   /// Mid-job: an on-site repair the technician cannot finish at the client's
@@ -578,10 +697,7 @@ class RbCarsService {
   /// tracking row, so the client's map appears from the moment they are told
   /// their appliance is being collected.
   Future<JobResponseOutcome> markNeedsShop(String jobId) {
-    return _respond(<String, dynamic>{
-      'job_id': jobId,
-      'action': 'needs_shop',
-    });
+    return _respond(<String, dynamic>{'job_id': jobId, 'action': 'needs_shop'});
   }
 
   /// Technician accepts but the unit has to go to the shop. Switches the job's
@@ -606,17 +722,19 @@ class RbCarsService {
   }
 
   /// Closes the job and writes the `job_outcomes` row that Stage 1 learns from.
+  ///
+  /// [diagnosisCorrect] is null when there was no diagnosis to judge (the
+  /// client picked "Not sure yet"). `rerouted_mid_job` is not sent: since
+  /// 2026-11-16 the server works it out from the match snapshot.
   Future<JobResponseOutcome> completeJob(
     String jobId, {
     bool? diagnosisCorrect,
-    bool reroutedMidJob = false,
     double? finalRating,
   }) {
     return _respond(<String, dynamic>{
       'job_id': jobId,
       'action': 'complete',
       'diagnosis_correct': diagnosisCorrect,
-      'rerouted_mid_job': reroutedMidJob,
       if (finalRating != null) 'final_rating': finalRating,
     });
   }
@@ -717,6 +835,14 @@ class RbCarsService {
       return <String, dynamic>{};
     } on FunctionException catch (error, stackTrace) {
       _log(name, error, stackTrace);
+      final DateTime? pausedUntil = _bookingPausedUntil(error);
+      if (pausedUntil != null) {
+        throw BookingPausedFailure(
+          _friendlyFunction(error),
+          until: pausedUntil,
+          detail: error.details,
+        );
+      }
       throw RbCarsFailure(_friendlyFunction(error), detail: error.details);
     } on RbCarsFailure {
       rethrow;
@@ -741,6 +867,17 @@ class RbCarsService {
       return 'That technician or job no longer exists.';
     }
     return 'Something went wrong saving that. Please try again.';
+  }
+
+  /// The pause end from a `job-response` 429 refusal, shaped
+  /// `{error, detail: {code: 'booking_paused', retry_at}}`. Null for any other
+  /// error.
+  static DateTime? _bookingPausedUntil(FunctionException error) {
+    final Object? body = error.details;
+    if (error.status != 429 || body is! Map) return null;
+    final Object? detail = body['detail'];
+    if (detail is! Map || detail['code'] != 'booking_paused') return null;
+    return parseBookingPause(detail['retry_at']);
   }
 
   String _friendlyFunction(FunctionException error) {
@@ -779,6 +916,8 @@ class JobResponseOutcome {
     this.awaitingClientReselect = false,
     this.shortlistRemaining = 0,
     this.message,
+    this.preferencesBlocked = false,
+    this.bookingPausedUntil,
   });
 
   factory JobResponseOutcome.fromJson(Map<String, dynamic> json) {
@@ -798,6 +937,8 @@ class JobResponseOutcome {
           json['awaiting_client_reselect'] as bool? ?? false,
       shortlistRemaining: json['shortlist_remaining'] as int? ?? 0,
       message: json['message'] as String?,
+      preferencesBlocked: json['no_match_relax_preferences'] == true,
+      bookingPausedUntil: parseBookingPause(json['booking_paused_until']),
     );
   }
 
@@ -827,7 +968,27 @@ class JobResponseOutcome {
 
   final String? message;
 
+  /// The decline cascade re-ran matching and the client's preferences left
+  /// nobody. Same meaning as [MatchingRun.preferencesBlocked].
+  final bool preferencesBlocked;
+
+  /// Set when this "Delete request" cancelled a booked technician and that
+  /// started the book-and-cancel cooldown (2026-11-17): when the client may
+  /// book again.
+  final DateTime? bookingPausedUntil;
+
   bool get isConfirmed => status == 'confirmed';
   bool get isCompleted => status == 'completed';
   bool get hasNextOffer => nextOfferMatchId != null;
+}
+
+/// What the booking dialog needs to know about one technician, live.
+class TechnicianStatus {
+  const TechnicianStatus({required this.busy, this.shopDistanceKm});
+
+  /// On another unfinished job right now.
+  final bool busy;
+
+  /// Km from the job to their shop - shop repairs only, null otherwise.
+  final double? shopDistanceKm;
 }

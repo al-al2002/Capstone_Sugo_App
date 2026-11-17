@@ -2,18 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/services/notification_router.dart';
-import '../../../core/theme/app_elevation.dart';
-import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/ui_feedback.dart';
-import '../../../core/widgets/sugo_avatar.dart';
 import '../../../core/widgets/sugo_bottom_nav.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
+import '../../../core/widgets/sugo_staggered_column.dart';
 import '../../community/screens/community_feed_view.dart';
 import '../../community/services/community_service.dart';
 import '../../bookings/screens/bookings_list_view.dart';
@@ -33,11 +32,12 @@ import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/time_off.dart';
 import '../providers/technician_dashboard_provider.dart';
 import '../widgets/active_job_card.dart';
-import '../widgets/availability_hero_card.dart';
 import '../widgets/incoming_offer_card.dart';
 import '../widgets/job_request_details_sheet.dart';
 import '../widgets/recent_reviews_strip.dart';
-import '../widgets/technician_stat_cards.dart';
+import '../widgets/technician_home_header.dart';
+import '../widgets/urgent_offer_alert.dart';
+import '../widgets/trust_badge_progress_card.dart';
 import '../widgets/vacation_card.dart';
 import '../../tracking/models/job_tracking.dart';
 import '../../tracking/screens/technician_delivery_screen.dart';
@@ -163,13 +163,42 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     if (push == null || jobId == null || !mounted) return;
 
     switch (push.type) {
+      // An urgent request: fetch it, and the alert above takes the screen.
+      case 'urgent_offer':
+        await _provider.refresh();
+        await _maybeAlertUrgent();
+      case 'urgent_missed':
+        UiFeedback.showInfo(
+          context,
+          'You missed an urgent request - it went to another technician.',
+        );
+        await _provider.refresh();
       case 'collection':
         UiFeedback.showInfo(
           context,
-          'Your client is on the way to collect their unit.',
+          'Your client is on the way to your shop.',
           actionLabel: 'View',
           onAction: () => _openDeliveryFor(jobId),
         );
+      // 2026-11-17: the client almost there, and arrived.
+      case 'client_arriving':
+        UiFeedback.showInfo(
+          context,
+          'Your client is almost at your shop.',
+          actionLabel: 'View',
+          onAction: () => _openDeliveryFor(jobId),
+        );
+      case 'client_arrived':
+        UiFeedback.showSuccess(
+          context,
+          'Your client has arrived at your shop.',
+          actionLabel: 'View',
+          onAction: () => _openDeliveryFor(jobId),
+        );
+      // The client cancelled the request this technician was looking at.
+      case 'request_cancelled':
+        UiFeedback.showInfo(context, 'A client cancelled their request.');
+        await _provider.refresh();
       case 'client_delay':
         final JobTracking? trip = await TrackingService()
             .fetch(jobId)
@@ -200,7 +229,67 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     if (mounted) await context.read<TechnicianDashboardProvider>().refresh();
   }
 
-  void _onProviderChanged() => unawaited(_syncOfferBadges());
+  void _onProviderChanged() {
+    unawaited(_syncOfferBadges());
+    unawaited(_maybeAlertUrgent());
+  }
+
+  /// Urgent requests already shown in the full-screen alert, so each rings
+  /// once - not again on every refresh.
+  final Set<String> _urgentAlerted = <String>{};
+  bool _urgentAlertOpen = false;
+
+  /// The in-app "hard notify" (2026-11-17): a live urgent request this
+  /// technician has not yet been alerted to takes the whole screen, with its
+  /// five minutes running. Runs on every change of the offers, so it fires
+  /// whether the request arrived by push or was found on a refresh - a push
+  /// can be missed, the dashboard cannot.
+  Future<void> _maybeAlertUrgent() async {
+    if (!mounted || _urgentAlertOpen) return;
+    final DateTime now = DateTime.now();
+    MatchResult? urgent;
+    for (final MatchResult m in _provider.offers) {
+      final DateTime? deadline = m.urgentDeadline;
+      if (deadline != null &&
+          deadline.isAfter(now) &&
+          !_urgentAlerted.contains(m.id)) {
+        urgent = m;
+        break;
+      }
+    }
+    if (urgent == null) return;
+
+    _urgentAlerted.add(urgent.id);
+    _urgentAlertOpen = true;
+    final UrgentOfferChoice? choice = await showUrgentOfferAlert(
+      context,
+      urgent,
+    );
+    _urgentAlertOpen = false;
+    if (!mounted) return;
+
+    final MatchResult picked = urgent;
+    switch (choice) {
+      case UrgentOfferChoice.accept:
+        await _respond(_provider, () => _provider.acceptOffer(picked.id));
+      case UrgentOfferChoice.decline:
+        await _respond(_provider, () => _provider.declineOffer(picked.id));
+      case UrgentOfferChoice.details:
+        showJobRequestDetails(
+          context,
+          match: picked,
+          isBusy: _provider.isBusy,
+          onAccept: () =>
+              _respond(_provider, () => _provider.acceptOffer(picked.id)),
+          onDecline: () =>
+              _respond(_provider, () => _provider.declineOffer(picked.id)),
+          onMessage: () => _openOfferChat(picked),
+        );
+      case null:
+        // Time ran out: it has gone to someone else.
+        await _provider.refresh();
+    }
+  }
 
   /// Fetches the unread count for every offered job, once per change of set.
   Future<void> _syncOfferBadges() async {
@@ -272,9 +361,22 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
       case 'booked':
         setState(() => _tab = TechnicianTab.home);
         await provider.refresh();
-      // The client coming to collect, or late on the way: their trip is on
-      // the delivery screen, not the job summary.
-      case 'collection' || 'client_delay':
+      // A request that was cancelled (2026-11-17) has no job left to open:
+      // the Home tab, refreshed, shows it gone.
+      case 'request_cancelled':
+        setState(() => _tab = TechnicianTab.home);
+        await provider.refresh();
+      // A tapped urgent push: straight to the request, alert and clock.
+      case 'urgent_offer' || 'urgent_missed':
+        setState(() => _tab = TechnicianTab.home);
+        await provider.refresh();
+        await _maybeAlertUrgent();
+      // The client coming to the shop - on the way, late, almost there or
+      // arrived: their trip is on the delivery screen, not the job summary.
+      case 'collection' ||
+          'client_delay' ||
+          'client_arriving' ||
+          'client_arrived':
         final String? jobId = tap.jobId;
         if (jobId == null) return;
         await _openDeliveryFor(jobId);
@@ -428,7 +530,8 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
   Future<void> _openJob(Job job) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => JobDetailScreen(job: job, role: BookingsRole.technician),
+        builder: (_) =>
+            JobDetailScreen(job: job, role: BookingsRole.technician),
       ),
     );
     if (mounted) await context.read<TechnicianDashboardProvider>().refresh();
@@ -450,31 +553,44 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        bottom: false,
-        // Only the home tab wraps in the provider's RefreshIndicator; the
-        // other tabs own their own loading and pull-to-refresh.
-        child: switch (_tab) {
-          TechnicianTab.home => RefreshIndicator(
-            // Badges refresh here too. They were loaded once in `initState`
-            // and again only after the inbox closed, so anything arriving
-            // while the technician was on another tab left a stale count
-            // until the app restarted.
-            onRefresh: () async {
-              await Future.wait(<Future<void>>[
-                provider.refresh(),
-                _loadBadges(),
-              ]);
-            },
-            child: _body(provider),
-          ),
-          TechnicianTab.jobs => const BookingsListView(
-            role: BookingsRole.technician,
-          ),
-          TechnicianTab.community => const CommunityFeedView(isClient: false),
-          TechnicianTab.profile => const ProfileView(),
-        },
-      ),
+      // The home tab runs under the status bar since 2026-11-16: its header
+      // is the navy cover and pads itself by the inset, with white status-bar
+      // icons. The other tabs keep their SafeArea.
+      body: _tab == TechnicianTab.home
+          ? AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle.light,
+              // Only the home tab wraps in the provider's RefreshIndicator;
+              // the other tabs own their own loading and pull-to-refresh.
+              child: RefreshIndicator(
+                // Below the status bar, so the spinner is not drawn under
+                // the clock.
+                edgeOffset: MediaQuery.paddingOf(context).top,
+                // Badges refresh here too. They were loaded once in
+                // `initState` and again only after the inbox closed, so
+                // anything arriving while the technician was on another tab
+                // left a stale count until the app restarted.
+                onRefresh: () async {
+                  await Future.wait(<Future<void>>[
+                    provider.refresh(),
+                    _loadBadges(),
+                  ]);
+                },
+                child: _body(provider),
+              ),
+            )
+          : SafeArea(
+              bottom: false,
+              child: switch (_tab) {
+                TechnicianTab.home => const SizedBox.shrink(),
+                TechnicianTab.jobs => const BookingsListView(
+                  role: BookingsRole.technician,
+                ),
+                TechnicianTab.community => const CommunityFeedView(
+                  isClient: false,
+                ),
+                TechnicianTab.profile => const ProfileView(),
+              },
+            ),
       bottomNavigationBar: SugoBottomNav(
         items: _navItems,
         currentIndex: _tab.index,
@@ -499,22 +615,25 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
   Widget _body(TechnicianDashboardProvider provider) {
     if (provider.isLoading && provider.technician == null) {
       // Skeletons rather than a centred spinner: they hold the shape of the
-      // dashboard, so the stat row and the offer list do not jump into place
+      // dashboard, so the header and the offer list do not jump into place
       // when the provider resolves.
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(
-          AppSizes.screenPadding,
-          AppSizes.lg,
-          AppSizes.screenPadding,
-          0,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SugoSkeletonRow(),
-            SizedBox(height: AppSizes.lg),
-            SugoSkeletonList(count: 2, showAvatar: false),
-          ],
+      return const SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSizes.screenPadding,
+            AppSizes.lg,
+            AppSizes.screenPadding,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SugoSkeleton(height: 280, radius: AppSizes.panelRadius),
+              SizedBox(height: AppSizes.lg),
+              SugoSkeletonList(count: 2, showAvatar: false),
+            ],
+          ),
         ),
       );
     }
@@ -522,17 +641,20 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     final Technician? technician = provider.technician;
 
     if (technician == null) {
-      return ListView(
-        padding: const EdgeInsets.all(AppSizes.screenPadding),
-        children: <Widget>[
-          const SizedBox(height: AppSizes.xxl),
-          SugoEmptyState.error(
-            title: 'Could not load your profile',
-            message:
-                provider.error ?? 'Could not load your technician profile.',
-            onAction: provider.refresh,
-          ),
-        ],
+      return SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.all(AppSizes.screenPadding),
+          children: <Widget>[
+            const SizedBox(height: AppSizes.xxl),
+            SugoEmptyState.error(
+              title: 'Could not load your profile',
+              message:
+                  provider.error ?? 'Could not load your technician profile.',
+              onAction: provider.refresh,
+            ),
+          ],
+        ),
       );
     }
 
@@ -541,62 +663,48 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     return ListView(
       padding: const EdgeInsets.only(bottom: AppSizes.xxl),
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.screenPadding,
-          ),
-          child: _TopBar(
-            technician: technician,
-            awayUntil: provider.awayUntil,
-            unread: _unread,
-            unreadNotifications: _unreadNotifications,
-            onOpenInbox: _openInbox,
-            onOpenNotifications: _openNotifications,
-          ),
-        ),
-        const SizedBox(height: AppSizes.lg),
-
-        // Can clients book me today? Navy while taking jobs, orange while on
-        // vacation - with the actions that change it right there.
-        //
-        // Then, since the Dispatch redesign, the order of urgency: requests
-        // waiting for an answer first, the job in hand next, and the week's
-        // numbers after both. The stats used to sit above the requests, which
-        // put the one thing a technician must answer quickly below the fold.
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.screenPadding,
-          ),
-          child: AvailabilityHeroCard(
-            vacation: provider.currentVacation,
-            onSetVacation: () => _setVacation(provider),
-            onEndVacation: () => _endVacation(provider),
-            onEditDates: () => _editVacation(provider),
-          ),
+        // Who and what's new, can clients book me, how is my week - one
+        // panel on the dusk cover (2026-11-16). The availability card and
+        // the "This week" figures used to be two separate blocks.
+        TechnicianHomeHeader(
+          technician: technician,
+          vacation: provider.currentVacation,
+          unreadMessages: _unread,
+          unreadNotifications: _unreadNotifications,
+          onOpenInbox: _openInbox,
+          onOpenNotifications: _openNotifications,
+          onSetVacation: () => _setVacation(provider),
+          onEndVacation: () => _endVacation(provider),
+          onEditDates: () => _editVacation(provider),
+          earningsToday: provider.estimatedEarningsToday,
+          jobsThisWeek: provider.jobsThisWeek,
+          topInset: MediaQuery.paddingOf(context).top,
         ),
 
-        const SizedBox(height: AppSizes.xl),
+        // Then the order of urgency: requests waiting for an answer, the job
+        // in hand, the trust badge. Dealt in once, top to bottom.
         Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.screenPadding,
+          padding: const EdgeInsets.fromLTRB(
+            AppSizes.screenPadding,
+            AppSizes.xl,
+            AppSizes.screenPadding,
+            0,
           ),
-          child: SectionHeader(
-            title: 'Incoming job requests',
-            subtitle: provider.awayUntil != null
-                ? 'Paused while you are on vacation'
-                : null,
-            action: provider.offers.isEmpty
-                ? null
-                : '${provider.offers.length} waiting',
-          ),
-        ),
-        const SizedBox(height: AppSizes.md),
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.screenPadding,
-          ),
-          child: provider.offers.isEmpty
-              ? SugoEmptyState(
+          child: SugoStaggeredColumn(
+            children: <Widget>[
+              SectionHeader(
+                title: 'Job requests',
+                icon: Icons.inbox_rounded,
+                subtitle: provider.awayUntil != null
+                    ? 'Paused while you are on vacation'
+                    : null,
+                action: provider.offers.isEmpty
+                    ? null
+                    : '${provider.offers.length} waiting',
+              ),
+              const SizedBox(height: AppSizes.md),
+              if (provider.offers.isEmpty)
+                SugoEmptyState(
                   icon: Icons.inbox_outlined,
                   title: 'No requests right now',
                   message: provider.awayUntil != null
@@ -605,58 +713,49 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
                             'for a job.',
                   compact: true,
                 )
-              : Column(
-                  children: provider.offers
-                      .map(
-                        (MatchResult match) => IncomingOfferCard(
-                          match: match,
-                          isBusy: provider.isBusy,
-                          isAccepting: provider.isDoing(
-                            TechnicianAction.accept,
-                            match.id,
-                          ),
-                          unreadMessages: _offerUnread[match.jobId] ?? 0,
-                          onAccept: () => _respond(
-                            provider,
-                            () => provider.acceptOffer(match.id),
-                          ),
-                          onDecline: () => _respond(
-                            provider,
-                            () => provider.declineOffer(match.id),
-                          ),
-                          onViewDetails: () => showJobRequestDetails(
-                            context,
-                            match: match,
-                            isBusy: provider.isBusy,
-                            onAccept: () => _respond(
-                              provider,
-                              () => provider.acceptOffer(match.id),
-                            ),
-                            onDecline: () => _respond(
-                              provider,
-                              () => provider.declineOffer(match.id),
-                            ),
-                            onMessage: () => _openOfferChat(match),
-                          ),
-                          onMessage: () => _openOfferChat(match),
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-        ),
+              else
+                for (final MatchResult match in provider.offers)
+                  IncomingOfferCard(
+                    match: match,
+                    isBusy: provider.isBusy,
+                    isAccepting: provider.isDoing(
+                      TechnicianAction.accept,
+                      match.id,
+                    ),
+                    unreadMessages: _offerUnread[match.jobId] ?? 0,
+                    onAccept: () => _respond(
+                      provider,
+                      () => provider.acceptOffer(match.id),
+                    ),
+                    onDecline: () => _respond(
+                      provider,
+                      () => provider.declineOffer(match.id),
+                    ),
+                    onViewDetails: () => showJobRequestDetails(
+                      context,
+                      match: match,
+                      isBusy: provider.isBusy,
+                      onAccept: () => _respond(
+                        provider,
+                        () => provider.acceptOffer(match.id),
+                      ),
+                      onDecline: () => _respond(
+                        provider,
+                        () => provider.declineOffer(match.id),
+                      ),
+                      onMessage: () => _openOfferChat(match),
+                    ),
+                    onMessage: () => _openOfferChat(match),
+                  ),
 
-        const SizedBox(height: AppSizes.xl),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSizes.screenPadding),
-          child: SectionHeader(title: 'Active job'),
-        ),
-        const SizedBox(height: AppSizes.md),
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.screenPadding,
-          ),
-          child: active == null
-              ? const SugoEmptyState(
+              const SizedBox(height: AppSizes.xl),
+              const SectionHeader(
+                title: 'Active job',
+                icon: Icons.handyman_rounded,
+              ),
+              const SizedBox(height: AppSizes.md),
+              if (active == null)
+                const SugoEmptyState(
                   icon: Icons.handyman_outlined,
                   title: 'Nothing in progress',
                   message:
@@ -664,215 +763,33 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
                       'it for the route, the trip and the completion.',
                   compact: true,
                 )
-              : ActiveJobCard(job: active, onView: () => _openJob(active)),
-        ),
+              else
+                ActiveJobCard(job: active, onView: () => _openJob(active)),
 
-        const SizedBox(height: AppSizes.xl),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSizes.screenPadding),
-          child: SectionHeader(title: 'This week'),
-        ),
-        const SizedBox(height: AppSizes.md),
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.screenPadding,
-          ),
-          child: TechnicianStatCardsSection(provider: provider),
-        ),
-
-        const SizedBox(height: AppSizes.xl),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: AppSizes.screenPadding),
-          child: SectionHeader(title: 'Recent reviews'),
-        ),
-        const SizedBox(height: AppSizes.md),
-        RecentReviewsStrip(outcomes: provider.ratedOutcomes),
-      ],
-    );
-  }
-}
-
-/// Split out so the stat row can read the provider without the whole screen
-/// rebuilding when only a counter changes.
-class TechnicianStatCardsSection extends StatelessWidget {
-  const TechnicianStatCardsSection({super.key, required this.provider});
-
-  final TechnicianDashboardProvider provider;
-
-  @override
-  Widget build(BuildContext context) {
-    final Technician? technician = provider.technician;
-    if (technician == null) return const SizedBox.shrink();
-
-    return TechnicianStatCards(
-      technician: technician,
-      earningsToday: provider.estimatedEarningsToday,
-      jobsThisWeek: provider.jobsThisWeek,
-    );
-  }
-}
-
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.technician,
-    required this.awayUntil,
-    required this.unread,
-    required this.unreadNotifications,
-    required this.onOpenInbox,
-    required this.onOpenNotifications,
-  });
-
-  final Technician technician;
-
-  /// Last day of today's vacation, or null when they are taking jobs.
-  final DateTime? awayUntil;
-
-  /// Unread job messages. The Chat tab became Community, so the inbox and its
-  /// badge live in this header now.
-  final int unread;
-
-  /// Unread items in the notification centre - new requests, and what a
-  /// client has decided about a job in hand.
-  final int unreadNotifications;
-
-  final VoidCallback onOpenInbox;
-  final VoidCallback onOpenNotifications;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            // The availability ring, in the same two colours as the card
-            // below it: blue while they can be booked, orange while away.
-            SugoAvatar(
-              name: technician.displayName,
-              imageUrl: technician.avatarUrl,
-              size: AppSizes.avatarMd,
-              verified: technician.isVerified,
-              ringColor: awayUntil == null ? AppColors.primary : AppColors.accent,
-            ),
-            const SizedBox(width: AppSizes.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    technician.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.title.copyWith(fontSize: 16),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    technician.headline,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.micro,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSizes.sm),
-            // Messages and notifications. Sign-out was removed from this
-            // header at the client's request, and it belongs on the Profile
-            // tab anyway - sitting one slip away from the inbox is a poor
-            // place for the one action that ends the session.
-            _HeaderAction(
-              icon: Icons.mail_outline_rounded,
-              tooltip: 'Messages',
-              badgeCount: unread,
-              onTap: onOpenInbox,
-            ),
-            const SizedBox(width: AppSizes.sm),
-            // The bell the technician side never had. Push told them a
-            // request had arrived and then it was gone - a notification
-            // swiped away on a lock screen was unrecoverable, and the only
-            // way to find out what had come in was to scroll the dashboard.
-            _HeaderAction(
-              icon: Icons.notifications_none_rounded,
-              tooltip: 'Notifications',
-              badgeCount: unreadNotifications,
-              onTap: onOpenNotifications,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// A round header action, optionally carrying an unread count.
-class _HeaderAction extends StatelessWidget {
-  const _HeaderAction({
-    required this.icon,
-    required this.onTap,
-    this.badgeCount = 0,
-    this.tooltip,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final int badgeCount;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip ?? '',
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: AppElevation.sm,
+              // The Progressive Trust Badge and the path to the next rung.
+              // After the work: requests and the active job are what the
+              // technician opens the app for.
+              if (provider.trustBadge != null) ...<Widget>[
+                const SizedBox(height: AppSizes.xl),
+                const SectionHeader(
+                  title: 'Trust badge',
+                  icon: Icons.verified_user_rounded,
                 ),
-                child: Icon(icon, size: 18, color: AppColors.textPrimary),
+                const SizedBox(height: AppSizes.md),
+                TrustBadgeProgressCard(progress: provider.trustBadge!),
+              ],
+
+              const SizedBox(height: AppSizes.xl),
+              const SectionHeader(
+                title: 'Recent reviews',
+                icon: Icons.reviews_rounded,
               ),
-              if (badgeCount > 0)
-                Positioned(
-                  top: -3,
-                  right: -3,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    constraints: const BoxConstraints(minWidth: 18),
-                    decoration: BoxDecoration(
-                      color: AppColors.accent,
-                      borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-                      border: Border.all(color: AppColors.surface, width: 1.5),
-                    ),
-                    child: Text(
-                      badgeCount > 9 ? '9+' : '$badgeCount',
-                      textAlign: TextAlign.center,
-                      // Ink on the orange: white on it is 2.1:1.
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.onAccent,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                ),
+              const SizedBox(height: AppSizes.md),
             ],
           ),
         ),
-      ),
+        RecentReviewsStrip(outcomes: provider.ratedOutcomes),
+      ],
     );
   }
 }

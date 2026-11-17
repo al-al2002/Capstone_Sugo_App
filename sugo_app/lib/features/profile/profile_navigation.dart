@@ -38,7 +38,7 @@ Future<void> openPersonProfile(
 
   if (screen == null) return;
 
-  await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => screen),
-  );
+  await Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => screen));
 }

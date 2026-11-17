@@ -94,13 +94,23 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
-    testWidgets('at rest, it is just "Accept"', (WidgetTester tester) async {
+    // Since 2026-11-17 Accept asks "Ready to take this job?" first, the same
+    // as View task, so the accept itself is sent from the dialog.
+    testWidgets('at rest, it is just "Accept", confirmed in the dialog', (
+      WidgetTester tester,
+    ) async {
       int taps = 0;
       await tester.pumpWidget(
         host(offerCard(busy: false, accepting: false, onAccept: () => taps++)),
       );
 
       await tester.tap(find.text('Accept'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ready to take this job?'), findsOneWidget);
+      expect(taps, 0);
+
+      await tester.tap(find.text('Accept job'));
+      await tester.pumpAndSettle();
       expect(taps, 1);
     });
   });
@@ -129,25 +139,96 @@ void main() {
   group("the job's own screen", () {
     // No pinned address on `job`, so no network map in these tests.
     TechnicianJobActions actions({
+      Job? on,
       bool completing = false,
       bool moving = false,
+      double? distanceKm,
+      VoidCallback? onTrip,
     }) => TechnicianJobActions(
-      job: job,
-      onTrip: () {},
+      job: on ?? job,
+      onTrip: onTrip ?? () {},
       onComplete: () {},
       onNeedsShop: () {},
       isCompleting: completing,
       isMovingToShop: moving,
+      distanceKm: distanceKm,
     );
 
-    testWidgets('has everything the card used to', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('has everything the card used to', (WidgetTester tester) async {
       await tester.pumpWidget(host(actions()));
 
       expect(find.text('Trip to the client'), findsOneWidget);
       expect(find.text('Mark as complete'), findsOneWidget);
-      expect(find.text('Cannot fix here - take to shop'), findsOneWidget);
+      expect(find.text('Take it to your shop'), findsOneWidget);
+    });
+
+    testWidgets('has no "Show route" - "Trip to the client" is the route', (
+      WidgetTester tester,
+    ) async {
+      // The user's ask (2026-11-16): the map's own "Show route" button
+      // duplicated the trip, which already shows the route.
+      const Job located = Job(
+        id: 'job-1',
+        clientId: 'client-1',
+        deviceType: DeviceType.laptop,
+        problemSymptom: 'laptop_wont_power_on',
+        hasPhysicalDamage: false,
+        status: JobStatus.confirmed,
+        assignedTechnicianId: 'tech-1',
+        servicePath: ServicePath.homeService,
+        latitude: 7.07,
+        longitude: 125.61,
+        addressText: 'Purok 3, Toril, Davao City',
+      );
+      await tester.pumpWidget(host(actions(on: located, distanceKm: 4.2)));
+      await tester.pump();
+
+      expect(find.text('Show route'), findsNothing);
+      expect(find.text('Client address'), findsOneWidget);
+      expect(find.text('Purok 3, Toril, Davao City'), findsOneWidget);
+      expect(find.text('4.2 km'), findsOneWidget);
+      expect(find.text('Trip to the client'), findsOneWidget);
+    });
+
+    testWidgets('a drop-off job names itself and has no shop switch', (
+      WidgetTester tester,
+    ) async {
+      const Job dropOff = Job(
+        id: 'job-2',
+        clientId: 'client-1',
+        deviceType: DeviceType.laptop,
+        problemSymptom: 'laptop_wont_power_on',
+        hasPhysicalDamage: false,
+        status: JobStatus.confirmed,
+        assignedTechnicianId: 'tech-1',
+        servicePath: ServicePath.pickup,
+        deliveryOption: DeliveryOption.self,
+      );
+      await tester.pumpWidget(host(actions(on: dropOff)));
+
+      expect(find.textContaining('Drop-off ·'), findsOneWidget);
+      expect(find.text('Drop-off and collection'), findsOneWidget);
+      expect(find.text('Take it to your shop'), findsNothing);
+    });
+
+    testWidgets('fits a small phone with large text', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 1200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(
+            size: Size(320, 1200),
+            textScaler: TextScaler.linear(1.4),
+          ),
+          child: host(actions(distanceKm: 12.6)),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('shows it is completing while the outcome is saved', (
@@ -159,6 +240,19 @@ void main() {
       expect(find.text('Completing…'), findsOneWidget);
       expect(find.text('Mark as complete'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('the trip cannot be opened while it completes', (
+      WidgetTester tester,
+    ) async {
+      int trips = 0;
+      await tester.pumpWidget(
+        host(actions(completing: true, onTrip: () => trips++)),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Trip to the client'), warnIfMissed: false);
+      expect(trips, 0);
     });
 
     testWidgets('and while it switches to the shop', (

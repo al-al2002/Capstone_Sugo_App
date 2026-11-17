@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sugo_app/features/rb_cars/models/job.dart';
+import 'package:sugo_app/features/rb_cars/models/job_enums.dart';
 import 'package:sugo_app/features/rb_cars/models/match_result.dart';
 import 'package:sugo_app/features/rb_cars/providers/match_provider.dart';
 import 'package:sugo_app/features/rb_cars/services/rb_cars_service.dart';
@@ -71,7 +72,10 @@ class _GatedMatchService implements RbCarsService {
   int selectCalls = 0;
 
   @override
-  Future<JobResponseOutcome> selectTechnician(String matchId) {
+  Future<JobResponseOutcome> selectTechnician(
+    String matchId, {
+    DeliveryOption? deliveryOption,
+  }) {
     selectCalls += 1;
     return gate.future;
   }

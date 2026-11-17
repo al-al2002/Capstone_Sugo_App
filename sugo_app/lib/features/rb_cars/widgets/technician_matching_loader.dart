@@ -241,9 +241,11 @@ class _TechnicianMatchingLoaderState extends State<TechnicianMatchingLoader>
   double _progress(Duration now) {
     final Duration? doneAt = _session.doneAt;
     if (doneAt == null) return _waitingProgress(now);
-    final double t = ((now - doneAt).inMilliseconds /
-            _fillDuration.inMilliseconds)
-        .clamp(0.0, 1.0);
+    final double t =
+        ((now - doneAt).inMilliseconds / _fillDuration.inMilliseconds).clamp(
+          0.0,
+          1.0,
+        );
     final double eased = Curves.easeOutCubic.transform(t);
     return _session.progressAtDone + (1 - _session.progressAtDone) * eased;
   }
@@ -415,9 +417,7 @@ class _Emblem extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
-          Positioned.fill(
-            child: CustomPaint(painter: _EmblemPainter(clock)),
-          ),
+          Positioned.fill(child: CustomPaint(painter: _EmblemPainter(clock))),
           ValueListenableBuilder<Duration>(
             valueListenable: clock,
             builder: (_, Duration now, Widget? child) {
@@ -590,10 +590,19 @@ class _StepRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (Color colour, FontWeight weight) = switch (state) {
-      _StepState.confirmed => (Colors.white.withValues(alpha: 0.92), FontWeight.w600),
-      _StepState.passed => (Colors.white.withValues(alpha: 0.80), FontWeight.w600),
+      _StepState.confirmed => (
+        Colors.white.withValues(alpha: 0.92),
+        FontWeight.w600,
+      ),
+      _StepState.passed => (
+        Colors.white.withValues(alpha: 0.80),
+        FontWeight.w600,
+      ),
       _StepState.active => (Colors.white, FontWeight.w700),
-      _StepState.pending => (Colors.white.withValues(alpha: 0.42), FontWeight.w500),
+      _StepState.pending => (
+        Colors.white.withValues(alpha: 0.42),
+        FontWeight.w500,
+      ),
     };
 
     return Row(

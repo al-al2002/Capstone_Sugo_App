@@ -14,6 +14,7 @@ import '../../../core/widgets/sugo_skeleton.dart';
 import '../models/job_enums.dart';
 import '../models/match_result.dart';
 import '../models/technician.dart';
+import '../models/technician_preferences.dart';
 import '../models/technician_profile_details.dart';
 import '../services/rb_cars_service.dart';
 import '../services/technician_directory_service.dart';
@@ -21,6 +22,7 @@ import '../widgets/explainability_chip.dart';
 import '../widgets/review_card.dart';
 import '../widgets/score_breakdown_sheet.dart';
 import '../widgets/stat_chip.dart';
+import '../widgets/trust_badge_pill.dart';
 import 'job_posting_screen.dart';
 import '../../../core/widgets/sugo_brand_cover.dart';
 import '../../profile/widgets/profile_cover_header.dart';
@@ -490,7 +492,7 @@ class _HeroHeader extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                SugoBrandCover(topInset: collapsed - 20),
+                SugoBrandCover(topInset: collapsed - 20, bottomScrim: true),
                 Positioned(
                   left: AppSizes.screenPadding,
                   right: AppSizes.screenPadding,
@@ -570,9 +572,11 @@ class _Identity extends StatelessWidget {
         const SizedBox(height: AppSizes.sm),
         SugoPill.badge(
           label: technician.badgeLabel,
-          icon: technician.isVerified
-              ? Icons.verified_rounded
-              : Icons.person_outline_rounded,
+          icon:
+              technician.trustBadge?.icon ??
+              (technician.isVerified
+                  ? Icons.verified_rounded
+                  : Icons.person_outline_rounded),
           // White words need the text orange: 5.0:1, where the bright orange
           // gave 2.1:1.
           tint: AppColors.accentDark,
@@ -994,6 +998,25 @@ class _ExperienceTab extends StatelessWidget {
                 )
                 .toList(growable: false),
           ),
+        if (technician.trustBadge case final TrustBadge badge) ...<Widget>[
+          const SizedBox(height: AppSizes.lg),
+          const Text('Trust badge', style: AppTextStyles.label),
+          const SizedBox(height: AppSizes.sm),
+          TrustBadgePill(badge: badge),
+          const SizedBox(height: AppSizes.xs),
+          Text(badge.blurb, style: AppTextStyles.caption),
+          if (technician.skillVerifiedSpecializations.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSizes.sm),
+            Text(
+              'Skill verified for '
+              '${technician.skillVerifiedSpecializations.map((PreferredSpecialization s) => s.label).join(', ')}',
+              style: AppTextStyles.caption.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ],
         const SizedBox(height: AppSizes.lg),
         const Text('Track record', style: AppTextStyles.label),
         const SizedBox(height: AppSizes.sm),
@@ -1055,7 +1078,7 @@ class _ReviewsTab extends StatelessWidget {
     if (technician.totalJobs == 0 && (full?.reviews.isEmpty ?? true)) {
       return Text(
         'No completed jobs yet, so there is no work or reviews to show. New '
-        'technicians are still ranked: RB-CARS scores them at a neutral '
+        'technicians are still ranked: SUGO scores them at a neutral '
         'accuracy prior rather than at zero.',
         style: AppTextStyles.subtitle.copyWith(height: 1.55),
       );
@@ -1224,7 +1247,12 @@ class _Fact extends StatelessWidget {
   }
 }
 
-/// Sticky bar: hourly fee left, job estimate right, book button full width.
+/// Sticky bar: the book button, full width.
+///
+/// The "Hourly fee" and "Typical job" tiles above it were removed on
+/// 2026-11-17 at the user's request. They were estimates derived from the
+/// tier, not prices the technician set; the real labor and travel fees are
+/// shown in the send-request sheet.
 class _BookingBar extends StatelessWidget {
   const _BookingBar({required this.technician, required this.onBook});
 
@@ -1233,7 +1261,6 @@ class _BookingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (int low, int high) = technician.estimatedJobCostRange;
     final String firstName = technician.displayName.split(' ').first;
 
     return Container(
@@ -1255,26 +1282,6 @@ class _BookingBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _Price(
-                    icon: Icons.schedule_rounded,
-                    caption: 'Hourly fee',
-                    value: 'PHP ${technician.indicativeHourlyFee}',
-                  ),
-                ),
-                const SizedBox(width: AppSizes.md),
-                Expanded(
-                  child: _Price(
-                    icon: Icons.receipt_long_rounded,
-                    caption: 'Typical job',
-                    value: 'PHP $low - $high',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSizes.md),
             // Disabled, not hidden, while they are on vacation: the date on the
             // button tells the client when to come back, which a missing
             // button would not. Booking is refused on the server regardless.
@@ -1293,62 +1300,6 @@ class _BookingBar extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _Price extends StatelessWidget {
-  const _Price({
-    required this.icon,
-    required this.caption,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String caption;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.md,
-        vertical: AppSizes.sm,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primarySofter,
-        borderRadius: BorderRadius.circular(AppSizes.md),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 15, color: AppColors.primary),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  caption,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

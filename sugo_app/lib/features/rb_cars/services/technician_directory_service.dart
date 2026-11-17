@@ -41,11 +41,14 @@ class TechnicianDirectoryService {
     double? latitude,
     double? longitude,
   }) async {
-    final List<dynamic> rows = await _rpc('recommended_technicians', <String, dynamic>{
-      'p_client_lat': latitude,
-      'p_client_lng': longitude,
-      'p_limit': limit,
-    });
+    final List<dynamic> rows = await _rpc(
+      'recommended_technicians',
+      <String, dynamic>{
+        'p_client_lat': latitude,
+        'p_client_lng': longitude,
+        'p_limit': limit,
+      },
+    );
 
     return _withAwayStatus(
       rows
@@ -156,14 +159,12 @@ class TechnicianDirectoryService {
     DateTime? before,
     int limit = 20,
   }) async {
-    final List<dynamic> rows = await _rpc(
-      'technician_reviews',
-      <String, dynamic>{
-        'p_technician_id': technicianId,
-        'p_before': before?.toUtc().toIso8601String(),
-        'p_limit': limit,
-      },
-    );
+    final List<dynamic> rows =
+        await _rpc('technician_reviews', <String, dynamic>{
+          'p_technician_id': technicianId,
+          'p_before': before?.toUtc().toIso8601String(),
+          'p_limit': limit,
+        });
 
     return rows
         .whereType<Map<String, dynamic>>()
@@ -233,16 +234,22 @@ class TechnicianDirectoryService {
       if (data is! List || data.isEmpty) return technicians;
 
       final Map<String, DateTime> away = <String, DateTime>{};
-      for (final Map<String, dynamic> row in data.whereType<Map<String, dynamic>>()) {
+      for (final Map<String, dynamic> row
+          in data.whereType<Map<String, dynamic>>()) {
         final String? id = row['technician_id'] as String?;
-        final DateTime? until = DateTime.tryParse(row['away_until'] as String? ?? '');
+        final DateTime? until = DateTime.tryParse(
+          row['away_until'] as String? ?? '',
+        );
         if (id != null && until != null) {
           away[id] = DateTime(until.year, until.month, until.day);
         }
       }
 
       return technicians
-          .map((Technician t) => away.containsKey(t.id) ? t.copyWith(awayUntil: away[t.id]) : t)
+          .map(
+            (Technician t) =>
+                away.containsKey(t.id) ? t.copyWith(awayUntil: away[t.id]) : t,
+          )
           .toList(growable: false);
     } on Exception catch (error) {
       // Offline, a timeout, or the function refusing: all mean "no badges".
@@ -277,12 +284,8 @@ class TechnicianDirectoryService {
         debugPrintStack(stackTrace: stackTrace, maxFrames: 6);
       }
       throw switch (error.code) {
-        '42501' => const RbCarsFailure(
-          'Please sign in again to continue.',
-        ),
-        'P0002' => const RbCarsFailure(
-          'That technician is no longer listed.',
-        ),
+        '42501' => const RbCarsFailure('Please sign in again to continue.'),
+        'P0002' => const RbCarsFailure('That technician is no longer listed.'),
         _ => const RbCarsFailure('Could not load technicians right now.'),
       };
     } catch (error) {

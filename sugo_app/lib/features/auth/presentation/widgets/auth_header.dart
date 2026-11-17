@@ -1,34 +1,33 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/widgets/sugo_brand_cover.dart';
 import '../../../../core/widgets/sugo_logo.dart';
 
 /// The branded header above the login and register forms.
 ///
-/// ## Why it is the icon artwork
+/// ## The 2026-11-16 redraw
 ///
-/// The reference design (2026-09-28) opens on the SUGO lockup - the emblem
-/// (since the 2026-09-29 rebrand, a house, wrench and van), the wordmark,
-/// "Fix. Technology. Appliances." - large, on navy. That
-/// is exactly the content of the app icon, so the header *is* the icon
-/// artwork (`AppAssets.brandHeader`, cut by `tool/prepare_brand_images.py`)
-/// rather than a second drawing of the same logo that could drift from it.
+/// The header used to be two pictures (`SUGO_login_header.png`,
+/// `SUGO_register_header.png`). The user pointed out that they did not match
+/// SUGO's colours: they were a saturated royal blue, where every other screen
+/// is SUGO navy, and they carried an older house-with-yellow-windows logo
+/// instead of the emblem the app actually uses.
 ///
-/// ## Why the height is the width
+/// It is now drawn, from the same pieces as the rest of the app:
 ///
-/// The artwork is square and fills the width, so [heightFor] makes the header
-/// square too and nothing is cropped. That matters at both ends: the icon has
-/// about 13% of navy above the roof, which is exactly the room the status bar
-/// needs, and about 14% below the tagline, which the sheet's [sheetOverlap]
-/// rides into without touching the words. An earlier 92% crop took both
-/// margins and put the status bar across the top of the logo.
+/// * the **illustrated Davao cover** ([SugoBrandCover]) - skyline, Mount Apo,
+///   and the dashed booking route ending at the service van (login, the dusk
+///   light) or at a home (register, daylight), in the exact palette;
+/// * the **real lockup** - [SugoLogoMark], which is the app icon's emblem,
+///   beside the [SugoLogo] wordmark and the tagline.
 ///
-/// Clamped, so a tablet does not give the logo half the page; past 420 the
-/// crop is shared top and bottom and both margins are still larger than what
-/// they have to clear.
+/// So the first screen a person sees is the same brand as everything after
+/// it, it is sharp on any phone, and it can never drift from the logo.
+///
+/// The white sheet rides up over the bottom by [sheetOverlap]; the route and
+/// skyline are laid out to sit above that edge, the lockup above them.
 class AuthHeader extends StatelessWidget {
   const AuthHeader({
     super.key,
@@ -38,18 +37,25 @@ class AuthHeader extends StatelessWidget {
   });
 
   final double height;
+
+  /// True on the register tab: daylight, a home at the end of the route, an
+  /// invitation in place of the tagline, and a back button.
   final bool? register;
   final VoidCallback? onBack;
 
   /// How far the white sheet rides up over the header's bottom edge.
   static const double sheetOverlap = 28;
 
-  /// Header height for a given content width: square, within limits.
+  /// Header height for a given content width, clamped so a tablet does not
+  /// give the logo half the page.
   static double heightFor(double width, {required bool register}) =>
-      register ? width * 0.72 : width * 643 / 887;
+      (width * 0.74).clamp(250.0, 360.0);
 
   @override
   Widget build(BuildContext context) {
+    final bool isRegister = register ?? false;
+    final double top = MediaQuery.paddingOf(context).top;
+
     return Semantics(
       image: true,
       label: '${AppStrings.appName}. ${AppStrings.tagline}',
@@ -60,28 +66,30 @@ class AuthHeader extends StatelessWidget {
           fit: StackFit.expand,
           children: <Widget>[
             const ColoredBox(color: AppColors.navy),
-            Image.asset(
-              register == null
-                  ? AppAssets.brandHeader
-                  : register!
-                  ? AppAssets.registerHeader
-                  : AppAssets.loginHeader,
-              fit: BoxFit.contain,
-              excludeFromSemantics: true,
-              errorBuilder:
-                  (BuildContext context, Object error, StackTrace? stackTrace) {
-                    if (kDebugMode) {
-                      debugPrint(
-                        'AuthHeader: failed to load the header image ($error)',
-                      );
-                    }
-                    return const _DrawnLockup();
-                  },
+            SugoBrandCover(
+              style: isRegister
+                  ? SugoCoverStyle.client
+                  : SugoCoverStyle.technician,
+              // The route runs low, between the lockup and the skyline.
+              topInset: height * 0.50,
+              motifHeight: height * 0.30,
             ),
-            if (register == true)
+            Positioned(
+              left: 24,
+              right: 24,
+              top: top + 6,
+              bottom: height * 0.42,
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _Lockup(register: isRegister),
+                ),
+              ),
+            ),
+            if (isRegister)
               Positioned(
-                top: MediaQuery.paddingOf(context).top + 8,
-                left: 12,
+                top: top + 4,
+                left: 8,
                 child: IconButton(
                   onPressed: onBack,
                   color: Colors.white,
@@ -96,26 +104,40 @@ class AuthHeader extends StatelessWidget {
   }
 }
 
-class _DrawnLockup extends StatelessWidget {
-  const _DrawnLockup();
+/// The emblem beside the wordmark, the tagline under both - the arrangement
+/// of the app icon's lockup, built from the same widgets the app uses.
+class _Lockup extends StatelessWidget {
+  const _Lockup({required this.register});
+
+  final bool register;
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      bottom: false,
-      child: Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const <Widget>[
-              SugoLogoMark(size: 72, onDark: true),
-              SizedBox(height: 18),
-              SugoLogo(fontSize: 44, onDark: true),
-            ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const <Widget>[
+            SugoLogoMark(size: 60, onDark: true),
+            SizedBox(width: 14),
+            SugoLogo(fontSize: 46, showTagline: false, onDark: true),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // The register tab says what joining means in place of the tagline,
+        // so both headers keep the same calm height and nothing crosses the
+        // route below.
+        Text(
+          register ? "Join Davao's repair community" : AppStrings.tagline,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+            color: Colors.white.withValues(alpha: 0.9),
           ),
         ),
-      ),
+      ],
     );
   }
 }

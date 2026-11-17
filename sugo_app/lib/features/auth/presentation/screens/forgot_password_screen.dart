@@ -113,11 +113,13 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
 
   /// Back to wherever the app is now. After a successful reset the person is
   /// signed in, so the auth gate underneath is already showing their home.
-  void _finish() => Navigator.of(context).popUntil((Route<dynamic> r) => r.isFirst);
+  void _finish() =>
+      Navigator.of(context).popUntil((Route<dynamic> r) => r.isFirst);
 
   @override
   Widget build(BuildContext context) {
-    final ForgotPasswordController c = context.watch<ForgotPasswordController>();
+    final ForgotPasswordController c = context
+        .watch<ForgotPasswordController>();
 
     return PopScope(
       // Mid-request, back would abandon a send or a verify halfway.
@@ -436,12 +438,7 @@ class _Hint extends StatelessWidget {
         children: <Widget>[
           Icon(icon, size: 16, color: AppColors.textSecondary),
           const SizedBox(width: AppSizes.sm),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.caption,
-            ),
-          ),
+          Expanded(child: Text(text, style: AppTextStyles.caption)),
         ],
       ),
     );

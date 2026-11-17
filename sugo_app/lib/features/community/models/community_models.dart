@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../rb_cars/models/job_enums.dart';
+import '../../rb_cars/models/trust_badge.dart';
 
 /// What a question is about.
 ///
@@ -106,13 +107,10 @@ class CommunityAuthor {
     return (name == null || name.isEmpty) ? 'SUGO user' : name;
   }
 
-  /// What the pill beside the name reads. Falls back to the tier when the
-  /// technician has no explicit badge, which is the common case.
-  String get badgeLabel {
-    final String? explicit = badge?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    return tier.label;
-  }
+  /// What the pill beside the name reads: the technician's trust badge, or
+  /// their tier below the baseline. `badge` holds a wire value since
+  /// 20261115000002, so it is named through [TrustBadge], never printed raw.
+  String get badgeLabel => TrustBadge.fromWire(badge)?.label ?? tier.label;
 
   /// Tint and ink for the tier pill. Existing palette tokens only.
   (Color, Color) get tierColors => switch (tier) {

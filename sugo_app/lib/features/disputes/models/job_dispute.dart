@@ -8,20 +8,51 @@ import '../../rb_cars/models/json_utils.dart';
 /// stand: a technician cannot say the repair was not fixed, and a client
 /// cannot say they were not paid.
 enum DisputeReason {
-  notFixed('not_fixed', 'The problem was not fixed', Icons.build_circle_outlined,
-      client: true),
-  overcharged('overcharged', 'I was charged more than agreed',
-      Icons.payments_outlined, client: true),
-  noShow('no_show', 'They did not show up', Icons.event_busy_outlined,
-      client: true, technician: true),
-  damage('damage', 'Something was damaged', Icons.broken_image_outlined,
-      client: true),
-  conduct('conduct', 'Rude or unsafe behaviour', Icons.report_outlined,
-      client: true, technician: true),
-  payment('payment', 'I was not paid', Icons.money_off_rounded,
-      technician: true),
-  other('other', 'Something else', Icons.more_horiz_rounded,
-      client: true, technician: true);
+  notFixed(
+    'not_fixed',
+    'The problem was not fixed',
+    Icons.build_circle_outlined,
+    client: true,
+  ),
+  overcharged(
+    'overcharged',
+    'I was charged more than agreed',
+    Icons.payments_outlined,
+    client: true,
+  ),
+  noShow(
+    'no_show',
+    'They did not show up',
+    Icons.event_busy_outlined,
+    client: true,
+    technician: true,
+  ),
+  damage(
+    'damage',
+    'Something was damaged',
+    Icons.broken_image_outlined,
+    client: true,
+  ),
+  conduct(
+    'conduct',
+    'Rude or unsafe behaviour',
+    Icons.report_outlined,
+    client: true,
+    technician: true,
+  ),
+  payment(
+    'payment',
+    'I was not paid',
+    Icons.money_off_rounded,
+    technician: true,
+  ),
+  other(
+    'other',
+    'Something else',
+    Icons.more_horiz_rounded,
+    client: true,
+    technician: true,
+  );
 
   const DisputeReason(
     this.wire,
@@ -38,10 +69,10 @@ enum DisputeReason {
   final bool technician;
 
   /// The reasons one side is offered, in the order above.
-  static List<DisputeReason> forRole({required bool isClient}) =>
-      DisputeReason.values
-          .where((DisputeReason r) => isClient ? r.client : r.technician)
-          .toList(growable: false);
+  static List<DisputeReason> forRole({required bool isClient}) => DisputeReason
+      .values
+      .where((DisputeReason r) => isClient ? r.client : r.technician)
+      .toList(growable: false);
 
   static DisputeReason fromWire(String? value) => DisputeReason.values
       .firstWhere((DisputeReason r) => r.wire == value, orElse: () => other);

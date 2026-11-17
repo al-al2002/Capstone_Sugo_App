@@ -41,7 +41,10 @@ void main() {
   testWidgets('shows where the road ends', (WidgetTester tester) async {
     await tester.pumpWidget(
       host(
-        const SugoTruckDrive(moving: false, destinationIcon: Icons.home_rounded),
+        const SugoTruckDrive(
+          moving: false,
+          destinationIcon: Icons.home_rounded,
+        ),
       ),
     );
     expect(find.byIcon(Icons.home_rounded), findsOneWidget);

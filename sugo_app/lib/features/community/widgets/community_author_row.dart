@@ -96,11 +96,19 @@ class CommunityAuthorRow extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 1),
+                        // Flexible labels (2026-11-17): beside a trailing
+                        // "Unanswered" pill on a small phone at large text,
+                        // fixed-width text here overflowed the card by more
+                        // than 100 px. Now it ellipsizes instead.
                         Row(
                           children: <Widget>[
-                            Text(
-                              communityTimeAgo(timestamp),
-                              style: AppTextStyles.micro,
+                            Flexible(
+                              child: Text(
+                                communityTimeAgo(timestamp),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.micro,
+                              ),
                             ),
                             if (author.isTechnician &&
                                 author.points > 0) ...<Widget>[
@@ -111,11 +119,15 @@ class CommunityAuthorRow extends StatelessWidget {
                                 color: AppColors.accentDark,
                               ),
                               const SizedBox(width: 3),
-                              Text(
-                                '${author.points} pts',
-                                style: AppTextStyles.micro.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.accentDark,
+                              Flexible(
+                                child: Text(
+                                  '${author.points} pts',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.micro.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.accentDark,
+                                  ),
                                 ),
                               ),
                             ],

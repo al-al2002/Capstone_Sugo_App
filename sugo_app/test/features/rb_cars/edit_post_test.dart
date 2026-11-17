@@ -8,6 +8,7 @@ import 'package:sugo_app/features/rb_cars/models/device_category.dart';
 import 'package:sugo_app/features/rb_cars/models/job.dart';
 import 'package:sugo_app/features/rb_cars/models/job_enums.dart';
 import 'package:sugo_app/features/rb_cars/models/match_result.dart';
+import 'package:sugo_app/features/rb_cars/models/technician_preferences.dart';
 import 'package:sugo_app/features/rb_cars/providers/job_posting_provider.dart';
 import 'package:sugo_app/features/rb_cars/screens/review_and_post_screen.dart';
 import 'package:sugo_app/features/rb_cars/services/rb_cars_service.dart';
@@ -30,7 +31,10 @@ void main() {
         ..restoreDescription(original.composedDescription);
 
       expect(restored.model, 'IdeaPad 3 14"');
-      expect(restored.description, 'It shuts off after a minute.\n\nFan is loud.');
+      expect(
+        restored.description,
+        'It shuts off after a minute.\n\nFan is loud.',
+      );
       expect(restored.notes, 'Gate code 1234');
       // Saving again must not grow a second "Model:" line.
       expect(restored.composedDescription, original.composedDescription);
@@ -92,12 +96,50 @@ void main() {
       expect(posting.draft.description, 'Dead after a storm.');
       // The client overrode the suggestion when posting; the edit keeps it.
       expect(posting.draft.servicePath, ServicePath.pickup);
-      expect(posting.keptPhotoUrls, <String>['https://x/a.jpg', 'https://x/b.jpg']);
+      expect(posting.keptPhotoUrls, <String>[
+        'https://x/a.jpg',
+        'https://x/b.jpg',
+      ]);
       expect(posting.canSubmit, isTrue);
     });
 
+    // The Availability question left step 2 on 2026-11-17. A job posted
+    // before that keeps its other preferences on "Edit post", but not one
+    // the client can no longer see or clear.
+    test('an old Availability preference is dropped, the rest are kept', () {
+      final JobPostingProvider posting = JobPostingProvider.editing(
+        Job(
+          id: 'job-10',
+          clientId: 'client-1',
+          deviceType: DeviceType.laptop,
+          problemSymptom: 'laptop_wont_power_on',
+          hasPhysicalDamage: false,
+          status: JobStatus.matched,
+          preferences: TechnicianPreferences(
+            minRating: MinRating.r45,
+            availability: AvailabilityPreference.onDate,
+            availableOn: DateTime(2026, 11, 20),
+          ),
+        ),
+        service: _CountingService(),
+      );
+      addTearDown(posting.dispose);
+
+      expect(posting.preferences.minRating, MinRating.r45);
+      expect(posting.preferences.availability, isNull);
+      expect(posting.preferences.availableOn, isNull);
+      expect(posting.preferences.active, <PreferenceField>[
+        PreferenceField.minRating,
+      ]);
+      // Saved as null, so the engine stops filtering on it.
+      expect(posting.draft.toUpdate()['pref_availability'], isNull);
+      expect(posting.draft.toUpdate()['pref_available_on'], isNull);
+    });
+
     test('saving updates the same job with kept and new photos', () async {
-      final _CountingService service = _CountingService(uploaded: <String>['https://x/c.jpg']);
+      final _CountingService service = _CountingService(
+        uploaded: <String>['https://x/c.jpg'],
+      );
       final JobPostingProvider posting = JobPostingProvider.editing(
         _savedJob,
         service: service,
@@ -113,30 +155,39 @@ void main() {
       expect(saved, isNotNull);
       expect(service.inserts, 0);
       expect(service.updatedJobIds, <String>['job-9']);
-      expect(service.lastDraft!.photoUrls, <String>['https://x/b.jpg', 'https://x/c.jpg']);
+      expect(service.lastDraft!.photoUrls, <String>[
+        'https://x/b.jpg',
+        'https://x/c.jpg',
+      ]);
       expect(service.lastDraft!.budgetMax, 2000);
       expect(service.matchingRuns, 1);
       // The new photo is now held by URL, so a second save does not re-upload it.
       expect(posting.photos, isEmpty);
-      expect(posting.keptPhotoUrls, <String>['https://x/b.jpg', 'https://x/c.jpg']);
+      expect(posting.keptPhotoUrls, <String>[
+        'https://x/b.jpg',
+        'https://x/c.jpg',
+      ]);
     });
   });
 
   group('posting twice', () {
-    test('a second submit updates the job instead of posting another', () async {
-      final _CountingService service = _CountingService();
-      final JobPostingProvider posting = JobPostingProvider(service: service);
-      addTearDown(posting.dispose);
-      posting.selectCategory(DeviceCategory.laptop);
-      posting.selectSymptom('laptop_wont_power_on');
-      posting.setLocation(latitude: 7.0731, longitude: 125.6128);
+    test(
+      'a second submit updates the job instead of posting another',
+      () async {
+        final _CountingService service = _CountingService();
+        final JobPostingProvider posting = JobPostingProvider(service: service);
+        addTearDown(posting.dispose);
+        posting.selectCategory(DeviceCategory.laptop);
+        posting.selectSymptom('laptop_wont_power_on');
+        posting.setLocation(latitude: 7.0731, longitude: 125.6128);
 
-      await posting.submit();
-      await posting.submit();
+        await posting.submit();
+        await posting.submit();
 
-      expect(service.inserts, 1, reason: 'the job must be inserted once');
-      expect(service.updatedJobIds, <String>['job-new']);
-    });
+        expect(service.inserts, 1, reason: 'the job must be inserted once');
+        expect(service.updatedJobIds, <String>['job-new']);
+      },
+    );
 
     testWidgets('back from the matches goes home, not to the map step', (
       WidgetTester tester,

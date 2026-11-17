@@ -81,11 +81,7 @@ class SugoStatTile extends StatelessWidget {
             child: Icon(icon, size: 18, color: foreground),
           ),
           const SizedBox(height: AppSizes.md),
-          _Figure(
-            value: value,
-            numericValue: numericValue,
-            animate: animate,
-          ),
+          _Figure(value: value, numericValue: numericValue, animate: animate),
           const SizedBox(height: 2),
           Text(
             label,

@@ -28,12 +28,13 @@ Future<void> openSugoImageViewer(
       barrierColor: Colors.black,
       transitionDuration: const Duration(milliseconds: 260),
       reverseTransitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (BuildContext _, Animation<double> __, Animation<double> ___) =>
-          SugoImageViewer(
-            urls: urls,
-            initialIndex: initialIndex,
-            heroTag: heroTag,
-          ),
+      pageBuilder:
+          (BuildContext _, Animation<double> __, Animation<double> ___) =>
+              SugoImageViewer(
+                urls: urls,
+                initialIndex: initialIndex,
+                heroTag: heroTag,
+              ),
       transitionsBuilder:
           (
             BuildContext _,
@@ -220,13 +221,14 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto>
   @override
   void initState() {
     super.initState();
-    _animation = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 220),
-    )..addListener(() {
-        final Animation<Matrix4>? tween = _tween;
-        if (tween != null) _transform.value = tween.value;
-      });
+    _animation =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 220),
+        )..addListener(() {
+          final Animation<Matrix4>? tween = _tween;
+          if (tween != null) _transform.value = tween.value;
+        });
     _transform.addListener(_reportZoom);
   }
 
@@ -255,9 +257,10 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto>
         ..translateByDouble(-at.dx * (scale - 1), -at.dy * (scale - 1), 0, 1)
         ..scaleByDouble(scale, scale, 1, 1);
     }
-    _tween = Matrix4Tween(begin: from, end: to).animate(
-      CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic),
-    );
+    _tween = Matrix4Tween(
+      begin: from,
+      end: to,
+    ).animate(CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic));
     _animation.forward(from: 0);
   }
 
@@ -275,7 +278,11 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto>
             widget.url,
             fit: BoxFit.contain,
             loadingBuilder:
-                (BuildContext context, Widget child, ImageChunkEvent? progress) {
+                (
+                  BuildContext context,
+                  Widget child,
+                  ImageChunkEvent? progress,
+                ) {
                   if (progress == null) return child;
                   final int? total = progress.expectedTotalBytes;
                   return Center(

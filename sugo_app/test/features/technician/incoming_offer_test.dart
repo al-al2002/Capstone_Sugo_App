@@ -65,13 +65,13 @@ void main() {
 
     test('a job posted without a make is not an error', () {
       final Map<String, dynamic> row = offerRow();
-      (row['score_breakdown'] as Map<String, dynamic>)['job'] =
-          <String, dynamic>{
-            'id': 'job-2',
-            'device_type': 'laptop',
-            'problem_symptom': 'no_power',
-            'has_physical_damage': false,
-          };
+      (row['score_breakdown']
+          as Map<String, dynamic>)['job'] = <String, dynamic>{
+        'id': 'job-2',
+        'device_type': 'laptop',
+        'problem_symptom': 'no_power',
+        'has_physical_damage': false,
+      };
 
       final MatchResult match = MatchResult.fromJson(row);
 
@@ -80,7 +80,10 @@ void main() {
     });
 
     test('the budget reads as pesos, not a currency code', () {
-      expect(MatchResult.fromJson(offerRow()).job!.budgetLabel, '₱800 – ₱2,500');
+      expect(
+        MatchResult.fromJson(offerRow()).job!.budgetLabel,
+        '₱800 – ₱2,500',
+      );
     });
   });
 
@@ -143,7 +146,7 @@ void main() {
   });
 
   group('the task sheet', () {
-    testWidgets('shows the machine, the fault and the budget range', (
+    testWidgets('shows the machine, the fault, the price and the budget', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -174,7 +177,13 @@ void main() {
       // Everything the request asked for, in the technician's words.
       expect(find.text('Acer'), findsOneWidget);
       expect(find.text('Aspire 5 A515'), findsOneWidget);
-      expect(find.text('₱800 – ₱2,500'), findsOneWidget);
+      // The quoted price leads (2026-11-17); the client's own range stays
+      // as a footnote under it.
+      expect(find.text('Labor fee'), findsOneWidget);
+      expect(
+        find.textContaining("Client's budget: ₱800 – ₱2,500"),
+        findsOneWidget,
+      );
       expect(find.textContaining('Laptop'), findsWidgets);
       expect(
         find.text('Yes — the client reports visible damage'),

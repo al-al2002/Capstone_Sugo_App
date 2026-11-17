@@ -10,8 +10,9 @@ import '../widgets/posting_scaffold.dart';
 import 'client_review_screen.dart';
 import '../../../core/constants/app_colors.dart';
 import '../models/labor_price_catalog.dart';
+import '../widgets/service_path_card.dart';
 
-/// Step 5 of 5: the last look before the job goes out to technicians.
+/// Step 6 of 6: the last look before the job goes out to technicians.
 ///
 /// Photos and notes are collected here rather than earlier because both are
 /// afterthoughts by nature - a client knows what else to mention once they can
@@ -71,7 +72,7 @@ class _ReviewAndPostScreenState extends State<ReviewAndPostScreen> {
     final bool editing = posting.isEditing;
 
     return PostingScaffold(
-      step: 5,
+      step: 6,
       title: editing ? 'Review your changes' : 'Review & post',
       subtitle: editing
           ? 'Saving updates your post and finds a fresh top 3 for it.'
@@ -173,7 +174,7 @@ class _MatchPromise extends StatelessWidget {
                   ? 'Your current matches will be replaced with a fresh top 3'
                   : isTechnicianCommunity
                   ? 'Your question will be posted to the technician community'
-                  : 'RB-CARS will match you with top 3 technicians',
+                  : 'SUGO will match you with top 3 technicians',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -219,7 +220,9 @@ class _Summary extends StatelessWidget {
         children: <Widget>[
           _Row(label: 'Device', value: device.isEmpty ? 'Not set' : device),
           _Row(
-            label: 'Symptom',
+            // "Job", not "Symptom": an aircon cleaning is not a symptom
+            // (2026-11-16, maintenance and installation).
+            label: 'Job',
             value:
                 labor?.symptom ??
                 (draft.problemSymptom == null
@@ -227,10 +230,31 @@ class _Summary extends StatelessWidget {
                     : draft.problemSymptom!),
           ),
           _Row(label: 'Price', value: labor?.fee ?? 'Price to be confirmed'),
-          _Row(label: 'Service', value: draft.servicePath?.label ?? 'Not set'),
+          // Urgent: 20% of the labor on top (2026-11-17), said before the
+          // client posts, not discovered after.
+          if (labor != null && draft.urgency == Urgency.needToday)
+            _Row(
+              label: 'Urgent fee (20%)',
+              value: LaborPriceCatalog.urgentFee(labor) == null
+                  ? '+20% of labor'
+                  : '+₱${LaborPriceCatalog.urgentFee(labor)}',
+            ),
           _Row(
-            label: 'Schedule',
-            value: posting.schedulePreference.label,
+            label: 'Service',
+            value: draft.servicePath == null
+                ? 'Not set'
+                : ServicePathSuggestion.titleFor(draft.servicePath!),
+          ),
+          // A shop repair's "bring it myself / shop pickup" is no longer
+          // asked while posting (2026-11-17): the booking dialog asks it,
+          // with the exact fee for the chosen technician's shop.
+          _Row(label: 'Schedule', value: posting.schedulePreference.label),
+          // Read back because these are hard limits: a client who set "4.5+"
+          // three screens ago should see it once more before it narrows
+          // their Top 3.
+          _Row(
+            label: 'Must-haves',
+            value: draft.preferences.summary,
             last: true,
           ),
         ],

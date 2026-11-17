@@ -141,25 +141,26 @@ class _Thumbnail extends StatelessWidget {
             child: image,
           ),
         ),
-        if (onRemove != null) Positioned(
-          top: 2,
-          right: 2,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close_rounded,
-                size: 13,
-                color: Colors.white,
+        if (onRemove != null)
+          Positioned(
+            top: 2,
+            right: 2,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 13,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

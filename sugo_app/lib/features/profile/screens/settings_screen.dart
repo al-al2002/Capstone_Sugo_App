@@ -86,8 +86,7 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.mail_outline_rounded,
                 title: 'Email',
                 subtitle:
-                    context.watch<AuthController>().user?.email ??
-                    'Signed in',
+                    context.watch<AuthController>().user?.email ?? 'Signed in',
                 showChevron: false,
               ),
             ],

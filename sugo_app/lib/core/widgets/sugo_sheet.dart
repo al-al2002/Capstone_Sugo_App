@@ -41,7 +41,10 @@ Future<T?> showSugoBottomSheet<T>({
       final double keyboard = MediaQuery.viewInsetsOf(sheetContext).bottom;
       final double maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.92;
 
-      final Widget body = Padding(padding: padding, child: builder(sheetContext));
+      final Widget body = Padding(
+        padding: padding,
+        child: builder(sheetContext),
+      );
 
       return Padding(
         padding: EdgeInsets.only(bottom: keyboard),
@@ -63,9 +66,7 @@ Future<T?> showSugoBottomSheet<T>({
                         : null,
                   ),
                 Flexible(
-                  child: scrollable
-                      ? SingleChildScrollView(child: body)
-                      : body,
+                  child: scrollable ? SingleChildScrollView(child: body) : body,
                 ),
               ],
             ),
@@ -168,7 +169,9 @@ class SugoSheetOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color tint = destructive ? AppColors.errorSoft : AppColors.primarySoft;
+    final Color tint = destructive
+        ? AppColors.errorSoft
+        : AppColors.primarySoft;
     final Color ink = destructive ? AppColors.error : AppColors.primary;
 
     return Material(

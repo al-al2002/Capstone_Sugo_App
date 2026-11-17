@@ -498,6 +498,7 @@ class NotificationFeedService {
     final String device = _device(job).toLowerCase();
     final TrackingJourney journey = TrackingJourney.of(job.servicePath);
     final String title = switch (t.stage) {
+      TrackingStage.droppingOff => 'On your way to the shop',
       TrackingStage.headingToPickup => 'Technician is on the way',
       TrackingStage.collected => 'Your $device was collected',
       TrackingStage.returningToShop => 'Heading to the workshop',

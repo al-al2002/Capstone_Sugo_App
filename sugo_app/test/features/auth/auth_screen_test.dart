@@ -72,7 +72,11 @@ void main() {
   }
 
   group('layout (2026-09-28 reference)', () {
-    testWidgets('brand header on top, one form, no tabs, with social buttons', (
+    // No social sign-in, at the user's request (2026-09-28, and again on
+    // 2026-11-15 after disabled Google / Apple buttons had come back). A
+    // button that does nothing when a panel member taps it is worse than no
+    // button.
+    testWidgets('brand header on top, one form, no tabs, no social sign-in', (
       WidgetTester tester,
     ) async {
       final FakeAuthRepository repository = newRepository(tester);
@@ -80,9 +84,9 @@ void main() {
 
       expect(find.byType(AuthHeader), findsOneWidget);
       expect(find.text('Welcome Back!'), findsOneWidget);
-      expect(find.textContaining('Google'), findsOneWidget);
-      expect(find.textContaining('Apple'), findsOneWidget);
-      expect(find.textContaining('continue with'), findsOneWidget);
+      expect(find.textContaining('Google'), findsNothing);
+      expect(find.textContaining('Apple'), findsNothing);
+      expect(find.textContaining('continue with'), findsNothing);
     });
 
     testWidgets('the register link switches the form and the title', (
@@ -177,6 +181,18 @@ void main() {
   });
 
   group('register', () {
+    // Scrolled to first. Since the role choice was added the form is taller
+    // than the 2000 px test surface, and the terms box sits below it - a tap
+    // at its old position missed, so terms were never accepted and every
+    // register test stopped at "Please accept the Terms".
+    Future<void> acceptTerms(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(Checkbox));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
+    }
+
     Future<void> fill(
       WidgetTester tester, {
       String phone = '09171234567',
@@ -189,8 +205,7 @@ void main() {
       await tester.enterText(fields.at(2), phone);
       await tester.enterText(fields.at(3), password);
       await tester.enterText(fields.at(4), confirm ?? password);
-      await tester.tap(find.byType(Checkbox));
-      await tester.pumpAndSettle();
+      await acceptTerms(tester);
     }
 
     testWidgets('has all five fields', (WidgetTester tester) async {
@@ -211,8 +226,7 @@ void main() {
     ) async {
       final FakeAuthRepository repository = newRepository(tester);
       await tester.pumpWidget(wrap(repository, tab: AuthTab.register));
-      await tester.tap(find.byType(Checkbox));
-      await tester.pumpAndSettle();
+      await acceptTerms(tester);
       await tapButton(tester, 'Create account');
 
       expect(find.text('Full name is required'), findsOneWidget);

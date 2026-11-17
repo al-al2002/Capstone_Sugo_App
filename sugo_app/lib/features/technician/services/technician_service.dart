@@ -6,6 +6,7 @@ import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
 import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/models/technician.dart';
+import '../../rb_cars/models/trust_badge.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 
 /// Everything the technician dashboard reads.
@@ -54,6 +55,24 @@ class TechnicianService {
     } on PostgrestException catch (error) {
       _log('me', error);
       throw const RbCarsFailure('Could not load your technician profile.');
+    }
+  }
+
+  /// The technician's Progressive Trust Badge and every number behind it,
+  /// from `my_trust_badge()`, which re-evaluates the badge before answering.
+  ///
+  /// Never fatal: a dashboard that cannot load the badge still shows offers
+  /// and jobs, and simply leaves the card out - including against a database
+  /// the 20261115000002 migration has not reached yet.
+  Future<TrustBadgeProgress?> myTrustBadge() async {
+    try {
+      final Object? data = await _client.rpc<Object?>('my_trust_badge');
+      return data is Map<String, dynamic>
+          ? TrustBadgeProgress.fromJson(data)
+          : null;
+    } on PostgrestException catch (error) {
+      _log('myTrustBadge', error);
+      return null;
     }
   }
 
@@ -171,14 +190,9 @@ class TechnicianService {
   /// Close a job and write the `job_outcomes` row that Stage 1 learns from.
   Future<JobResponseOutcome> complete(
     String jobId, {
-    required bool diagnosisCorrect,
-    bool reroutedMidJob = false,
+    required bool? diagnosisCorrect,
   }) {
-    return _rbCars.completeJob(
-      jobId,
-      diagnosisCorrect: diagnosisCorrect,
-      reroutedMidJob: reroutedMidJob,
-    );
+    return _rbCars.completeJob(jobId, diagnosisCorrect: diagnosisCorrect);
   }
 
   void _log(String action, Object error) {

@@ -142,7 +142,8 @@ class _ReturnMethodCardState extends State<ReturnMethodCard> {
           _OptionTile(
             icon: Icons.storefront_rounded,
             title: "I'll pick it up",
-            body: 'Collect it at the workshop yourself. We will show you the way.',
+            body:
+                'Collect it at the workshop yourself. We will show you the way.',
             selected: method == ReturnMethod.clientPickup,
             busy: _saving == ReturnMethod.clientPickup,
             onTap: () => _choose(ReturnMethod.clientPickup),
@@ -396,7 +397,11 @@ class ClientPickupBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Icon(Icons.storefront_rounded, size: 20, color: AppColors.accent),
+          const Icon(
+            Icons.storefront_rounded,
+            size: 20,
+            color: AppColors.accent,
+          ),
           const SizedBox(width: AppSizes.sm),
           Expanded(
             child: Column(

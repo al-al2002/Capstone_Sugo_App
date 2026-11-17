@@ -41,10 +41,7 @@ void main() {
       final SemanticsHandle semantics = tester.ensureSemantics();
       await tester.pumpWidget(
         host(
-          const SugoRouteLine(
-            stops: stops,
-            position: SugoRoutePosition.at(1),
-          ),
+          const SugoRouteLine(stops: stops, position: SugoRoutePosition.at(1)),
         ),
       );
 
@@ -79,10 +76,7 @@ void main() {
 
       await tester.pumpWidget(
         host(
-          const SugoRouteLine(
-            stops: stops,
-            position: SugoRoutePosition.at(3),
-          ),
+          const SugoRouteLine(stops: stops, position: SugoRoutePosition.at(3)),
         ),
       );
       await tester.pumpAndSettle();
@@ -146,20 +140,19 @@ void main() {
   ) async {
     await tester.pumpWidget(host(const SugoCard(child: Text('Card'))));
 
-    final BoxDecoration decoration = tester
-        .widget<AnimatedContainer>(
-          find.descendant(
-            of: find.byType(SugoCard),
-            matching: find.byType(AnimatedContainer),
-          ),
-        )
-        .decoration! as BoxDecoration;
+    final BoxDecoration decoration =
+        tester
+                .widget<AnimatedContainer>(
+                  find.descendant(
+                    of: find.byType(SugoCard),
+                    matching: find.byType(AnimatedContainer),
+                  ),
+                )
+                .decoration!
+            as BoxDecoration;
     expect(decoration.boxShadow, isEmpty);
     expect((decoration.border! as Border).top.color, AppColors.border);
-    expect(
-      decoration.borderRadius,
-      BorderRadius.circular(AppSizes.radius),
-    );
+    expect(decoration.borderRadius, BorderRadius.circular(AppSizes.radius));
   });
 
   testWidgets('a small button answers a tap anywhere in its 48dp band', (

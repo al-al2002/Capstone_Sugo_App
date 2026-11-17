@@ -151,9 +151,7 @@ class _NotificationSettingsScreenState
                 ),
                 const SizedBox(height: AppSizes.md),
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSizes.xs,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSizes.xs),
                   child: Text(
                     'These control what appears in your notification centre '
                     'and the badge on the bell.',
@@ -174,7 +172,9 @@ class _NotificationSettingsScreenState
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2.2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                              ),
                             )
                           : Switch(
                               value: _values[_pushChannel] ?? true,
@@ -216,8 +216,7 @@ class _NotificationSettingsScreenState
   }
 
   static String _describe(NotificationCategory c) => switch (c) {
-    NotificationCategory.booking =>
-      'Requests, acceptances and cancellations',
+    NotificationCategory.booking => 'Requests, acceptances and cancellations',
     NotificationCategory.tracking => 'Pickup progress and delays',
     NotificationCategory.messages => 'New messages from your technician',
     NotificationCategory.service => 'Work started, finished and rating asks',

@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
-import '../../../core/theme/app_elevation.dart';
 import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/ui_feedback.dart';
-import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../../../core/widgets/sugo_image_viewer.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
@@ -19,6 +18,7 @@ import '../models/community_models.dart';
 import '../services/community_service.dart';
 import '../widgets/community_answer_card.dart';
 import '../widgets/community_author_row.dart';
+import '../widgets/find_technician_button.dart';
 
 /// One question and its answers.
 ///
@@ -39,7 +39,11 @@ class CommunityPostScreen extends StatefulWidget {
     required this.post,
     this.isClient = false,
     this.onChooseService,
+    @visibleForTesting this.service,
   });
+
+  /// Tests only (2026-11-17): a fake, so the thread renders offline.
+  final CommunityService? service;
 
   final CommunityPost post;
   final bool isClient;
@@ -50,7 +54,7 @@ class CommunityPostScreen extends StatefulWidget {
 }
 
 class _CommunityPostScreenState extends State<CommunityPostScreen> {
-  final CommunityService _service = CommunityService();
+  late final CommunityService _service = widget.service ?? CommunityService();
   final TextEditingController _reply = TextEditingController();
   final ScrollController _scroll = ScrollController();
 
@@ -296,31 +300,30 @@ class _CommunityPostScreenState extends State<CommunityPostScreen> {
       return SugoEmptyState.error(message: _error!, onAction: _load);
     }
 
-    if (_answers.isEmpty) {
-      return const SugoEmptyState(
-        icon: Icons.lightbulb_outline_rounded,
-        title: 'No answers yet',
-        message:
-            'Nobody has answered this one. If you know the answer, yours '
-            'will be the first.',
-        compact: true,
-      );
-    }
+    if (_answers.isEmpty) return const _NoAnswers();
 
     return Column(
       children: <Widget>[
         for (int i = 0; i < _answers.length; i++)
-          CommunityAnswerCard(
-            // Keyed by id so re-sorting animates rows rather than rebuilding
-            // them in place - without this, switching sort order makes every
-            // vote button flicker through the wrong state.
-            key: ValueKey<String>(_answers[i].id),
-            answer: _answers[i],
-            onToggleHelpful: (bool helpful) =>
-                _toggleHelpful(_answers[i], helpful),
-            onDelete: _answers[i].isMine
-                ? () => _deleteAnswer(_answers[i])
-                : null,
+          // Rises in once per answer (2026-11-17): the thread deals in when
+          // it opens, a newly posted answer rises into place, and a re-sort
+          // moves existing rows without replaying them, because the key is
+          // the answer.
+          SugoRiseIn(
+            key: ValueKey<String>('rise-${_answers[i].id}'),
+            delay: AppMotion.staggerDelay(i),
+            child: CommunityAnswerCard(
+              // Keyed by id so re-sorting animates rows rather than rebuilding
+              // them in place - without this, switching sort order makes every
+              // vote button flicker through the wrong state.
+              key: ValueKey<String>(_answers[i].id),
+              answer: _answers[i],
+              onToggleHelpful: (bool helpful) =>
+                  _toggleHelpful(_answers[i], helpful),
+              onDelete: _answers[i].isMine
+                  ? () => _deleteAnswer(_answers[i])
+                  : null,
+            ),
           ),
       ],
     );
@@ -351,34 +354,112 @@ class _ClientServiceFallback extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
+        // One button, "Still not fixed? Find a technician" (2026-11-16): it
+        // opens Home Service / Shop Repair and converts this post without
+        // retyping anything.
+        child: FindTechnicianButton(
+          onChooseService: onChooseService,
+          converting: converting,
+        ),
+      ),
+    );
+  }
+}
+
+/// The question itself, at the top of the thread.
+///
+/// Since 2026-11-17 it opens on the brand band - topic, title, and whether it
+/// has been answered - with the words, the photo and the asker below on
+/// white. The band is the same one every renovated screen opens with.
+class _QuestionCard extends StatelessWidget {
+  const _QuestionCard({required this.post});
+
+  final CommunityPost post;
+
+  @override
+  Widget build(BuildContext context) {
+    const Radius corner = Radius.circular(AppSizes.cardRadius);
+    final bool answered = post.isAnswered;
+
+    return SugoRiseIn(
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.all(corner),
+          border: Border.all(color: AppColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Text(
-              'Need someone to do it for you?',
-              style: AppTextStyles.subtitle,
+            SugoHeroBand(
+              borderRadius: const BorderRadius.vertical(top: corner),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // A Wrap, so on a small phone at large text the status
+                  // pill drops under the topic instead of overflowing.
+                  Wrap(
+                    spacing: AppSizes.sm,
+                    runSpacing: AppSizes.xs + 2,
+                    children: <Widget>[
+                      _GlassPill(
+                        icon: post.topic.icon,
+                        label: post.topic.label,
+                      ),
+                      _GlassPill(
+                        icon: answered
+                            ? Icons.check_circle_rounded
+                            : Icons.hourglass_bottom_rounded,
+                        label: answered
+                            ? 'Answered · ${post.commentCount}'
+                            : 'Waiting for an answer',
+                        tint: answered
+                            ? const Color(0xFF4ADE80)
+                            : AppColors.accent,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSizes.md),
+                  Text(
+                    post.title,
+                    style: AppTextStyles.title.copyWith(
+                      fontSize: 20,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: AppSizes.xs),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: converting
-                        ? null
-                        : () => onChooseService(ServicePath.homeService),
-                    child: const Text('Home service'),
+            Padding(
+              padding: const EdgeInsets.all(AppSizes.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(post.body, style: AppTextStyles.body),
+
+                  // Full width here, unlike the thumbnail on the feed card.
+                  // This is the screen where a technician is actually trying
+                  // to read the fault off the picture, so it gets the space -
+                  // and a tap opens the same zoomable viewer the job photos
+                  // use, because "is that a capacitor or a burn mark" is a
+                  // question that needs pinch-zoom.
+                  if (CommunityService.publicPhotoUrl(post.imagePath)
+                      case final String url) ...<Widget>[
+                    const SizedBox(height: AppSizes.md),
+                    _QuestionPhoto(url: url),
+                  ],
+
+                  const SizedBox(height: AppSizes.lg),
+                  const Divider(height: 1),
+                  const SizedBox(height: AppSizes.md),
+                  CommunityAuthorRow(
+                    author: post.author,
+                    timestamp: post.createdAt,
+                    dense: true,
                   ),
-                ),
-                const SizedBox(width: AppSizes.sm),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: converting
-                        ? null
-                        : () => onChooseService(ServicePath.pickup),
-                    child: const Text('Shop pickup'),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -387,63 +468,42 @@ class _ClientServiceFallback extends StatelessWidget {
   }
 }
 
-/// The question itself, at the top of the thread.
-class _QuestionCard extends StatelessWidget {
-  const _QuestionCard({required this.post});
+/// A small frosted pill on the band: an icon in [tint] and a white label.
+class _GlassPill extends StatelessWidget {
+  const _GlassPill({
+    required this.icon,
+    required this.label,
+    this.tint = Colors.white,
+  });
 
-  final CommunityPost post;
+  final IconData icon;
+  final String label;
+  final Color tint;
 
   @override
   Widget build(BuildContext context) {
-    return SugoCard(
-      padding: const EdgeInsets.all(AppSizes.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primarySoft,
-              borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+          Icon(icon, size: 12, color: tint),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.micro.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(post.topic.icon, size: 11, color: AppColors.primaryDark),
-                const SizedBox(width: 4),
-                Text(
-                  post.topic.label,
-                  style: AppTextStyles.overline.copyWith(
-                    color: AppColors.primaryDark,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSizes.md),
-          Text(post.title, style: AppTextStyles.title.copyWith(fontSize: 20)),
-          const SizedBox(height: AppSizes.sm),
-          Text(post.body, style: AppTextStyles.body),
-
-          // Full width here, unlike the thumbnail on the feed card. This is
-          // the screen where a technician is actually trying to read the
-          // fault off the picture, so it gets the space - and a tap opens the
-          // same zoomable viewer the job photos use, because "is that a
-          // capacitor or a burn mark" is a question that needs pinch-zoom.
-          if (CommunityService.publicPhotoUrl(post.imagePath)
-              case final String url) ...<Widget>[
-            const SizedBox(height: AppSizes.md),
-            _QuestionPhoto(url: url),
-          ],
-
-          const SizedBox(height: AppSizes.lg),
-          const Divider(height: 1),
-          const SizedBox(height: AppSizes.md),
-          CommunityAuthorRow(
-            author: post.author,
-            timestamp: post.createdAt,
-            dense: true,
           ),
         ],
       ),
@@ -524,69 +584,81 @@ class _AnswersHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The count takes the free space and the sort button may shrink
+    // (2026-11-17): side by side at fixed widths they overflowed a small
+    // phone at large text.
     return Row(
       children: <Widget>[
-        Text(
-          count == 1 ? '1 answer' : '$count answers',
-          style: AppTextStyles.sectionTitle,
+        Expanded(
+          child: Text(
+            count == 1 ? '1 answer' : '$count answers',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.sectionTitle,
+          ),
         ),
-        const Spacer(),
         // Hidden below two answers: there is nothing to sort, and a control
         // that cannot change anything is noise.
         if (count > 1)
-          PopupMenuButton<CommunitySort>(
-            initialValue: sort,
-            onSelected: onSortChanged,
-            tooltip: 'Sort answers',
-            position: PopupMenuPosition.under,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-            ),
-            itemBuilder: (_) => CommunitySort.values
-                .map(
-                  (CommunitySort option) => PopupMenuItem<CommunitySort>(
-                    value: option,
-                    child: Row(
-                      children: <Widget>[
-                        Icon(
-                          option.icon,
-                          size: 15,
-                          color: AppColors.textSecondary,
+          Flexible(
+            child: PopupMenuButton<CommunitySort>(
+              initialValue: sort,
+              onSelected: onSortChanged,
+              tooltip: 'Sort answers',
+              position: PopupMenuPosition.under,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSizes.tileRadius),
+              ),
+              itemBuilder: (_) => CommunitySort.values
+                  .map(
+                    (CommunitySort option) => PopupMenuItem<CommunitySort>(
+                      value: option,
+                      child: Row(
+                        children: <Widget>[
+                          Icon(
+                            option.icon,
+                            size: 15,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: AppSizes.sm),
+                          Text(option.label, style: AppTextStyles.field),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.md,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(sort.icon, size: 13, color: AppColors.textSecondary),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        sort.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.micro.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(width: AppSizes.sm),
-                        Text(option.label, style: AppTextStyles.field),
-                      ],
+                      ),
                     ),
-                  ),
-                )
-                .toList(growable: false),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSizes.md,
-                vertical: 6,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(sort.icon, size: 13, color: AppColors.textSecondary),
-                  const SizedBox(width: 5),
-                  Text(
-                    sort.label,
-                    style: AppTextStyles.micro.copyWith(
-                      fontWeight: FontWeight.w700,
+                    const Icon(
+                      Icons.expand_more_rounded,
+                      size: 15,
+                      color: AppColors.hint,
                     ),
-                  ),
-                  const Icon(
-                    Icons.expand_more_rounded,
-                    size: 15,
-                    color: AppColors.hint,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -642,9 +714,19 @@ class _ReplyBarState extends State<_ReplyBar> {
         AppSizes.screenPadding,
         AppSizes.md,
       ),
-      decoration: const BoxDecoration(
+      // A floating tray, like the chat composer (2026-11-17).
+      decoration: BoxDecoration(
         color: AppColors.surface,
-        boxShadow: AppElevation.navBar,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppSizes.sheetRadius),
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -688,6 +770,8 @@ class _ReplyBarState extends State<_ReplyBar> {
   }
 }
 
+/// The reply's send button: the brand gradient, leaning forward when there is
+/// an answer to send (2026-11-17), the same as the chat's.
 class _SendButton extends StatelessWidget {
   const _SendButton({
     required this.enabled,
@@ -701,37 +785,108 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
+    return AnimatedRotation(
+      turns: enabled ? -0.06 : 0,
       duration: AppMotion.base,
-      curve: AppMotion.standard,
-      width: AppSizes.buttonHeight,
-      height: AppSizes.buttonHeight,
-      decoration: BoxDecoration(
-        color: enabled ? AppColors.primary : AppColors.divider,
-        borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onTap : null,
+      curve: AppMotion.emphasized,
+      child: AnimatedContainer(
+        duration: AppMotion.base,
+        curve: AppMotion.standard,
+        width: AppSizes.buttonHeight,
+        height: AppSizes.buttonHeight,
+        decoration: BoxDecoration(
+          gradient: enabled || sending
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[AppColors.primary, AppColors.secondary],
+                )
+              : null,
+          color: enabled || sending ? null : AppColors.divider,
           borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
-          child: Center(
-            child: sending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+            child: Center(
+              child: sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Icon(
+                      Icons.send_rounded,
+                      size: 19,
+                      color: enabled ? Colors.white : AppColors.hint,
                     ),
-                  )
-                : Icon(
-                    Icons.send_rounded,
-                    size: 19,
-                    color: enabled ? Colors.white : AppColors.hint,
-                  ),
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// No answers yet: a lightbulb that swings once, then the invitation.
+class _NoAnswers extends StatelessWidget {
+  const _NoAnswers();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSizes.lg),
+      child: Column(
+        children: <Widget>[
+          SugoRiseIn(
+            child: Container(
+              width: 76,
+              height: 76,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[AppColors.accentSoft, AppColors.accentSofter],
+                ),
+              ),
+              child: const SugoWiggle(
+                swings: 2,
+                angle: 0.25,
+                child: Icon(
+                  Icons.lightbulb_rounded,
+                  size: 36,
+                  color: AppColors.accent,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSizes.md),
+          SugoRiseIn(
+            delay: AppMotion.staggerDelay(2),
+            child: Column(
+              children: <Widget>[
+                Text(
+                  'No answers yet',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.titleSmall,
+                ),
+                const SizedBox(height: AppSizes.xs),
+                Text(
+                  'Nobody has answered this one. If you know the answer, '
+                  'yours will be the first.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

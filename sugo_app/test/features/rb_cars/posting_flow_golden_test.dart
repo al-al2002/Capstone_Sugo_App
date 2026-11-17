@@ -3,11 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sugo_app/core/theme/app_theme.dart';
 import 'package:sugo_app/features/rb_cars/models/device_category.dart';
 import 'package:sugo_app/features/rb_cars/models/schedule_preference.dart';
+import 'package:sugo_app/features/rb_cars/models/technician_preferences.dart';
 import 'package:sugo_app/features/rb_cars/providers/job_posting_provider.dart';
 import 'package:sugo_app/features/rb_cars/screens/device_details_screen.dart';
 import 'package:sugo_app/features/rb_cars/screens/job_posting_screen.dart';
 import 'package:sugo_app/features/rb_cars/screens/review_and_post_screen.dart';
 import 'package:sugo_app/features/rb_cars/screens/symptom_screen.dart';
+import 'package:sugo_app/features/rb_cars/screens/technician_preferences_screen.dart';
 import 'package:sugo_app/features/rb_cars/screens/where_and_when_screen.dart';
 
 /// Renders the posting flow for design review. Regenerate after intentional
@@ -15,8 +17,8 @@ import 'package:sugo_app/features/rb_cars/screens/where_and_when_screen.dart';
 ///
 ///   flutter test --update-goldens
 ///
-/// Four of the five steps, laid out side by side like the mockup they were
-/// built from. Step 4 is absent on purpose: it is mostly `LocationPickerMap`,
+/// Five of the six steps, laid out side by side like the mockup they were
+/// built from. Step 5 is absent on purpose: it is mostly `LocationPickerMap`,
 /// which fetches tiles over the network, and a golden that depends on a tile
 /// server is a golden that fails on a train.
 ///
@@ -27,6 +29,16 @@ void main() {
   JobPostingProvider filledDraft() {
     final JobPostingProvider posting = JobPostingProvider();
     posting.selectCategory(DeviceCategory.laptop);
+    // Step 2, "Your technician" (2026-11-15): three of the five set, so the
+    // golden shows both the chosen and the "No preference" states, and the
+    // review step reads them back.
+    posting.setPreferences(
+      const TechnicianPreferences(
+        maxDistance: MaxDistance.km5,
+        minRating: MinRating.r45,
+        minTrust: TrustBadge.skillVerified,
+      ),
+    );
     posting.selectSymptom('laptop_wont_power_on');
     posting.setDeviceDetail(deviceDetail: 'laptop', brand: 'Lenovo');
     posting.setModel('IdeaPad 3 14"');
@@ -35,14 +47,14 @@ void main() {
       'second and then nothing.',
     );
     posting.setLocation(latitude: 7.0731, longitude: 125.6128);
-    posting.setSchedulePreference(SchedulePreference.thisWeek);
+    posting.setSchedulePreference(SchedulePreference.flexible);
     posting.setBudget(min: 850, max: 1200);
     return posting;
   }
 
-  testWidgets('posting flow, steps 1-3 and 5', (WidgetTester tester) async {
-    // Four 390x860 phones in a row, at 2x.
-    tester.view.physicalSize = const Size(3120, 1720);
+  testWidgets('posting flow, steps 1-4 and 6', (WidgetTester tester) async {
+    // Five 390x860 phones in a row, at 2x.
+    tester.view.physicalSize = const Size(3900, 1720);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
 
@@ -66,6 +78,7 @@ void main() {
         home: Row(
           children: <Widget>[
             phone(const JobPostingScreen()),
+            phone(TechnicianPreferencesScreen(posting: posting)),
             phone(SymptomScreen(posting: posting)),
             phone(DeviceDetailsScreen(posting: posting)),
             phone(ReviewAndPostScreen(posting: posting)),
@@ -75,7 +88,7 @@ void main() {
     );
 
     // Step 1 owns its own provider, so it starts empty. Tap a card so the
-    // golden shows the selected state the other three are already in.
+    // golden shows the selected state the other four are already in.
     await tester.tap(find.text('Laptop / PC').first);
     await tester.pumpAndSettle();
 
@@ -85,9 +98,9 @@ void main() {
     );
   });
 
-  // Step 4 is kept out of the golden but not out of the tests: it is the only
+  // Step 5 is kept out of the golden but not out of the tests: it is the only
   // screen with a network dependency, so it gets a render check instead.
-  testWidgets('step 4 renders with the map', (WidgetTester tester) async {
+  testWidgets('step 5 renders with the map', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(780, 1720);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
@@ -104,7 +117,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Where and when?'), findsOneWidget);
-    expect(find.text('This week'), findsOneWidget);
+    // Two choices since 2026-11-17.
+    expect(find.text('Flexible'), findsOneWidget);
+    expect(find.text('Urgent'), findsOneWidget);
+    expect(find.text('This week'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

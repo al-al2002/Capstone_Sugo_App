@@ -94,6 +94,8 @@ enum OnboardingStepId {
   specialization('specialization', 'Skills', Icons.handyman_outlined),
   assessment('assessment', 'Assessment', Icons.quiz_outlined),
   documents('documents', 'Documents', Icons.folder_open_rounded),
+  // Home Service, Shop Repair or both, and the shop's pin (2026-11-17).
+  workType('work_type', 'Work type', Icons.work_outline_rounded),
 
   // Client only.
   email('email', 'Email code', Icons.mark_email_read_outlined),
@@ -136,6 +138,9 @@ enum OnboardingStepId {
     OnboardingStepId.specialization,
     OnboardingStepId.assessment,
     OnboardingStepId.documents,
+    // Before the location: a shop-only technician's service area starts at
+    // the shop they pin here.
+    OnboardingStepId.workType,
     OnboardingStepId.location,
     OnboardingStepId.review,
   ];

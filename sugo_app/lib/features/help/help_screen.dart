@@ -308,9 +308,8 @@ class _HelpScreenState extends State<HelpScreen> {
                   SugoPill(
                     label: topic.label,
                     selected: _topic == topic,
-                    onTap: () => setState(
-                      () => _topic = _topic == topic ? null : topic,
-                    ),
+                    onTap: () =>
+                        setState(() => _topic = _topic == topic ? null : topic),
                   ),
                 ],
               ],

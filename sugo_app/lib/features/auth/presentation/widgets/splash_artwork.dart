@@ -1,83 +1,192 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/theme/app_motion.dart';
+import '../../../../core/widgets/sugo_brand_cover.dart';
+import '../../../../core/widgets/sugo_logo.dart';
 
-/// The splash poster, edge to edge.
+/// The splash scene, edge to edge (2026-11-16).
 ///
-/// ## The 2026-09-29 poster
+/// ## Why it was redrawn
 ///
-/// `splash 2.png` replaced the paper-plane illustration: the new lockup, "From
-/// your home to our shop", the two service paths, and the technician between
-/// a house and the SUGO shop and van. The app shows `AppAssets.splash`, the
-/// copy of it that `tool/prepare_brand_images.py` makes with the drawn "Get
-/// Started" button painted out - the splash screen draws a real one in that
-/// space once loading has finished.
+/// The splash was a poster image (`SUGO Service Partner Splash Screen.png`).
+/// Like the login headers it was a saturated royal blue rather than SUGO
+/// navy, and its logo was an older house-with-yellow-windows mark, not the
+/// emblem on the app icon. The user asked for artwork that suits SUGO.
 ///
-/// The previous splash animated its illustration region by region from
-/// coordinates measured off that one file. None of those measurements fit the
-/// new poster, and a poster that *is* the brand statement reads best whole,
-/// so it now simply arrives: a short fade and a settle from 3% larger. The
-/// motion on this screen is the loading animation, which carries information.
+/// It is now drawn from the app's own pieces: the illustrated Davao cover
+/// ([SugoBrandCover], dusk - the city's windows lit, the booking route
+/// drawing itself towards the service van), and the real lockup
+/// ([SugoLogoMark] and [SugoLogo]). The poster's line - "your trusted onsite
+/// and errand service partner in Davao" - is kept, with Davao in the accent.
 ///
-/// Scaled to cover and centred. On a tall phone the height decides the scale
-/// and a little of each side is cropped - the content sits well inside the
-/// middle 80% of the poster's width, so nothing written is lost.
-class SplashArtwork extends StatelessWidget {
+/// ## The entrance, once
+///
+/// The emblem pops in with a single soft halo ring spreading from it, the
+/// wordmark rises under it, then the line fades in - about a second and a
+/// half, the length of the minimum loading time, so the brand has finished
+/// arriving as the loader below hands over. Nothing here loops; the moving
+/// thing on this screen is the loader, which carries information. Under
+/// "remove animations" the scene appears finished.
+class SplashArtwork extends StatefulWidget {
   const SplashArtwork({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final bool still = AppMotion.reduced(context);
+  State<SplashArtwork> createState() => _SplashArtworkState();
+}
 
-    return DecoratedBox(
-      // What shows for the instant before the image decodes, and for good if
-      // the file is missing: the poster's own navy, so the screen is never a
-      // white flash or a blank.
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[
-            Color(0xFF0A3F8C),
-            AppColors.primary,
-            Color(0xFF1A64D6),
-          ],
-          stops: <double>[0.0, 0.45, 1.0],
+class _SplashArtworkState extends State<SplashArtwork>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_entrance.isDismissed) {
+      AppMotion.reduced(context) ? _entrance.value = 1 : _entrance.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
+
+  /// A slice of the entrance, eased.
+  Animation<double> _part(double from, double to, Curve curve) =>
+      CurveTween(curve: Interval(from, to, curve: curve)).animate(_entrance);
+
+  @override
+  Widget build(BuildContext context) {
+    final double h = MediaQuery.sizeOf(context).height;
+
+    final Animation<double> mark = _part(0.0, 0.45, Curves.easeOutBack);
+    final Animation<double> markFade = _part(0.0, 0.25, Curves.easeOut);
+    final Animation<double> halo = _part(0.15, 0.75, Curves.easeOutCubic);
+    final Animation<double> word = _part(0.25, 0.65, AppMotion.emphasized);
+    final Animation<double> line = _part(0.55, 1.0, Curves.easeOut);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        // The city, low; the route above its rooftops, under the lockup.
+        SugoBrandCover(
+          style: SugoCoverStyle.technician,
+          topInset: h * 0.60,
+          motifHeight: h * 0.22,
         ),
-      ),
-      child: SizedBox.expand(
-        child: Image.asset(
-          AppAssets.servicePartnerSplash,
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          excludeFromSemantics: true,
-          errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
-              const SizedBox.shrink(),
-          frameBuilder:
-              (
-                BuildContext context,
-                Widget child,
-                int? frame,
-                bool synchronous,
-              ) {
-                if (synchronous || still) return child;
-                final bool shown = frame != null;
-                return AnimatedOpacity(
-                  opacity: shown ? 1 : 0,
-                  duration: const Duration(milliseconds: 1000),
-                  curve: AppMotion.standard,
-                  child: AnimatedScale(
-                    scale: shown ? 1 : 1.05,
-                    duration: const Duration(milliseconds: 1200),
-                    curve: AppMotion.emphasized,
-                    child: child,
+        // A soft light behind the lockup, so it reads as the centre of the
+        // scene rather than text laid over a picture.
+        Align(
+          alignment: const Alignment(0, -0.28),
+          child: IgnorePointer(
+            child: Container(
+              width: 340,
+              height: 340,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: <Color>[
+                    AppColors.secondary.withValues(alpha: 0.22),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Align(
+          alignment: const Alignment(0, -0.28),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: AnimatedBuilder(
+              animation: _entrance,
+              builder: (BuildContext context, Widget? _) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SizedBox(
+                    width: 150,
+                    height: 150,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        // One ring, spreading out and fading as the emblem
+                        // lands.
+                        Opacity(
+                          opacity: (1 - halo.value).clamp(0.0, 1.0) * 0.7,
+                          child: Transform.scale(
+                            scale: 0.7 + 0.8 * halo.value,
+                            child: Container(
+                              width: 110,
+                              height: 110,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AppColors.cyan,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Opacity(
+                          opacity: markFade.value,
+                          child: Transform.scale(
+                            scale: 0.6 + 0.4 * mark.value,
+                            child: const SugoLogoMark(size: 96, onDark: true),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              },
+                  const SizedBox(height: 10),
+                  Opacity(
+                    opacity: word.value,
+                    child: Transform.translate(
+                      offset: Offset(0, 18 * (1 - word.value)),
+                      child: const SugoLogo(fontSize: 48, onDark: true),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Opacity(
+                    opacity: line.value,
+                    child: Text.rich(
+                      TextSpan(
+                        children: <InlineSpan>[
+                          const TextSpan(
+                            text:
+                                'Your trusted onsite and errand service '
+                                'partner in ',
+                          ),
+                          const TextSpan(
+                            text: 'Davao',
+                            style: TextStyle(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const TextSpan(text: '.'),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

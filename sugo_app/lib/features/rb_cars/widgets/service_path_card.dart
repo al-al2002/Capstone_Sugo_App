@@ -22,6 +22,19 @@ import '../../../core/constants/app_colors.dart';
 /// pill - three statements of one fact, and the only new information in the
 /// group was the sentence explaining why. Moving that sentence into the card
 /// attaches the reason to the thing it is a reason for.
+///
+/// ## The three options, as the client reads them (2026-11-16)
+///
+/// Titled for the choice the client is making - "Post to Technician
+/// Community", "Home Service", "Shop Repair" - and listed cheapest first, so
+/// the free community comes before the two that cost a visit. The stored
+/// values are unchanged; only the words on these cards differ from the
+/// `ServicePath` labels the rest of the app shows.
+///
+/// Shop Repair used to open a second choice inside its card - "bring it
+/// myself" or "shop pickup/delivery". Since 2026-11-17 that is asked only in
+/// the booking dialog, which already offered it with the exact fee for the
+/// chosen technician's shop; asking twice was one question too many.
 class ServicePathSuggestion extends StatelessWidget {
   const ServicePathSuggestion({
     super.key,
@@ -34,6 +47,29 @@ class ServicePathSuggestion extends StatelessWidget {
   final ServicePath selected;
   final ValueChanged<ServicePath> onChanged;
 
+  /// Cheapest first.
+  static const List<ServicePath> order = <ServicePath>[
+    ServicePath.itCommunity,
+    ServicePath.homeService,
+    ServicePath.pickup,
+  ];
+
+  static String titleFor(ServicePath path) => switch (path) {
+    ServicePath.itCommunity => 'Post to Technician Community',
+    ServicePath.homeService => 'Home Service',
+    ServicePath.pickup => 'Shop Repair',
+  };
+
+  static String blurbFor(ServicePath path) => switch (path) {
+    ServicePath.itCommunity =>
+      'Free. Technicians comment on your post with tips you can try first.',
+    ServicePath.homeService =>
+      "A technician comes to your location and fixes it there.",
+    ServicePath.pickup =>
+      "Repaired at the technician's shop. You choose drop-off or pickup "
+          'when you book a technician.',
+  };
+
   bool get _isOverridden => selected != result.servicePath;
 
   @override
@@ -44,7 +80,7 @@ class ServicePathSuggestion extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        ...ServicePath.values.map(
+        ...order.map(
           (ServicePath path) => _PathOption(
             path: path,
             selected: path == selected,
@@ -68,8 +104,12 @@ class ServicePathSuggestion extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'You changed this from our suggestion. That is fine - we '
-                  'will match against ${selected.label.toLowerCase()} instead.',
+                  selected == ServicePath.itCommunity
+                      ? 'You changed this from our suggestion. That is fine - '
+                            'we will post it to the Technician Community instead.'
+                      : 'You changed this from our suggestion. That is fine - '
+                            'we will match technicians for '
+                            '${titleFor(selected).toLowerCase()} instead.',
                   style: PostingText.caption,
                 ),
               ),
@@ -140,24 +180,42 @@ class _PathOption extends StatelessWidget {
                       // an explicit control answers it outright.
                       _SelectionDot(selected: selected),
                       const SizedBox(width: AppSizes.md),
+                      Icon(
+                        path.icon,
+                        size: 20,
+                        color: selected
+                            ? AppColors.secondaryDark
+                            : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: AppSizes.sm),
+                      // Title and pill in a Wrap: on a small phone at large
+                      // text the pill drops under the title instead of
+                      // pushing the row past the card's edge.
                       Expanded(
-                        child: Text(
-                          path.label,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: selected
-                                ? AppColors.primaryDark
-                                : AppColors.textPrimary,
-                          ),
+                        child: Wrap(
+                          spacing: AppSizes.sm,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
+                            Text(
+                              ServicePathSuggestion.titleFor(path),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: selected
+                                    ? AppColors.primaryDark
+                                    : AppColors.textPrimary,
+                              ),
+                            ),
+                            if (isSuggestion)
+                              _Pill(
+                                label: lowConfidence
+                                    ? 'Needs a look'
+                                    : 'Suggested',
+                              ),
+                          ],
                         ),
                       ),
-                      if (isSuggestion) ...<Widget>[
-                        const SizedBox(width: AppSizes.sm),
-                        _Pill(
-                          label: lowConfidence ? 'Needs a look' : 'Suggested',
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -166,7 +224,7 @@ class _PathOption extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(left: 32),
                     child: Text(
-                      path.blurb,
+                      ServicePathSuggestion.blurbFor(path),
                       style: const TextStyle(
                         fontSize: 12,
                         height: 1.35,

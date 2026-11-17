@@ -14,7 +14,8 @@ void main() {
   CommunityPost post({int answers = 0}) => CommunityPost(
     id: 'p1',
     title: 'What laptop should a student on a budget buy?',
-    body: 'Budget is around 30k pesos, mostly for schoolwork and some light '
+    body:
+        'Budget is around 30k pesos, mostly for schoolwork and some light '
         'photo editing. Is a refurbished ThinkPad a good idea?',
     topic: CommunityTopic.laptop,
     author: const CommunityAuthor(id: 'a1', fullName: 'Maria Santos'),

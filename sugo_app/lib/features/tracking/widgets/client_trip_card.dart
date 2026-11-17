@@ -8,8 +8,9 @@ import '../../../core/widgets/sugo_card.dart';
 import '../models/job_tracking.dart';
 import 'tracking_map.dart';
 
-/// The technician's view of a client coming to collect their unit
-/// (2026-09-29): where they are, when they should arrive, and whether they
+/// The technician's view of a client coming to the shop - to collect their
+/// unit (2026-09-29) or, on a drop-off, to bring it in ([dropOff],
+/// 2026-11-17): where they are, when they should arrive, and whether they
 /// are running late.
 ///
 /// The mirror of the client's tracking screen. Same row, same ETA and delay
@@ -17,9 +18,18 @@ import 'tracking_map.dart';
 /// `eta_sampler.ts`) - with the client drawn as a person and the shop as the
 /// destination.
 class ClientTripCard extends StatelessWidget {
-  const ClientTripCard({super.key, required this.tracking, this.workshop});
+  const ClientTripCard({
+    super.key,
+    required this.tracking,
+    this.workshop,
+    this.dropOff = false,
+  });
 
-  final JobTracking tracking;
+  /// Null on a drop-off before the client has set off: there is no row yet.
+  final JobTracking? tracking;
+
+  /// The client is bringing the unit in, not collecting it.
+  final bool dropOff;
 
   /// The technician's own shop, where the client is heading. Null when none
   /// is recorded; the map then shows the client alone.
@@ -27,20 +37,22 @@ class ClientTripCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final JobTracking t = tracking;
+    final JobTracking? t = tracking;
 
-    if (t.clientArrived) {
-      return const SugoCard(
+    if (t != null && t.clientArrived) {
+      return SugoCard(
         child: _Header(
           icon: Icons.where_to_vote_rounded,
           tint: AppColors.success,
           title: 'The client has arrived',
-          detail: 'Hand it over, then mark it collected below.',
+          detail: dropOff
+              ? 'Take the unit, then tap "Unit received" below.'
+              : 'Hand it over, then mark it collected below.',
         ),
       );
     }
 
-    if (!t.clientOnTheWay) {
+    if (t == null || !t.clientOnTheWay) {
       return const SugoCard(
         child: _Header(
           icon: Icons.hourglass_top_rounded,
@@ -60,7 +72,9 @@ class ClientTripCard extends StatelessWidget {
           _Header(
             icon: Icons.directions_walk_rounded,
             tint: t.isDelayed ? AppColors.warning : AppColors.success,
-            title: 'The client is on the way',
+            title: dropOff
+                ? 'The client is bringing it in'
+                : 'The client is on the way',
             detail: _arrivalLabel(t) ?? _freshness(t),
           ),
           if (t.isDelayed) ...<Widget>[
@@ -166,7 +180,11 @@ class _DelayLine extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          const Icon(Icons.schedule_rounded, size: 18, color: AppColors.warning),
+          const Icon(
+            Icons.schedule_rounded,
+            size: 18,
+            color: AppColors.warning,
+          ),
           const SizedBox(width: AppSizes.sm),
           Expanded(
             child: Text(

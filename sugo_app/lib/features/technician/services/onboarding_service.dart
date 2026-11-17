@@ -119,7 +119,7 @@ class OnboardingService {
   /// `XFile` is the one handle that behaves the same on web, Android, iOS and
   /// desktop, reading bytes through whatever the platform actually provides.
   ///
-  /// TODO(production): replace with real ID verification - OCR the document,
+  /// Production note: replace with real ID verification - OCR the document,
   /// check it against a government registry, and route it to a human reviewer.
   /// This only confirms that *something* of the right shape was submitted; it
   /// cannot tell a driver's licence from a photo of a cat.
@@ -226,7 +226,7 @@ class OnboardingService {
         }, onConflict: 'id');
       }
 
-      // TODO(production): enqueue for admin review here. For now the flow
+      // Production note: enqueue for admin review here. For now the flow
       // continues straight on, which is what auto-approval means in practice.
       return objectPath;
     } on StorageException catch (error) {

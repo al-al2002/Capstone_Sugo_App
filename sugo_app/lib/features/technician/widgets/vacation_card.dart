@@ -144,7 +144,11 @@ class _VacationCardState extends State<VacationCard> {
           if (_error != null)
             _ErrorLine(message: _error!, onRetry: _load)
           else if (current != null)
-            _AwayNow(period: current, busy: _busy, onEnd: () => _endNow(current))
+            _AwayNow(
+              period: current,
+              busy: _busy,
+              onEnd: () => _endNow(current),
+            )
           else
             const _Working(),
 
@@ -164,7 +168,9 @@ class _VacationCardState extends State<VacationCard> {
           OutlinedButton.icon(
             onPressed: _busy || _error != null ? null : _add,
             icon: const Icon(Icons.beach_access_rounded, size: 18),
-            label: Text(current == null ? 'Add vacation' : 'Plan another vacation'),
+            label: Text(
+              current == null ? 'Add vacation' : 'Plan another vacation',
+            ),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primary,
               side: const BorderSide(color: AppColors.primary, width: 1.2),
@@ -288,7 +294,9 @@ Future<bool> editVacationEndFlow(
   DateTime? now,
 }) async {
   final DateTime today = TimeOff.dayOf(now ?? DateTime.now());
-  final DateTime first = period.startsOn.isAfter(today) ? period.startsOn : today;
+  final DateTime first = period.startsOn.isAfter(today)
+      ? period.startsOn
+      : today;
   // The database caps a period at [TimeOff.maxDays], counted from its start.
   final DateTime last = period.startsOn.add(
     const Duration(days: TimeOff.maxDays - 1),
@@ -347,7 +355,11 @@ class _Working extends StatelessWidget {
 
 /// Shown while today is inside a period.
 class _AwayNow extends StatelessWidget {
-  const _AwayNow({required this.period, required this.busy, required this.onEnd});
+  const _AwayNow({
+    required this.period,
+    required this.busy,
+    required this.onEnd,
+  });
 
   final TimeOff period;
   final bool busy;
@@ -448,7 +460,12 @@ class _PlannedRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSizes.sm),
-      padding: const EdgeInsets.fromLTRB(AppSizes.md, AppSizes.sm, AppSizes.xs, AppSizes.sm),
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.md,
+        AppSizes.sm,
+        AppSizes.xs,
+        AppSizes.sm,
+      ),
       decoration: BoxDecoration(
         color: AppColors.primarySofter,
         borderRadius: BorderRadius.circular(AppSizes.tileRadius),
@@ -523,7 +540,11 @@ class _ErrorLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+        const Icon(
+          Icons.error_outline_rounded,
+          color: AppColors.error,
+          size: 20,
+        ),
         const SizedBox(width: AppSizes.sm),
         Expanded(child: Text(message, style: AppTextStyles.caption)),
         TextButton(onPressed: onRetry, child: const Text('Retry')),
@@ -609,7 +630,10 @@ class _ConfirmVacationSheetState extends State<_ConfirmVacationSheet> {
               ),
               child: Row(
                 children: <Widget>[
-                  const Icon(Icons.beach_access_rounded, color: AppColors.accent),
+                  const Icon(
+                    Icons.beach_access_rounded,
+                    color: AppColors.accent,
+                  ),
                   const SizedBox(width: AppSizes.md),
                   Expanded(
                     child: Column(
@@ -638,7 +662,8 @@ class _ConfirmVacationSheetState extends State<_ConfirmVacationSheet> {
             ),
             const _Point(
               icon: Icons.handyman_outlined,
-              text: 'Jobs you have already accepted are not affected - '
+              text:
+                  'Jobs you have already accepted are not affected - '
                   'finish them before you go.',
             ),
             const SizedBox(height: AppSizes.md),

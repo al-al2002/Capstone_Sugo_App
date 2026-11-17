@@ -178,8 +178,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (q.length < 2) return const <IssueOption>[];
     return IssueCatalog.all
         .where(
-          (IssueOption i) =>
-              _matches(i.label, q) || _matches(i.hintText, q),
+          (IssueOption i) => _matches(i.label, q) || _matches(i.hintText, q),
         )
         .take(8)
         .toList(growable: false);
@@ -227,7 +226,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   IconButton(
                     tooltip: 'Back',
                     onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
+                    ),
                   ),
                   Expanded(
                     child: SugoSearchField(
@@ -243,9 +245,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
-            Expanded(
-              child: _query.isEmpty ? _idle() : _results(),
-            ),
+            Expanded(child: _query.isEmpty ? _idle() : _results()),
           ],
         ),
       ),
@@ -266,7 +266,10 @@ class _SearchScreenState extends State<SearchScreen> {
           Row(
             children: <Widget>[
               const Expanded(
-                child: Text('Recent searches', style: AppTextStyles.sectionTitle),
+                child: Text(
+                  'Recent searches',
+                  style: AppTextStyles.sectionTitle,
+                ),
               ),
               TextButton(
                 onPressed: () async {
@@ -315,14 +318,26 @@ class _SearchScreenState extends State<SearchScreen> {
           onSelect: (HomeServiceCategory category) => resolveHomeCategory(
             context,
             category,
-            onResolved: (DeviceCategory? device) {
+            onResolved: (DeviceCategory? device, String? code) {
               _remember(category.label);
-              if (device != null) widget.onCategory?.call(device);
+              _openResolved(device, code);
             },
           ),
         ),
       ],
     );
+  }
+
+  /// A resolved service tile: straight to the problem when the answer named
+  /// one (a maintenance or installation pick, 2026-11-16), else to the device.
+  void _openResolved(DeviceCategory? device, String? code) {
+    if (device == null) return;
+    final IssueOption? issue = IssueCatalog.byCode(code);
+    if (issue != null && widget.onIssue != null) {
+      widget.onIssue!(device, issue);
+    } else {
+      widget.onCategory?.call(device);
+    }
   }
 
   Widget _results() {
@@ -367,9 +382,9 @@ class _SearchScreenState extends State<SearchScreen> {
               onTap: () => resolveHomeCategory(
                 context,
                 c,
-                onResolved: (DeviceCategory? device) {
+                onResolved: (DeviceCategory? device, String? code) {
                   _remember(_query);
-                  if (device != null) widget.onCategory?.call(device);
+                  _openResolved(device, code);
                 },
               ),
             ),

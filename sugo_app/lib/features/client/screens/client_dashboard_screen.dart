@@ -16,6 +16,7 @@ import '../../../core/widgets/sugo_bottom_nav.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_delete_animation.dart';
 import '../../../core/widgets/sugo_dialog.dart';
+import '../../../core/widgets/sugo_staggered_column.dart';
 import '../../auth/data/models/app_user.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../bookings/screens/bookings_list_view.dart';
@@ -51,10 +52,10 @@ import '../../tracking/services/tracking_service.dart';
 import '../../tracking/widgets/delay_alert_dialog.dart';
 import '../widgets/active_booking_card.dart';
 import '../widgets/home_header.dart';
-import '../widgets/home_hero_banner.dart';
 import '../widgets/home_hero_slot.dart';
 import '../widgets/recommended_technicians.dart';
 import '../widgets/service_category_row.dart';
+import '../../rb_cars/widgets/booking_pause.dart';
 
 /// The client's landing screen and their navigation hub.
 ///
@@ -308,6 +309,50 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     final NotificationTap? push = NotificationRouter.arrived.value;
     if (push == null || !mounted) return;
     if (push.type == 'stage' || push.type == 'job_delay') _loadJobs();
+
+    // Booking news (2026-11-17): Android shows no notification for the app
+    // on screen, so it is said here, and the bookings re-read.
+    switch (push.type) {
+      case 'accepted':
+        _loadJobs();
+        UiFeedback.showSuccess(
+          context,
+          'Booking confirmed - your technician accepted.',
+        );
+      case 'declined':
+        _loadJobs();
+        UiFeedback.showInfo(
+          context,
+          'Your technician can\'t take this one. Choose another.',
+        );
+      case 'rerouted':
+        _loadJobs();
+        UiFeedback.showInfo(
+          context,
+          'Your technician is taking it to the shop.',
+        );
+      case 'arriving':
+        _loadJobs();
+        UiFeedback.showInfo(context, 'Your technician is almost there.');
+    }
+
+    // An urgent request moved on, or nobody answered it (2026-11-17): the
+    // card's technician and clock change, so the jobs are reloaded and the
+    // client is told in words.
+    if (push.type == 'urgent_forwarded') {
+      _loadJobs();
+      UiFeedback.showInfo(
+        context,
+        'No answer in 5 minutes - your urgent request went to the next '
+        'technician.',
+      );
+    } else if (push.type == 'urgent_unanswered') {
+      _loadJobs();
+      UiFeedback.showWarning(
+        context,
+        'Nobody answered your urgent request yet. Open it to try again.',
+      );
+    }
   }
 
   Future<void> _refresh() async {
@@ -439,7 +484,11 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
             .jobById(jobId)
             .catchError((Object _) => null);
         if (job == null || !mounted) return;
-        final bool travelling = tap.type == 'stage' || tap.type == 'job_delay';
+        // "Almost there" opens the live map too (2026-11-17).
+        final bool travelling =
+            tap.type == 'stage' ||
+            tap.type == 'job_delay' ||
+            tap.type == 'arriving';
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => travelling
@@ -572,7 +621,11 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     }
     if (job.status == JobStatus.confirmed) {
       final JobTracking? live = _heroTracking;
-      if (live == null || live.stage.isFinished) {
+      // The client's own trip in on a drop-off is not the technician
+      // travelling: the card stays "Bring it to the shop" (2026-11-17).
+      if (live == null ||
+          live.stage.isFinished ||
+          live.stage == TrackingStage.droppingOff) {
         return ActiveBookingState.confirmed;
       }
       // A home visit whose technician has arrived is a repair under way, not
@@ -715,12 +768,17 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
 
     setState(() => _heroBusy = true);
     try {
-      await runWithDeleteAnimation(context, _service.deleteJob(job.id));
+      final DateTime? paused = (await runWithDeleteAnimation(
+        context,
+        _service.deleteJob(job.id),
+      )).bookingPausedUntil;
       if (!mounted) return;
       setState(() {
         _jobs = _jobs.where((Job j) => j.id != job.id).toList(growable: false);
         _heroBusy = false;
       });
+      // Deleting while a technician was booked counts as a cancel.
+      if (paused != null) showBookingPausedNotice(context, paused);
       await _loadJobs();
     } on RbCarsFailure catch (failure) {
       if (!mounted) return;
@@ -748,7 +806,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
       message:
           'They have not answered yet, so nothing is lost — and this is not '
           'recorded against them. Your other matches stay ready, so you can '
-          'pick somebody else straight away.',
+          'pick somebody else straight away. Cancelling 2 requests within an '
+          'hour pauses booking for 2 minutes.',
       confirmLabel: 'Cancel request',
       cancelLabel: 'Keep waiting',
       destructive: true,
@@ -756,13 +815,17 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     if (!confirmed || !mounted) return;
 
     try {
-      await _service.withdrawTechnician(job.id);
+      final DateTime? paused = await _service.withdrawTechnician(job.id);
       if (!mounted) return;
 
-      UiFeedback.showSuccess(
-        context,
-        'Request cancelled. Pick another technician.',
-      );
+      if (paused != null) {
+        showBookingPausedNotice(context, paused);
+      } else {
+        UiFeedback.showSuccess(
+          context,
+          'Request cancelled. Pick another technician.',
+        );
+      }
       await _loadJobs();
       if (!mounted) return;
 
@@ -831,12 +894,12 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
       //
       // Home is the one tab without a top SafeArea: its header runs under the
       // status bar and pads itself by the inset, so the pull-to-refresh
-      // spinner and the scroll both start at the very top. Since the Dispatch
-      // redesign the header is on the light Paper ground, so the status-bar
-      // icons are dark.
+      // spinner and the scroll both start at the very top. Since 2026-11-16
+      // the header is on the navy illustrated cover, so the status-bar icons
+      // are white.
       body: _tab == ClientTab.home
           ? AnnotatedRegion<SystemUiOverlayStyle>(
-              value: SystemUiOverlayStyle.dark,
+              value: SystemUiOverlayStyle.light,
               child: _homeFeed(name),
             )
           : SafeArea(
@@ -915,6 +978,10 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
             onOpenNotifications: _openNotifications,
             onOpenMessages: _openInbox,
             onSearch: _openSearch,
+            // The invitation lives in the header since 2026-11-16, shown only
+            // once the jobs have loaded and none is under way - a client with
+            // a repair in hand is not invited to book another.
+            onBookNow: !_jobsLoading && hero == null ? _startPosting : null,
             topInset: MediaQuery.paddingOf(context).top,
           ),
           Padding(
@@ -924,13 +991,15 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
               AppSizes.screenPadding,
               0,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            // Dealt in top to bottom once (2026-11-16), so the page is read in
+            // the order it is laid out.
+            child: SugoStaggeredColumn(
               children: <Widget>[
                 // ------------------------------------------ one hero card
                 //
-                // `HomeHeroSlot` animates between the three and, unlike a bare
-                // AnimatedSwitcher, keeps each card at full width.
+                // `HomeHeroSlot` animates between the loading card, the
+                // booking and nothing at all, and keeps each at full width.
+                // With no booking the invitation is in the header above.
                 HomeHeroSlot(
                   child: _jobsLoading && _jobs.isEmpty
                       ? const ActiveBookingSkeleton(
@@ -947,8 +1016,19 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
                           onSeeAll: () =>
                               setState(() => _tab = ClientTab.bookings),
                           onPrimary: () {
-                            if (_stateFor(hero, heroWho) ==
-                                ActiveBookingState.travelling) {
+                            final ActiveBookingState state = _stateFor(
+                              hero,
+                              heroWho,
+                            );
+                            // "Route to the shop" on an accepted drop-off
+                            // (2026-11-17) opens the same screen, which shows
+                            // the road to the shop until the unit is in.
+                            if (state == ActiveBookingState.travelling ||
+                                (state == ActiveBookingState.confirmed &&
+                                    hero.isSelfDropOff &&
+                                    (_heroTracking == null ||
+                                        _heroTracking!.stage ==
+                                            TrackingStage.droppingOff))) {
                               _trackJob(hero);
                             } else {
                               _openJob(hero);
@@ -968,12 +1048,16 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
                               ? () => _deleteJob(hero)
                               : null,
                         )
-                      : HomeHeroBanner(
-                          key: const ValueKey<String>('hero-banner'),
-                          onBookNow: _startPosting,
+                      : const SizedBox(
+                          key: ValueKey<String>('hero-none'),
+                          width: double.infinity,
                         ),
                 ),
-                const SizedBox(height: AppSizes.xxl),
+                SizedBox(
+                  height: hero != null || _jobsLoading
+                      ? AppSizes.xxl
+                      : AppSizes.md,
+                ),
 
                 // ------------------------------------------------ services
                 const SectionHeader(
@@ -986,8 +1070,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
                       resolveHomeCategory(
                         context,
                         category,
-                        onResolved: (DeviceCategory? device) =>
-                            _startPosting(category: device),
+                        onResolved: (DeviceCategory? device, String? code) =>
+                            _startPosting(category: device, symptomCode: code),
                       ),
                 ),
                 const SizedBox(height: AppSizes.xxl),

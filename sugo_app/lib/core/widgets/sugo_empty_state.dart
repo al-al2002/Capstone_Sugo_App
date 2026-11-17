@@ -130,9 +130,7 @@ class SugoEmptyState extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
                   ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSizes.xl,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSizes.xl),
                 ),
                 icon: const Icon(Icons.arrow_forward_rounded, size: 18),
                 label: Text(actionLabel!),

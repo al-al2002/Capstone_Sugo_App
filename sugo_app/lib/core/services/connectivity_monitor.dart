@@ -77,8 +77,10 @@ class ConnectivityMonitor extends ChangeNotifier with WidgetsBindingObserver {
     bool reachable;
     try {
       final http.Response response = await http
-          .get(Uri.parse('${AppEnv.supabaseUrl}/auth/v1/health'),
-              headers: <String, String>{'apikey': AppEnv.supabaseAnonKey})
+          .get(
+            Uri.parse('${AppEnv.supabaseUrl}/auth/v1/health'),
+            headers: <String, String>{'apikey': AppEnv.supabaseAnonKey},
+          )
           .timeout(_timeout);
       // Any answer at all means the server is reachable. A 401 or 404 is a
       // configuration matter, not a connectivity one.

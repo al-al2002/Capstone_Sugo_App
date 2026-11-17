@@ -61,7 +61,8 @@ class SugoAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Size get preferredSize => Size.fromHeight(
-    kToolbarHeight + (subtitle != null ? 6 : 0) +
+    kToolbarHeight +
+        (subtitle != null ? 6 : 0) +
         (bottom?.preferredSize.height ?? 0),
   );
 

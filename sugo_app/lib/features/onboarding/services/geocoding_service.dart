@@ -29,7 +29,7 @@ import '../models/client_onboarding_models.dart';
 ///      request as [_userAgent]. A default Dart agent is explicitly refused.
 ///   3. **No heavy or automated bulk use.** This is interactive search only.
 ///
-/// TODO(production): move these calls behind a Supabase edge function with a
+/// Production note: move these calls behind a Supabase edge function with a
 /// server-side cache. The policy limit is per-IP, so on a mobile network many
 /// SUGO users share one carrier NAT address and can collectively exceed it
 /// while each behaves perfectly. Self-hosting Nominatim removes the limit

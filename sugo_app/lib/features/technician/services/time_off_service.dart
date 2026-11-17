@@ -91,7 +91,9 @@ class TimeOffService {
           .eq('id', period.id);
     } on PostgrestException catch (error) {
       _log('endNow', error);
-      throw const RbCarsFailure('Could not end your vacation. Please try again.');
+      throw const RbCarsFailure(
+        'Could not end your vacation. Please try again.',
+      );
     }
   }
 
@@ -116,7 +118,9 @@ class TimeOffService {
       await _client.from('technician_time_off').delete().eq('id', period.id);
     } on PostgrestException catch (error) {
       _log('cancel', error);
-      throw const RbCarsFailure('Could not remove those dates. Please try again.');
+      throw const RbCarsFailure(
+        'Could not remove those dates. Please try again.',
+      );
     }
   }
 

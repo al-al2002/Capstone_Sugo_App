@@ -19,12 +19,14 @@ import '../../chat/screens/chat_thread_screen.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/technician.dart';
 import '../models/job_tracking.dart';
+import '../models/trip_conditions.dart';
 import '../services/tracking_service.dart';
 import '../services/delay_alerts.dart';
 import '../widgets/collection_trip_panel.dart';
 import '../widgets/delay_alert_dialog.dart';
+import '../widgets/drop_off_route_card.dart';
 import '../widgets/tracking_map.dart';
-import '../widgets/weather_chip.dart';
+import '../widgets/trip_conditions_card.dart';
 import '../../rb_cars/models/technician_profile_details.dart';
 import '../../rb_cars/services/technician_directory_service.dart';
 import '../widgets/return_method_card.dart';
@@ -199,6 +201,32 @@ class _JobTrackingScreenState extends State<JobTrackingScreen> {
           // want it back?" card used to sit here on a workshop repair, which
           // asked the question before the unit had even been collected - it
           // now waits for the bench. See `TrackingStage.asksReturnChoice`.
+          // A drop-off job (2026-11-16): no technician trip to wait for - the
+          // client is the one travelling. Show them the road to the shop
+          // (a drawn route since 2026-11-17; it was a pin).
+          if ((tracking == null ||
+                  tracking.stage == TrackingStage.droppingOff) &&
+              widget.job.isSelfDropOff &&
+              technicianId != null) {
+            return _Framed(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSizes.screenPadding,
+                  AppSizes.lg,
+                  AppSizes.screenPadding,
+                  AppSizes.xxl,
+                ),
+                children: <Widget>[
+                  DropOffRouteCard(
+                    jobId: widget.job.id,
+                    technicianId: technicianId,
+                    trip: tracking,
+                  ),
+                ],
+              ),
+            );
+          }
+
           if (tracking == null &&
               TrackingJourney.tracks(widget.job.servicePath) &&
               technicianId != null) {
@@ -336,16 +364,6 @@ class _LiveTracking extends StatelessWidget {
     );
   }
 
-  String? get _etaLabel {
-    final DateTime? eta = tracking.projectedArrivalAt;
-    if (eta == null) return null;
-    final int minutes = eta.difference(DateTime.now()).inMinutes;
-    if (minutes <= 0) return 'Arriving now';
-    if (minutes < 60) return '$minutes min';
-    final int hours = minutes ~/ 60;
-    return '${hours}h ${minutes % 60}m';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -440,30 +458,30 @@ class _LiveTracking extends StatelessWidget {
                               : Icons.storefront_rounded,
                         ),
                         const SizedBox(height: AppSizes.md),
-                        _LiveFacts(
-                          eta: _etaLabel,
-                          distanceKm: _distanceKm,
+                        // Arrival, weather, traffic and any delay in one
+                        // card, from one server sample (2026-11-17). It
+                        // replaced the separate ETA tiles, delay banner and
+                        // weather chip, which could disagree.
+                        TripConditionsCard(
                           tracking: tracking,
+                          viewer: TripViewer.client,
+                          distanceKm: _distanceKm,
                         ),
-                        if (tracking.isDelayed) ...<Widget>[
-                          const SizedBox(height: AppSizes.md),
-                          _DelayBanner(tracking: tracking),
-                        ],
                         const SizedBox(height: AppSizes.lg),
                         _TechnicianRow(
                           technician: technician,
                           contactUnlocked: contactUnlocked,
                           onMessage: onMessage,
                         ),
-                        WeatherChip(
-                          jobId: tracking.jobId,
-                          headsToClient: tracking.stage.headsToClient,
-                        ),
                         // Only on the bench of a workshop repair. See
                         // `TrackingStage.asksReturnChoice` for why the
                         // question waits until the repair is actually in hand.
-                        if (tracking.stage.asksReturnChoiceOn(journey))
-                          ...<Widget>[
+                        // Never on a drop-off: collection was chosen with
+                        // "I'll bring it" (2026-11-17).
+                        if (!job.isSelfDropOff &&
+                            tracking.stage.asksReturnChoiceOn(
+                              journey,
+                            )) ...<Widget>[
                           const SizedBox(height: AppSizes.lg),
                           ReturnMethodCard(
                             jobId: tracking.jobId,
@@ -478,6 +496,7 @@ class _LiveTracking extends StatelessWidget {
                           steps: trackingSteps(
                             tracking.stage,
                             journey: journey,
+                            dropOff: job.isSelfDropOff,
                           ),
                           compact: true,
                         ),
@@ -546,12 +565,18 @@ class _StationaryBody extends StatelessWidget {
             tracking: tracking,
           )
         else
-          _AtBench(stage: stage, journey: journey),
+          _AtBench(stage: stage, journey: journey, dropOff: job.isSelfDropOff),
         const SizedBox(height: AppSizes.xl),
         const SectionHeader(title: 'Progress'),
         const SizedBox(height: AppSizes.md),
         SugoCard(
-          child: SugoTimeline(steps: trackingSteps(stage, journey: journey)),
+          child: SugoTimeline(
+            steps: trackingSteps(
+              stage,
+              journey: journey,
+              dropOff: job.isSelfDropOff,
+            ),
+          ),
         ),
       ],
     );
@@ -562,10 +587,12 @@ class _StationaryBody extends StatelessWidget {
 List<SugoTimelineStep> trackingSteps(
   TrackingStage current, {
   TrackingJourney journey = TrackingJourney.workshop,
+  bool dropOff = false,
 }) {
   final List<TrackingStage> route = TrackingStage.timelineFor(
     current,
     journey: journey,
+    dropOff: dropOff,
   );
   final int index = route.indexOf(current);
 
@@ -618,112 +645,6 @@ class _StageHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// ETA, distance and freshness - the three numbers a waiting client wants.
-class _LiveFacts extends StatelessWidget {
-  const _LiveFacts({
-    required this.eta,
-    required this.distanceKm,
-    required this.tracking,
-  });
-
-  final String? eta;
-  final double? distanceKm;
-  final JobTracking tracking;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        if (eta != null)
-          Expanded(
-            child: _FactTile(
-              icon: Icons.schedule_rounded,
-              label: 'Arriving in',
-              value: eta!,
-              emphasis: true,
-            ),
-          ),
-        if (eta != null && distanceKm != null) const SizedBox(width: AppSizes.md),
-        if (distanceKm != null)
-          Expanded(
-            child: _FactTile(
-              icon: Icons.straighten_rounded,
-              label: 'Straight-line',
-              value: distanceKm! < 1
-                  ? '${(distanceKm! * 1000).round()} m'
-                  : '${distanceKm!.toStringAsFixed(1)} km',
-            ),
-          ),
-        if (eta == null && distanceKm == null)
-          Expanded(
-            child: _FactTile(
-              icon: Icons.my_location_rounded,
-              label: 'Position',
-              value: tracking.freshnessLabel,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _FactTile extends StatelessWidget {
-  const _FactTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.emphasis = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final bool emphasis;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.md,
-        vertical: AppSizes.md,
-      ),
-      decoration: BoxDecoration(
-        color: emphasis ? AppColors.primarySoft : AppColors.background,
-        borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            icon,
-            size: 18,
-            color: emphasis ? AppColors.primary : AppColors.textSecondary,
-          ),
-          const SizedBox(width: AppSizes.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(label, style: AppTextStyles.micro),
-                const SizedBox(height: 1),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.titleSmall.copyWith(
-                    fontSize: 15,
-                    color: emphasis ? AppColors.primary : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -823,10 +744,18 @@ class _TechnicianRow extends StatelessWidget {
 /// Shown instead of the map while the repair itself is under way: on the
 /// workshop bench, or at the client's home.
 class _AtBench extends StatelessWidget {
-  const _AtBench({required this.stage, required this.journey});
+  const _AtBench({
+    required this.stage,
+    required this.journey,
+    this.dropOff = false,
+  });
 
   final TrackingStage stage;
   final TrackingJourney journey;
+
+  /// The client brought it in and collects it (2026-11-17): there is no
+  /// delivery for the map to come back for.
+  final bool dropOff;
 
   @override
   Widget build(BuildContext context) {
@@ -852,6 +781,8 @@ class _AtBench extends StatelessWidget {
                 ? 'All done'
                 : atHome
                 ? 'Your technician is with you'
+                : dropOff
+                ? 'Being repaired at the shop'
                 : 'No map while it is on the bench',
             textAlign: TextAlign.center,
             style: AppTextStyles.titleSmall,
@@ -864,74 +795,14 @@ class _AtBench extends StatelessWidget {
                 : atHome
                 ? 'They have arrived, so the map is closed. You will be asked '
                       'to rate the job once they mark it complete.'
+                : dropOff
+                ? 'You chose to bring it in and collect it yourself, so there '
+                      'is no delivery. We will tell you when it is ready, and '
+                      'show you the way to the shop.'
                 : 'Nothing is moving during the repair itself. The map comes '
                       'back when it heads out for delivery.',
             textAlign: TextAlign.center,
             style: AppTextStyles.caption,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Tells the client their technician is running behind, and why when we know.
-///
-/// ## Why the wording hedges
-///
-/// The delay comes from straight-line distance over a sampled traffic speed,
-/// which is a real estimate but not a routed one. "About 15 minutes behind"
-/// is what that method can honestly support; "arriving 14:37" is not, and a
-/// precise-sounding time that slips again reads as a lie rather than as an
-/// estimate.
-///
-/// ## Why the cause can be absent
-///
-/// `delayReason` is null unless the sampled traffic or weather actually
-/// supported the claim. A technician who is simply running behind gets no
-/// excuse invented on their behalf.
-class _DelayBanner extends StatelessWidget {
-  const _DelayBanner({required this.tracking});
-
-  final JobTracking tracking;
-
-  @override
-  Widget build(BuildContext context) {
-    final String? cause = tracking.delayReasonLabel;
-    final String delay = tracking.delayLabel ?? 'running late';
-
-    return Container(
-      padding: const EdgeInsets.all(AppSizes.md),
-      decoration: BoxDecoration(
-        color: AppColors.warningSoft,
-        borderRadius: BorderRadius.circular(AppSizes.tileRadius),
-        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Icon(
-            Icons.schedule_rounded,
-            size: 18,
-            color: AppColors.warning,
-          ),
-          const SizedBox(width: AppSizes.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text('Running $delay', style: AppTextStyles.bodyStrong),
-                const SizedBox(height: 2),
-                Text(
-                  cause == null
-                      ? 'Your technician is behind the original estimate. '
-                            'Their position on the map is still live.'
-                      : 'Delayed by $cause. Their position on the map is '
-                            'still live.',
-                  style: AppTextStyles.micro,
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -1009,7 +880,22 @@ class _ReadyForCollectionState extends State<_ReadyForCollection> {
         const SizedBox(height: AppSizes.md),
         // The trip itself (2026-09-29): tell the technician you are coming,
         // and let them see you on the way.
-        SugoCard(child: CollectionTripPanel(tracking: widget.tracking)),
+        SugoCard(
+          child: CollectionTripPanel(
+            jobId: widget.jobId,
+            tracking: widget.tracking,
+            showsArrival: !widget.tracking.clientOnTheWay,
+          ),
+        ),
+        // Arrival, traffic and weather for the client's own trip, and why
+        // if it runs late - the same card the technician sees (2026-11-17).
+        if (widget.tracking.clientOnTheWay) ...<Widget>[
+          const SizedBox(height: AppSizes.md),
+          TripConditionsCard(
+            tracking: widget.tracking,
+            viewer: TripViewer.client,
+          ),
+        ],
       ],
     );
   }

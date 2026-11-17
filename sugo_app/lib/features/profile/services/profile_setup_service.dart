@@ -34,12 +34,25 @@ class ProfileSetupService {
     return id;
   }
 
-  /// The technician's current workshop, to prefill the form. Null for a client.
-  Future<({String? name, double? latitude, double? longitude})?> workshop() async {
+  /// The technician's current workshop and the work they take, to prefill
+  /// the form. Null for a client.
+  Future<
+    ({
+      String? name,
+      double? latitude,
+      double? longitude,
+      bool homeService,
+      bool shopRepair,
+    })?
+  >
+  workshop() async {
     try {
       final Map<String, dynamic>? row = await _client
           .from('technicians')
-          .select('shop_name, shop_latitude, shop_longitude')
+          .select(
+            'shop_name, shop_latitude, shop_longitude, offers_home_service, '
+            'offers_shop_repair',
+          )
           .eq('id', _uid)
           .maybeSingle();
       if (row == null) return null;
@@ -47,6 +60,8 @@ class ProfileSetupService {
         name: row['shop_name'] as String?,
         latitude: (row['shop_latitude'] as num?)?.toDouble(),
         longitude: (row['shop_longitude'] as num?)?.toDouble(),
+        homeService: row['offers_home_service'] as bool? ?? true,
+        shopRepair: row['offers_shop_repair'] as bool? ?? true,
       );
     } catch (error) {
       _log('workshop', error);
@@ -69,11 +84,13 @@ class ProfileSetupService {
     final String path = '$uid/avatar.$ext';
 
     try {
-      await _client.storage.from(_bucket).uploadBinary(
-        path,
-        await photo.readAsBytes(),
-        fileOptions: FileOptions(upsert: true, contentType: _mime(ext)),
-      );
+      await _client.storage
+          .from(_bucket)
+          .uploadBinary(
+            path,
+            await photo.readAsBytes(),
+            fileOptions: FileOptions(upsert: true, contentType: _mime(ext)),
+          );
     } on StorageException catch (error) {
       _log('uploadAvatar', error);
       throw RbCarsFailure(
@@ -97,6 +114,8 @@ class ProfileSetupService {
     String? shopName,
     double? shopLatitude,
     double? shopLongitude,
+    bool? homeService,
+    bool? shopRepair,
     required bool isTechnician,
     required bool markComplete,
   }) async {
@@ -106,7 +125,9 @@ class ProfileSetupService {
       final Map<String, dynamic> profile = <String, dynamic>{
         if (avatarUrl != null) 'avatar_url': avatarUrl,
         if (markComplete)
-          'profile_setup_completed_at': DateTime.now().toUtc().toIso8601String(),
+          'profile_setup_completed_at': DateTime.now()
+              .toUtc()
+              .toIso8601String(),
       };
       if (profile.isNotEmpty) {
         await _client.from('profiles').update(profile).eq('id', uid);
@@ -116,10 +137,14 @@ class ProfileSetupService {
         final String? trimmed = shopName?.trim();
         final Map<String, dynamic> shop = <String, dynamic>{
           if (trimmed != null) 'shop_name': trimmed.isEmpty ? null : trimmed,
-          if (shopLatitude != null && shopLongitude != null) ...<String, dynamic>{
+          if (shopLatitude != null &&
+              shopLongitude != null) ...<String, dynamic>{
             'shop_latitude': shopLatitude,
             'shop_longitude': shopLongitude,
           },
+          // The work they take (2026-11-17). Matching reads these.
+          if (homeService != null) 'offers_home_service': homeService,
+          if (shopRepair != null) 'offers_shop_repair': shopRepair,
         };
         if (shop.isNotEmpty) {
           await _client.from('technicians').update(shop).eq('id', uid);
@@ -127,14 +152,17 @@ class ProfileSetupService {
       }
     } on PostgrestException catch (error) {
       _log('save', error);
-      throw const RbCarsFailure('Could not save your profile. Please try again.');
+      throw const RbCarsFailure(
+        'Could not save your profile. Please try again.',
+      );
     }
   }
 
   static String _extension(XFile file) {
     final String name = file.name.isNotEmpty ? file.name : file.path;
-    final String candidate =
-        name.contains('.') ? name.split('.').last.toLowerCase() : '';
+    final String candidate = name.contains('.')
+        ? name.split('.').last.toLowerCase()
+        : '';
     return switch (candidate) {
       'png' => 'png',
       'webp' => 'webp',

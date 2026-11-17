@@ -82,11 +82,7 @@ class PasswordRequirements extends StatelessWidget {
 }
 
 class _Rule extends StatelessWidget {
-  const _Rule({
-    required this.label,
-    required this.met,
-    required this.started,
-  });
+  const _Rule({required this.label, required this.met, required this.started});
 
   final String label;
   final bool met;
@@ -121,11 +117,18 @@ class _Rule extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: AppTextStyles.micro.copyWith(
-              color: colour,
-              fontWeight: met ? FontWeight.w700 : FontWeight.w500,
+          // Flexible so the label wraps instead of overflowing whenever the
+          // box is laid out narrower than one line - on a small phone at
+          // large text, or mid-way through the register form's entrance,
+          // where it overflowed by 103 px. At normal widths it changes
+          // nothing: the label fits and stays on one line.
+          Flexible(
+            child: Text(
+              label,
+              style: AppTextStyles.micro.copyWith(
+                color: colour,
+                fontWeight: met ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
           ),
         ],

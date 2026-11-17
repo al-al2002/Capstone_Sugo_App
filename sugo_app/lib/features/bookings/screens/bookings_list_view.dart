@@ -12,6 +12,8 @@ import '../../../core/widgets/sugo_delete_animation.dart';
 import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
 import '../../../core/widgets/sugo_loading.dart';
+import '../../../core/widgets/sugo_motion.dart';
+import '../../../core/widgets/sugo_route_line.dart';
 import '../../../core/widgets/sugo_status_badge.dart';
 import '../../chat/screens/chat_thread_screen.dart';
 import '../../client/widgets/home_sections.dart';
@@ -19,16 +21,19 @@ import '../../rb_cars/models/job.dart';
 import '../../../core/widgets/sugo_avatar.dart';
 import '../../profile/profile_navigation.dart';
 import '../../rb_cars/models/job_enums.dart';
+import '../../rb_cars/models/job_price.dart';
 import '../../rb_cars/models/job_party.dart';
 import '../../rb_cars/models/technician_profile_details.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../rb_cars/widgets/review_card.dart';
 import '../../technician/services/technician_service.dart';
+import '../models/booking_route.dart';
 import '../widgets/rate_job_sheet.dart';
 import 'job_detail_screen.dart';
 import '../../tracking/models/job_tracking.dart';
 import '../../tracking/services/tracking_service.dart';
 import '../../tracking/widgets/return_method_card.dart';
+import '../../rb_cars/widgets/booking_pause.dart';
 
 /// The Bookings tab for a client and the Jobs tab for a technician.
 ///
@@ -40,6 +45,12 @@ import '../../tracking/widgets/return_method_card.dart';
 /// filters and the empty states, drifting apart on every change.
 ///
 /// The [role] only changes wording and which service loads the rows.
+///
+/// Renovated 2026-11-17 ("Dispatch, levelled up"): a summary band with the
+/// active count, the sliding segmented filter, cards that deal in (again on
+/// every filter change, for the cards that are new to the view), a stage
+/// strip on each card, and animated empty states. What each card says is
+/// unchanged.
 enum BookingsRole { client, technician }
 
 class BookingsListView extends StatefulWidget {
@@ -93,6 +104,10 @@ class _BookingsListViewState extends State<BookingsListView> {
   BookingFilter _filter = BookingFilter.active;
   bool _isLoading = true;
   String? _error;
+
+  /// Cards deal in when the list first appears and when the filter changes;
+  /// a card already on screen keeps its place rather than replaying.
+  bool _entrancePlayed = false;
 
   @override
   void initState() {
@@ -182,8 +197,13 @@ class _BookingsListViewState extends State<BookingsListView> {
 
     try {
       // The bin says "Request deleted" itself, so no snackbar.
-      await runWithDeleteAnimation(context, _clientService.deleteJob(job.id));
+      final DateTime? paused = (await runWithDeleteAnimation(
+        context,
+        _clientService.deleteJob(job.id),
+      )).bookingPausedUntil;
       if (!mounted) return;
+      // Deleting while a technician was booked counts as a cancel.
+      if (paused != null) showBookingPausedNotice(context, paused);
       await _load();
     } on RbCarsFailure catch (failure) {
       if (mounted) UiFeedback.showError(context, failure.message);
@@ -236,6 +256,7 @@ class _BookingsListViewState extends State<BookingsListView> {
 
   @override
   Widget build(BuildContext context) {
+    final Map<BookingFilter, int>? counts = _isLoading ? null : _counts;
     return Column(
       children: <Widget>[
         BookingsTitle(
@@ -243,11 +264,16 @@ class _BookingsListViewState extends State<BookingsListView> {
           subtitle: widget.role == BookingsRole.client
               ? 'Everything you have booked with SUGO'
               : 'Work you have accepted',
+          activeCount: counts?[BookingFilter.active],
+          doneCount: counts?[BookingFilter.completed],
         ),
         BookingFilterTabs(
           selected: _filter,
-          counts: _isLoading ? null : _counts,
-          onChanged: (BookingFilter filter) => setState(() => _filter = filter),
+          counts: counts,
+          onChanged: (BookingFilter filter) => setState(() {
+            if (filter != _filter) _entrancePlayed = false;
+            _filter = filter;
+          }),
         ),
         const SizedBox(height: AppSizes.md),
         Expanded(child: _content()),
@@ -279,6 +305,13 @@ class _BookingsListViewState extends State<BookingsListView> {
       );
     }
 
+    final bool animate = !_entrancePlayed;
+    if (animate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _entrancePlayed = true;
+      });
+    }
+
     return RefreshIndicator(
       onRefresh: _load,
       child: _visible.isEmpty
@@ -297,22 +330,29 @@ class _BookingsListViewState extends State<BookingsListView> {
                 AppSizes.xxl + AppSizes.xl,
               ),
               itemCount: _visible.length,
-              itemBuilder: (BuildContext context, int index) => BookingCard(
-                key: ValueKey<String>(_visible[index].id),
-                job: _visible[index],
-                role: widget.role,
-                party: _parties[_visible[index].id],
-                clientCollects:
-                    _returnMethods[_visible[index].id] ==
-                    ReturnMethod.clientPickup,
-                onReturn: _load,
-                onRate: () => _rate(_visible[index]),
-                onDelete:
-                    widget.role == BookingsRole.client &&
-                        _visible[index].canBeDeletedByClient
-                    ? () => _delete(_visible[index])
-                    : null,
-              ),
+              itemBuilder: (BuildContext context, int index) {
+                final Job job = _visible[index];
+                return SugoRiseIn(
+                  key: ValueKey<String>('rise-${job.id}'),
+                  enabled: animate,
+                  delay: AppMotion.staggerDelay(index),
+                  child: BookingCard(
+                    key: ValueKey<String>(job.id),
+                    job: job,
+                    role: widget.role,
+                    party: _parties[job.id],
+                    clientCollects:
+                        _returnMethods[job.id] == ReturnMethod.clientPickup,
+                    onReturn: _load,
+                    onRate: () => _rate(job),
+                    onDelete:
+                        widget.role == BookingsRole.client &&
+                            job.canBeDeletedByClient
+                        ? () => _delete(job)
+                        : null,
+                  ),
+                );
+              },
             ),
     );
   }
@@ -320,7 +360,8 @@ class _BookingsListViewState extends State<BookingsListView> {
   Widget _emptyState() {
     final bool isClient = widget.role == BookingsRole.client;
 
-    return SugoEmptyState(
+    return _EmptyBookings(
+      key: ValueKey<BookingFilter>(_filter),
       icon: switch (_filter) {
         BookingFilter.active => Icons.event_note_outlined,
         BookingFilter.completed => Icons.verified_outlined,
@@ -356,50 +397,134 @@ class _BookingsListViewState extends State<BookingsListView> {
   }
 }
 
-/// The screen's name, with the accent rule beside it.
+/// The screen's name on the brand band, with the active count beside it.
 ///
 /// Public, like [JobStatusChip] and the two below it, so the golden in
 /// `test/features/bookings` can pose the list without a Supabase round trip -
 /// [BookingsListView] loads in `initState`, so the assembled screen is not
 /// renderable offline.
+///
+/// Since 2026-11-17 a navy band rather than a plain heading: the same summary
+/// band as the inbox and the notifications, so every list in the app opens
+/// the same way. The counts are null while loading, which hides the bubble
+/// rather than showing zeros.
 class BookingsTitle extends StatelessWidget {
-  const BookingsTitle({super.key, required this.title, this.subtitle});
+  const BookingsTitle({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.activeCount,
+    this.doneCount,
+  });
 
   final String title;
   final String? subtitle;
 
+  /// Bookings still in play, and finished ones.
+  final int? activeCount;
+  final int? doneCount;
+
   @override
   Widget build(BuildContext context) {
+    final int? active = activeCount;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSizes.screenPadding,
-        AppSizes.lg,
+        AppSizes.md,
         AppSizes.screenPadding,
-        AppSizes.lg,
+        AppSizes.md,
       ),
-      // A plain heading since the Dispatch redesign. The navy bar that used
-      // to stand to its left said nothing the heading did not - an accent
-      // rail beside a title is template chrome, not information.
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.headline,
+      child: SugoRiseIn(
+        child: SugoHeroBand(
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: AppTextStyles.fontFamily,
+                        fontSize: 24,
+                        height: 1.15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (subtitle != null) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.micro.copyWith(
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
+                      ),
+                    ],
+                    if (doneCount != null && doneCount! > 0) ...<Widget>[
+                      const SizedBox(height: AppSizes.sm),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 14,
+                            color: AppColors.cyan,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$doneCount completed',
+                            style: AppTextStyles.micro.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (active != null) ...<Widget>[
+                const SizedBox(width: AppSizes.md),
+                Container(
+                  width: 70,
+                  padding: const EdgeInsets.symmetric(vertical: AppSizes.sm),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(AppSizes.radius + 4),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      SugoCountUp(
+                        value: active,
+                        style: const TextStyle(
+                          fontFamily: AppTextStyles.fontFamily,
+                          fontSize: 24,
+                          height: 1.1,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      Text(
+                        'active',
+                        style: AppTextStyles.micro.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
-          if (subtitle != null) ...<Widget>[
-            const SizedBox(height: 2),
-            Text(
-              subtitle!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.caption,
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -411,6 +536,9 @@ class BookingsTitle extends StatelessWidget {
 /// scrolling row of pills implies there might be more to the right, and there
 /// never was. Each carries its count, so the shape of someone's history is
 /// readable without tapping through the tabs.
+///
+/// Since 2026-11-17 the shared [SugoSegmentedFilter], whose highlight slides
+/// to the chosen tab - the same control as the inbox's.
 class BookingFilterTabs extends StatelessWidget {
   const BookingFilterTabs({
     super.key,
@@ -429,104 +557,17 @@ class BookingFilterTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSizes.screenPadding),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppSizes.fieldRadius),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: BookingFilter.values
-              .map((BookingFilter filter) {
-                final bool active = filter == selected;
-                final int? count = counts?[filter];
-
-                return Expanded(
-                  child: Semantics(
-                    button: true,
-                    selected: active,
-                    label: count == null
-                        ? filter.label
-                        : '${filter.label}, $count',
-                    excludeSemantics: true,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => onChanged(filter),
-                        borderRadius: BorderRadius.circular(AppSizes.sm + 2),
-                        child: AnimatedContainer(
-                          duration: AppMotion.base,
-                          curve: AppMotion.standard,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppSizes.sm + 2,
-                            horizontal: AppSizes.xs,
-                          ),
-                          decoration: BoxDecoration(
-                            color: active
-                                ? AppColors.primary
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(
-                              AppSizes.sm + 2,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Flexible(
-                                child: Text(
-                                  filter.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: active
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                    color: active
-                                        ? Colors.white
-                                        : AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                              if (count != null && count > 0) ...<Widget>[
-                                const SizedBox(width: 5),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: active
-                                        ? Colors.white.withValues(alpha: 0.22)
-                                        : AppColors.divider,
-                                    borderRadius: BorderRadius.circular(
-                                      AppSizes.pillRadius,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '$count',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: active
-                                          ? Colors.white
-                                          : AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              })
-              .toList(growable: false),
-        ),
+      child: SugoSegmentedFilter<BookingFilter>(
+        selected: selected,
+        onChanged: onChanged,
+        segments: <SugoSegment<BookingFilter>>[
+          for (final BookingFilter filter in BookingFilter.values)
+            SugoSegment<BookingFilter>(
+              value: filter,
+              label: filter.label,
+              count: counts?[filter],
+            ),
+        ],
       ),
     );
   }
@@ -621,6 +662,17 @@ class BookingCard extends StatelessWidget {
               ],
             ],
           ),
+          // Where the booking is on its route (2026-11-17): the same four
+          // stops as the detail screen's route line, from `jobs.status`
+          // alone. A cancelled booking is going nowhere, so it has none.
+          if (BookingRoute.forStatus(
+                job.status,
+                offerPending: party?.technicianIsRequest ?? false,
+              )
+              case final SugoRoutePosition at) ...<Widget>[
+            const SizedBox(height: AppSizes.md),
+            _StageStrip(position: at),
+          ],
           // No divider under the status since the Dispatch redesign: the
           // card's own edge already frames it, and a rule across the middle
           // of a card makes it read as two boxes.
@@ -646,15 +698,21 @@ class BookingCard extends StatelessWidget {
   Widget _header() {
     return Row(
       children: <Widget>[
-        // The same hairline device tile as the matching screen's summary.
+        // The device on a gradient tile in the booking's own colour
+        // (2026-11-17): brand while live, green when fixed, grey when
+        // cancelled - the state reads before a word does.
         Container(
           width: AppSizes.iconTile,
           height: AppSizes.iconTile,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppSizes.radius),
-            border: Border.all(color: AppColors.border),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: _tileColors(job.status),
+            ),
           ),
-          child: Icon(job.deviceType.icon, size: 22, color: AppColors.primary),
+          child: Icon(job.deviceType.icon, size: 22, color: Colors.white),
         ),
         const SizedBox(width: AppSizes.md),
         Expanded(
@@ -705,10 +763,18 @@ class BookingCard extends StatelessWidget {
         ),
         const SizedBox(width: AppSizes.md),
         Expanded(
-          child: _Fact(
-            icon: Icons.payments_rounded,
-            label: 'Budget',
-            value: job.budgetLabel,
+          // The quoted price, not the budget range (2026-11-17): the total
+          // when the distance fee is known - a shop repair saves it - else
+          // the labor fee for the symptom.
+          child: Builder(
+            builder: (BuildContext context) {
+              final JobPrice price = JobPrice.forJob(job);
+              return _Fact(
+                icon: Icons.payments_rounded,
+                label: price.total != null ? 'Est. total' : 'Labor fee',
+                value: price.headline,
+              );
+            },
           ),
         ),
       ],
@@ -939,6 +1005,15 @@ class BookingCard extends StatelessWidget {
     );
   }
 
+  static List<Color> _tileColors(JobStatus status) => switch (status) {
+    JobStatus.completed => const <Color>[AppColors.success, Color(0xFF34C77B)],
+    JobStatus.cancelled => const <Color>[
+      AppColors.hint,
+      AppColors.textSecondary,
+    ],
+    _ => const <Color>[AppColors.primary, AppColors.secondary],
+  };
+
   String _unassignedLabel() => switch (job.status) {
     JobStatus.pending => 'Finding your technician',
     JobStatus.matched => 'Choose from your matches',
@@ -947,7 +1022,212 @@ class BookingCard extends StatelessWidget {
   };
 }
 
-/// A small icon, a caption and the value under it.
+/// A booking's place on its route, as four stops joined by a track that
+/// fills to the current position once, when the card appears (2026-11-17).
+///
+/// The stops are [BookingRoute.stops] - Posted, Matched, Booked, Fixed - and
+/// the position comes from `jobs.status` through [BookingRoute.forStatus], so
+/// the strip never shows progress the database has not recorded. Between two
+/// stops it fills half way, exactly as the route line does.
+class _StageStrip extends StatelessWidget {
+  const _StageStrip({required this.position});
+
+  final SugoRoutePosition position;
+
+  /// Short enough to finish inside the list golden's fixed 700 ms frame.
+  static const Duration _fill = Duration(milliseconds: 650);
+
+  @override
+  Widget build(BuildContext context) {
+    final int last = BookingRoute.stops.length - 1;
+    final String here = BookingRoute.stops[position.stop];
+    final bool reduced = AppMotion.reduced(context);
+
+    return Semantics(
+      label: 'Step ${position.stop + 1} of ${last + 1}: $here',
+      excludeSemantics: true,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: position.progress / last),
+              duration: reduced ? Duration.zero : _fill,
+              curve: AppMotion.emphasized,
+              builder: (BuildContext context, double fill, Widget? _) {
+                return SizedBox(
+                  height: 14,
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints box) {
+                      final double w = box.maxWidth;
+                      return Stack(
+                        alignment: Alignment.centerLeft,
+                        children: <Widget>[
+                          Container(
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: AppColors.divider,
+                              borderRadius: BorderRadius.circular(
+                                AppSizes.pillRadius,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: w * fill,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: <Color>[
+                                  AppColors.primary,
+                                  AppColors.cyan,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppSizes.pillRadius,
+                              ),
+                            ),
+                          ),
+                          for (int i = 0; i <= last; i++)
+                            Positioned(
+                              left: (w - 12) * i / last,
+                              child: _StopDot(
+                                reached: fill * last >= i - 0.001,
+                                current: i == position.stop && !position.moving,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: AppSizes.sm),
+          Text(
+            '${position.stop + 1}/${last + 1} · $here',
+            style: AppTextStyles.micro.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StopDot extends StatelessWidget {
+  const _StopDot({required this.reached, required this.current});
+
+  final bool reached;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) {
+    // Not animated itself: it lights the moment the fill reaches it, which
+    // is the motion. Its own fade would lag a beat behind the fill.
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: reached ? AppColors.primary : AppColors.surface,
+        border: Border.all(
+          color: reached ? AppColors.primary : AppColors.border,
+          width: 2,
+        ),
+        boxShadow: current
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: AppColors.secondary.withValues(alpha: 0.45),
+                  blurRadius: 8,
+                ),
+              ]
+            : null,
+      ),
+    );
+  }
+}
+
+/// An empty tab: its icon swinging once on a gradient disc, then the words,
+/// then the action when there is one. Replays when the tab changes, because
+/// the key does.
+class _EmptyBookings extends StatelessWidget {
+  const _EmptyBookings({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        SugoRiseIn(
+          child: Container(
+            width: 96,
+            height: 96,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[AppColors.primarySoft, AppColors.cyanSoft],
+              ),
+            ),
+            child: SugoWiggle(
+              swings: 2,
+              angle: 0.22,
+              alignment: Alignment.bottomCenter,
+              child: Icon(icon, size: 42, color: AppColors.primary),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSizes.lg),
+        SugoRiseIn(
+          delay: AppMotion.staggerDelay(2),
+          child: Column(
+            children: <Widget>[
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.title,
+              ),
+              const SizedBox(height: AppSizes.xs),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.subtitle,
+              ),
+            ],
+          ),
+        ),
+        if (actionLabel != null && onAction != null) ...<Widget>[
+          const SizedBox(height: AppSizes.xl),
+          SugoRiseIn(
+            delay: AppMotion.staggerDelay(4),
+            child: SugoButton(
+              label: actionLabel!,
+              icon: Icons.add_rounded,
+              expand: false,
+              onPressed: onAction,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// The bin on a booking card: an icon button, red, with its name for screen
 /// readers and a long press. Small, because on a card it sits beside the main
 /// action and must not compete with it.

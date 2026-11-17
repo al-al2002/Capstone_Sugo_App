@@ -120,6 +120,14 @@ class AppColors {
   /// The wash behind a recommendation highlight.
   static const Color cyanSoft = Color(0xFFE3F8FD);
 
+  /// Violet, decorative only: one of the home screen's service tiles
+  /// (2026-11-16). Eight tiles each in their own colour needed one hue the
+  /// palette did not have. Never a state, never text on white.
+  static const Color violet = Color(0xFF6D28D9);
+
+  /// The wash behind [violet].
+  static const Color violetSoft = Color(0xFFF1EBFE);
+
   // ------------------------------------------------------------ surfaces
 
   /// Paper: the page ground. A cool off-white, so a white card with a hairline

@@ -94,7 +94,10 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
       await _service.setDefaultAddress(address.id!);
       await _load();
       if (mounted) {
-        UiFeedback.showSuccess(context, '${address.label} is now your default.');
+        UiFeedback.showSuccess(
+          context,
+          '${address.label} is now your default.',
+        );
       }
     } on RbCarsFailure catch (failure) {
       if (mounted) UiFeedback.showError(context, failure.message);
@@ -361,9 +364,7 @@ class _AddressCard extends StatelessWidget {
                 const Spacer(),
                 TextButton.icon(
                   onPressed: busy ? null : onDelete,
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                  ),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
                   icon: const Icon(Icons.delete_outline_rounded, size: 16),
                   label: const Text('Delete'),
                 ),

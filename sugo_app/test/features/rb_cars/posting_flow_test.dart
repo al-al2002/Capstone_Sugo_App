@@ -8,20 +8,29 @@ import 'package:sugo_app/features/rb_cars/providers/job_posting_provider.dart';
 /// The two mappings the five-screen flow added on top of the frozen schema,
 /// plus the gate each step opens.
 void main() {
-  group('SchedulePreference maps three buttons onto two columns', () {
-    // A fixed clock, so "7 days out" is an assertion rather than a race.
+  group('SchedulePreference: Flexible or Urgent (2026-11-17)', () {
+    // A fixed clock, so "end of today" is an assertion rather than a race.
     final DateTime now = DateTime(2026, 9, 15, 10, 30);
+
+    test('only two choices: "This week" was removed', () {
+      expect(SchedulePreference.values, <SchedulePreference>[
+        SchedulePreference.flexible,
+        SchedulePreference.urgent,
+      ]);
+    });
 
     test('Flexible asks for nothing', () {
       expect(SchedulePreference.flexible.urgency, Urgency.canWait);
       expect(SchedulePreference.flexible.deadlineFrom(now), isNull);
     });
 
-    test('This week is can_wait with a seven-day deadline', () {
-      expect(SchedulePreference.thisWeek.urgency, Urgency.canWait);
+    test('a job saved with a seven-day deadline reads back as Flexible', () {
       expect(
-        SchedulePreference.thisWeek.deadlineFrom(now),
-        DateTime(2026, 9, 22, 23, 59),
+        SchedulePreference.fromJob(
+          urgency: Urgency.canWait,
+          preferredSchedule: DateTime(2026, 9, 22, 23, 59),
+        ),
+        SchedulePreference.flexible,
       );
     });
 

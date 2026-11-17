@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/widgets/sugo_sheet.dart';
+import '../../rb_cars/config/service_offers.dart';
 import '../../rb_cars/models/device_category.dart';
+import '../../rb_cars/models/issue_catalog.dart';
+import '../../rb_cars/widgets/press_scale.dart';
+import '../../rb_cars/widgets/service_offer_sheet.dart';
 
 /// The home screen's service categories.
 ///
@@ -21,9 +24,9 @@ import '../../rb_cars/models/device_category.dart';
 ///
 /// * The five device tiles open the posting flow with that category chosen.
 /// * **Installation** and **Maintenance** ask one quick question - "for what?"
-///   - and then do the same. The issue catalog already carries installation
-///   jobs (`network_new_install`, `cctv_new_install`) and on-site cleaning and
-///   tune-ups, so these land on real symptoms.
+///   - and then do the same, landing on a real catalogue problem: since
+///   2026-11-16 the catalogue carries the work itself (aircon cleaning, a
+///   laptop tune-up, TV mounting) with Davao prices - see [ServiceOffers].
 /// * **Other** opens the device picker with nothing chosen.
 ///
 /// Labels are sentence case since the Dispatch redesign, like every other
@@ -34,41 +37,17 @@ enum HomeServiceCategory {
     Icons.laptop_mac_rounded,
     DeviceCategory.laptop,
   ),
-  mobile(
-    'Mobile device',
-    Icons.smartphone_rounded,
-    DeviceCategory.phone,
-  ),
+  mobile('Mobile device', Icons.smartphone_rounded, DeviceCategory.phone),
   appliance(
     'Appliance repair',
     Icons.kitchen_rounded,
     DeviceCategory.appliance,
   ),
-  network(
-    'Network & Wi-Fi',
-    Icons.router_rounded,
-    DeviceCategory.network,
-  ),
-  cctv(
-    'CCTV & security',
-    Icons.videocam_rounded,
-    DeviceCategory.cctv,
-  ),
-  installation(
-    'Installation',
-    Icons.construction_rounded,
-    null,
-  ),
-  maintenance(
-    'Maintenance',
-    Icons.cleaning_services_rounded,
-    null,
-  ),
-  other(
-    'Other services',
-    Icons.grid_view_rounded,
-    null,
-  );
+  network('Network & Wi-Fi', Icons.router_rounded, DeviceCategory.network),
+  cctv('CCTV & security', Icons.videocam_rounded, DeviceCategory.cctv),
+  installation('Installation', Icons.construction_rounded, null),
+  maintenance('Maintenance', Icons.cleaning_services_rounded, null),
+  other('Other services', Icons.grid_view_rounded, null);
 
   const HomeServiceCategory(this.label, this.icon, this.device);
 
@@ -79,14 +58,49 @@ enum HomeServiceCategory {
   /// follow-up question (or none, for [other]).
   final DeviceCategory? device;
 
+  /// The tile's wash and icon colour (2026-11-16). Each category its own, so
+  /// the grid is scanned by colour as well as by word; Maintenance and
+  /// Installation match their cards in the posting flow.
+  (Color, Color) get tone => switch (this) {
+    computer => (AppColors.primarySoft, AppColors.primary),
+    mobile => (AppColors.secondarySoft, AppColors.secondaryDark),
+    appliance => (AppColors.successSoft, AppColors.success),
+    network => (AppColors.violetSoft, AppColors.violet),
+    cctv => (AppColors.errorSoft, AppColors.error),
+    installation => (AppColors.accentSoft, AppColors.accentDark),
+    maintenance => (AppColors.cyanSoft, AppColors.cyanDark),
+    other => (AppColors.fieldFill, AppColors.textSecondary),
+  };
+
   /// Search keywords beyond the label, so "aircon" finds Appliance Repair and
   /// "wifi" finds Network.
   List<String> get keywords => switch (this) {
-    computer => <String>['laptop', 'pc', 'desktop', 'computer', 'mac', 'windows'],
-    mobile => <String>['phone', 'tablet', 'iphone', 'android', 'cellphone', 'screen'],
+    computer => <String>[
+      'laptop',
+      'pc',
+      'desktop',
+      'computer',
+      'mac',
+      'windows',
+    ],
+    mobile => <String>[
+      'phone',
+      'tablet',
+      'iphone',
+      'android',
+      'cellphone',
+      'screen',
+    ],
     appliance => <String>[
-      'aircon', 'ac', 'fridge', 'refrigerator', 'washing machine', 'tv', 'oven',
-      'microwave', 'electric fan',
+      'aircon',
+      'ac',
+      'fridge',
+      'refrigerator',
+      'washing machine',
+      'tv',
+      'oven',
+      'microwave',
+      'electric fan',
     ],
     network => <String>['wifi', 'wi-fi', 'router', 'internet', 'modem', 'lan'],
     cctv => <String>['cctv', 'camera', 'security', 'dvr', 'nvr'],
@@ -96,66 +110,34 @@ enum HomeServiceCategory {
   };
 }
 
-/// What Installation and Maintenance ask before starting.
-const Map<HomeServiceCategory, List<(String, String, IconData, DeviceCategory)>>
-_followUps = <HomeServiceCategory, List<(String, String, IconData, DeviceCategory)>>{
-  HomeServiceCategory.installation: <(String, String, IconData, DeviceCategory)>[
-    ('Wi-Fi or router', 'New router, mesh, access point', Icons.router_rounded,
-        DeviceCategory.network),
-    ('CCTV cameras', 'New cameras and recorder', Icons.videocam_rounded,
-        DeviceCategory.cctv),
-    ('Appliance', 'Aircon, TV, washing machine', Icons.kitchen_rounded,
-        DeviceCategory.appliance),
-  ],
-  HomeServiceCategory.maintenance: <(String, String, IconData, DeviceCategory)>[
-    ('Laptop or PC tune-up', 'Cleaning, thermal paste, speed', Icons.laptop_mac_rounded,
-        DeviceCategory.laptop),
-    ('Appliance cleaning', 'Aircon cleaning, check-ups', Icons.kitchen_rounded,
-        DeviceCategory.appliance),
-    ('Phone or tablet', 'Battery and port check', Icons.smartphone_rounded,
-        DeviceCategory.phone),
-    ('Network check-up', 'Slow Wi-Fi, dead spots', Icons.router_rounded,
-        DeviceCategory.network),
-  ],
-};
-
-/// Resolves a tile tap to a device category, asking the follow-up question
-/// for Installation and Maintenance. Returns null for "Other", or when the
-/// follow-up sheet was dismissed; [onResolved] is only called with an answer.
+/// Resolves a tile tap to a device category - and, for Installation and
+/// Maintenance, the exact problem - asking the follow-up question first.
+///
+/// Since 2026-11-16 the follow-up sheet is the shared [showServiceOfferSheet],
+/// the same one step 1 of posting opens, so an answer such as "Laptop or PC
+/// tune-up" lands on the tune-up itself with its Davao price, not just on
+/// "Laptop". [onResolved] gets a null symptom when the answer covers several
+/// problems (an appliance install could be an aircon or a TV), and is only
+/// called with an answer: "Other" resolves to no device, a dismissed sheet to
+/// nothing at all.
 Future<void> resolveHomeCategory(
   BuildContext context,
   HomeServiceCategory category, {
-  required void Function(DeviceCategory? device) onResolved,
+  required void Function(DeviceCategory? device, String? symptomCode)
+  onResolved,
 }) async {
-  if (category.device != null || category == HomeServiceCategory.other) {
-    onResolved(category.device);
+  final IssueKind? kind = switch (category) {
+    HomeServiceCategory.installation => IssueKind.installation,
+    HomeServiceCategory.maintenance => IssueKind.maintenance,
+    _ => null,
+  };
+  if (kind == null) {
+    onResolved(category.device, null);
     return;
   }
 
-  final List<(String, String, IconData, DeviceCategory)> options =
-      _followUps[category]!;
-
-  final DeviceCategory? picked = await showSugoBottomSheet<DeviceCategory>(
-    context: context,
-    title: category == HomeServiceCategory.installation
-        ? 'What needs installing?'
-        : 'What needs maintenance?',
-    subtitle: 'We will match you with technicians who do exactly this.',
-    builder: (BuildContext sheetContext) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (final (String label, String hint, IconData icon, DeviceCategory d)
-            in options)
-          SugoSheetOption(
-            icon: icon,
-            label: label,
-            hint: hint,
-            onTap: () => Navigator.of(sheetContext).pop(d),
-          ),
-      ],
-    ),
-  );
-  if (picked != null) onResolved(picked);
+  final ServiceOffer? picked = await showServiceOfferSheet(context, kind);
+  if (picked != null) onResolved(picked.category, picked.issueCode);
 }
 
 /// A 4 x 2 grid of category tiles.
@@ -204,45 +186,47 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (Color wash, Color ink) = category.tone;
+
     return Semantics(
       button: true,
       label: category.label,
       excludeSemantics: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSizes.radius),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
-          child: Column(
-            children: <Widget>[
-              // One tile, not a tile inside a tile: a white square with the
-              // hairline edge every card has, and a navy icon. The old
-              // blue-on-soft-blue disc inside a shadowed square was two
-              // containers doing one job.
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(AppSizes.radius),
-                  border: Border.all(color: AppColors.border),
+      child: PressScale(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppSizes.radius),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSizes.xs),
+            child: Column(
+              children: <Widget>[
+                // One tile in the category's own wash and ink (2026-11-16).
+                // Eight identical white squares made the grid a list to read;
+                // in colour it is a set to pick from.
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: wash,
+                    borderRadius: BorderRadius.circular(AppSizes.radius + 4),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(category.icon, size: 26, color: ink),
                 ),
-                alignment: Alignment.center,
-                child: Icon(category.icon, size: 24, color: AppColors.primary),
-              ),
-              const SizedBox(height: AppSizes.sm),
-              Text(
-                category.label,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.micro.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                  height: 1.25,
+                const SizedBox(height: AppSizes.sm),
+                Text(
+                  category.label,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.micro.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    height: 1.25,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

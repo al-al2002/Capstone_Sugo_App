@@ -72,6 +72,20 @@ class SugoComposeAction {
 /// session, and overshoot that is charming once is tiring by the tenth tap.
 /// Under "remove animations" the pill jumps instead of sliding.
 ///
+/// ## The 2026-11-16 renovation
+///
+/// At the user's request ("make it cool"), keeping both decisions above - the
+/// bar still sits on the edge, and the compose button still lives inside it:
+///
+/// * **Rounded top corners and a soft lift**, so the bar reads as one
+///   object docked to the screen's edge rather than a strip.
+/// * **The active tab is navy.** The travelling pill is the brand gradient
+///   with a white icon on it and a soft glow, instead of a pale wash: the
+///   one place you are is the one strong mark in the bar. The icon grows a
+///   little as it becomes active.
+/// * **The compose button is a gradient circle** with a blue glow, and its
+///   plus turns a quarter while it is held - feedback before the tap lands.
+///
 /// ## Why the compose button sits inside the bar
 ///
 /// A button that overflows its parent depends on no ancestor ever clipping
@@ -99,10 +113,17 @@ class SugoBottomNav extends StatelessWidget {
   /// Width the compose slot takes out of the row: the button plus its gutter.
   static const double _composeSlot = AppSizes.composeButton + AppSizes.lg * 2;
 
-  static const double _barHeight = 64;
+  static const double _barHeight = 66;
 
   /// The pill behind the active icon.
-  static const Size _indicator = Size(56, 30);
+  static const Size _indicator = Size(58, 32);
+
+  /// The brand gradient the active pill and the compose button share.
+  static const LinearGradient _brand = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: <Color>[AppColors.navyLift, AppColors.primary],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -115,8 +136,16 @@ class SugoBottomNav extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
-        boxShadow: AppElevation.navBar,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        // One soft upward shadow: enough to lift the rounded corners off the
+        // page, no heavier than the bar's old hairline-and-shadow pair.
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Color(0x12031F44),
+            blurRadius: 20,
+            offset: Offset(0, -4),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -162,17 +191,23 @@ class SugoBottomNav extends StatelessWidget {
                     AnimatedPositioned(
                       duration: still ? Duration.zero : AppMotion.slow,
                       curve: AppMotion.emphasized,
-                      left:
-                          leftOf(currentIndex) + (tab - _indicator.width) / 2,
+                      left: leftOf(currentIndex) + (tab - _indicator.width) / 2,
                       width: _indicator.width,
                       top: _NavItem.topPad,
                       height: _indicator.height,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: AppColors.primarySoft,
+                          gradient: _brand,
                           borderRadius: BorderRadius.circular(
                             AppSizes.pillRadius,
                           ),
+                          boxShadow: const <BoxShadow>[
+                            BoxShadow(
+                              color: Color(0x40062B5C),
+                              blurRadius: 10,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -187,8 +222,8 @@ class SugoBottomNav extends StatelessWidget {
   }
 }
 
-/// The client's compose button: a navy square with the page corner, the only
-/// filled shape in the bar.
+/// The client's compose button: a brand-gradient circle with a soft blue glow,
+/// the largest filled shape in the bar.
 class _ComposeButton extends StatefulWidget {
   const _ComposeButton({required this.action});
 
@@ -200,6 +235,10 @@ class _ComposeButton extends StatefulWidget {
 
 class _ComposeButtonState extends State<_ComposeButton> {
   bool _held = false;
+
+  /// A little over the touch floor, so it stands out among the tabs while
+  /// staying inside the bar.
+  static const double _size = AppSizes.composeButton + 4;
 
   @override
   Widget build(BuildContext context) {
@@ -218,21 +257,37 @@ class _ComposeButtonState extends State<_ComposeButton> {
               onTapCancel: () => setState(() => _held = false),
               onTap: widget.action.onTap,
               child: AnimatedScale(
-                scale: _held ? 0.94 : 1,
+                scale: _held ? 0.92 : 1,
                 duration: AppMotion.fast,
                 curve: AppMotion.standard,
                 child: AnimatedContainer(
                   duration: AppMotion.fast,
-                  width: AppSizes.composeButton,
-                  height: AppSizes.composeButton,
+                  width: _size,
+                  height: _size,
                   decoration: BoxDecoration(
-                    color: _held ? AppColors.primaryDark : AppColors.primary,
-                    borderRadius: BorderRadius.circular(AppSizes.radius),
+                    gradient: SugoBottomNav._brand,
+                    shape: BoxShape.circle,
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: AppColors.secondary.withValues(
+                          alpha: _held ? 0.18 : 0.3,
+                        ),
+                        blurRadius: _held ? 8 : 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                  child: Icon(
-                    widget.action.icon,
-                    size: 26,
-                    color: Colors.white,
+                  // A quarter turn while held: the button answers the finger
+                  // before the tap has even landed.
+                  child: AnimatedRotation(
+                    turns: _held && !AppMotion.reduced(context) ? 0.25 : 0,
+                    duration: AppMotion.base,
+                    curve: AppMotion.standard,
+                    child: Icon(
+                      widget.action.icon,
+                      size: 28,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -277,6 +332,9 @@ class _NavItem extends StatelessWidget {
           curve: AppMotion.standard,
           builder: (BuildContext context, double t, Widget? _) {
             final Color color = Color.lerp(_inactive, AppColors.primary, t)!;
+            // The icon sits on the navy pill once active, so it turns white;
+            // the label stays on the bar's white and turns navy.
+            final Color iconColor = Color.lerp(_inactive, Colors.white, t)!;
 
             return Padding(
               padding: const EdgeInsets.only(top: topPad),
@@ -288,10 +346,13 @@ class _NavItem extends StatelessWidget {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: <Widget>[
-                          Icon(
-                            active ? item.activeIcon : item.icon,
-                            size: 22,
-                            color: color,
+                          Transform.scale(
+                            scale: 1 + 0.06 * t,
+                            child: Icon(
+                              active ? item.activeIcon : item.icon,
+                              size: 22,
+                              color: iconColor,
+                            ),
                           ),
                           if (item.showBadge)
                             const Positioned(

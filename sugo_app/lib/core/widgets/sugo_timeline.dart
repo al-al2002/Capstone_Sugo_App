@@ -97,8 +97,7 @@ class _Row extends StatelessWidget {
     final bool done = step.state == SugoStepState.done;
     final bool current = step.state == SugoStepState.current;
 
-    final bool showSubtitle =
-        step.subtitle != null && (!compact || current);
+    final bool showSubtitle = step.subtitle != null && (!compact || current);
 
     final String spoken = switch (step.state) {
       SugoStepState.done => 'Done',
@@ -107,7 +106,8 @@ class _Row extends StatelessWidget {
     };
 
     return Semantics(
-      label: '$spoken: ${step.title}${step.subtitle == null ? '' : '. ${step.subtitle}'}',
+      label:
+          '$spoken: ${step.title}${step.subtitle == null ? '' : '. ${step.subtitle}'}',
       excludeSemantics: true,
       child: IntrinsicHeight(
         child: Row(
@@ -136,7 +136,9 @@ class _Row extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.only(
                   top: 3,
-                  bottom: isLast ? 0 : (compact ? AppSizes.md : AppSizes.lg + 2),
+                  bottom: isLast
+                      ? 0
+                      : (compact ? AppSizes.md : AppSizes.lg + 2),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

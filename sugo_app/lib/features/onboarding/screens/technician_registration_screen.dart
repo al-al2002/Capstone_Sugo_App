@@ -13,8 +13,11 @@ import '../widgets/id_verification_step.dart';
 import '../widgets/location_pin_step.dart';
 import '../widgets/onboarding_scaffold.dart';
 import '../widgets/specialization_picker.dart';
+import '../widgets/work_type_step.dart';
 import 'assessment_screen.dart';
 import 'verification_documents_step.dart';
+import '../../../core/widgets/sugo_staggered_column.dart';
+import '../widgets/onboarding_step_intro.dart';
 
 /// The seven-step technician registration flow.
 ///
@@ -152,16 +155,32 @@ class _TechnicianRegistrationView extends StatelessWidget {
         onChanged: controller.refreshDocuments,
       ),
 
+      OnboardingStepId.workType => WorkTypeStep(
+        homeService: controller.homeService,
+        shopRepair: controller.shopRepair,
+        onHomeServiceChanged: controller.setHomeService,
+        onShopRepairChanged: controller.setShopRepair,
+        shopPlace: controller.shopPlace,
+        onShopPlaceChanged: controller.setShopPlace,
+        shopName: controller.shopName,
+        onShopNameChanged: controller.setShopName,
+      ),
+
       OnboardingStepId.location => LocationPinStep(
         place: controller.basePlace,
         onPlaceChanged: controller.setBasePlace,
         radiusKm: controller.radiusKm,
         onRadiusChanged: controller.setRadius,
         radiusOptions: TechnicianRegistrationService.radiusOptions,
-        title: 'Where do you work from?',
-        subtitle:
-            'Pin your shop or home base. Jobs are matched by distance from '
-            'this point.',
+        // Worded for the work chosen on the step before (2026-11-17).
+        title: controller.homeService
+            ? 'Where do you start from?'
+            : 'Your service area',
+        subtitle: controller.homeService
+            ? 'Pin your home base or shop. Home Service jobs are matched by '
+                  'distance from this point, within your travel radius.'
+            : 'It starts at your shop. Clients within this distance are '
+                  'matched with you.',
       ),
 
       OnboardingStepId.review => _TechnicianReview(controller: controller),
@@ -186,48 +205,59 @@ class _AccountRecap extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Become a SUGO technician', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'Your account is created. Here is what is left before you can take '
-          'jobs.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.engineering_rounded,
+          title: 'Become a SUGO technician',
+          subtitle:
+              'Your account is created. Here is what is left before you can '
+              'take jobs.',
         ),
         const SizedBox(height: AppSizes.xl),
-        ...<({String title, String blurb, IconData icon, bool required})>[
-          (
-            title: 'Verify your identity',
-            blurb: 'A government ID and a selfie holding it. Required.',
-            icon: Icons.badge_outlined,
-            required: true,
-          ),
-          (
-            title: 'Choose your specialisations',
-            blurb: 'The devices and brands you repair. Required.',
-            icon: Icons.build_outlined,
-            required: true,
-          ),
-          (
-            title: 'Pass a skill assessment',
-            blurb: 'A short quiz for each specialisation. Required.',
-            icon: Icons.quiz_outlined,
-            required: true,
-          ),
-          (
-            title: 'Add credentials',
-            blurb: 'Certificates, NBI clearance, portfolio. Optional.',
-            icon: Icons.workspace_premium_outlined,
-            required: false,
-          ),
-          (
-            title: 'Set your service area',
-            blurb: 'Where you are based and how far you travel. Required.',
-            icon: Icons.map_outlined,
-            required: true,
-          ),
-        ].map(
-          (({String title, String blurb, IconData icon, bool required}) item) =>
-              Padding(
+        SugoStaggeredColumn(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            ...<({String title, String blurb, IconData icon, bool required})>[
+              (
+                title: 'Verify your identity',
+                blurb: 'A government ID and a selfie holding it. Required.',
+                icon: Icons.badge_outlined,
+                required: true,
+              ),
+              (
+                title: 'Choose your specialisations',
+                blurb: 'The devices and brands you repair. Required.',
+                icon: Icons.build_outlined,
+                required: true,
+              ),
+              (
+                title: 'Pass a skill assessment',
+                blurb: 'A short quiz for each specialisation. Required.',
+                icon: Icons.quiz_outlined,
+                required: true,
+              ),
+              // Was "Certificates, NBI clearance, portfolio. Optional.": the
+              // clearance has been required since 20260922000001 - the documents
+              // step blocks without it and the reviewer treats it as mandatory.
+              // Corrected 2026-11-17.
+              (
+                title: 'Upload your clearance',
+                blurb:
+                    'An NBI or police clearance. Required. Certificates and '
+                    'portfolio photos are optional.',
+                icon: Icons.workspace_premium_outlined,
+                required: true,
+              ),
+              (
+                title: 'Set your service area',
+                blurb: 'Where you are based and how far you travel. Required.',
+                icon: Icons.map_outlined,
+                required: true,
+              ),
+            ].map(
+              (
+                ({String title, String blurb, IconData icon, bool required})
+                item,
+              ) => Padding(
                 padding: const EdgeInsets.only(bottom: AppSizes.md),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,9 +266,19 @@ class _AccountRecap extends StatelessWidget {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: item.required
-                            ? AppColors.primarySoft
-                            : AppColors.accentSofter,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: item.required
+                              ? const <Color>[
+                                  AppColors.primarySoft,
+                                  AppColors.cyanSoft,
+                                ]
+                              : const <Color>[
+                                  AppColors.accentSofter,
+                                  AppColors.accentSoft,
+                                ],
+                        ),
                         borderRadius: BorderRadius.circular(AppSizes.sm),
                       ),
                       child: Icon(
@@ -270,6 +310,8 @@ class _AccountRecap extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+          ],
         ),
         const SizedBox(height: AppSizes.md),
         Container(
@@ -315,13 +357,13 @@ class _AssessmentList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Prove your skills', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'One short assessment per skill, not per brand. Passing it qualifies '
-          'you for every brand you picked in that group. Score 70% to qualify, '
-          '90% to be listed as an expert.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.quiz_rounded,
+          title: 'Prove your skills',
+          subtitle:
+              'One short assessment per skill, not per brand. Passing it '
+              'qualifies you for every brand you picked in that group. Score '
+              '70% to qualify, 90% to be listed as an expert.',
         ),
         const SizedBox(height: AppSizes.lg),
 
@@ -540,12 +582,12 @@ class _TechnicianReview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Check and submit', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'A SUGO reviewer checks your ID before your account goes live. '
-          'This usually takes under a day.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.fact_check_rounded,
+          title: 'Check and submit',
+          subtitle:
+              'A SUGO reviewer checks your ID before your account goes live. '
+              'This usually takes under a day.',
         ),
         const SizedBox(height: AppSizes.xl),
 
@@ -606,6 +648,21 @@ class _TechnicianReview extends StatelessWidget {
           // why the section is not flagged wholesale.
           isComplete: controller.hasNbiClearance,
           isOptional: false,
+        ),
+
+        _ReviewSection(
+          title: 'Work type',
+          icon: Icons.work_outline_rounded,
+          rows: <String>[
+            controller.workTypeLabel,
+            if (controller.shopRepair)
+              controller.shopPlace == null
+                  ? 'Shop not pinned'
+                  : (controller.shopName.trim().isEmpty
+                        ? 'Shop pinned on the map'
+                        : '${controller.shopName.trim()} · pinned on the map'),
+          ],
+          isComplete: controller.hasWorkType,
         ),
 
         _ReviewSection(

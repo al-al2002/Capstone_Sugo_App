@@ -8,8 +8,10 @@ import '../../../core/widgets/sugo_button.dart';
 import '../../../core/widgets/sugo_image_viewer.dart';
 import '../../../core/widgets/sugo_sheet.dart';
 import '../../rb_cars/models/job.dart';
+import '../../rb_cars/models/job_price.dart';
 import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/widgets/explainability_chip.dart';
+import 'accept_job_dialog.dart';
 
 /// Everything the client said about the job, before the technician answers.
 ///
@@ -91,11 +93,17 @@ class _JobRequestDetails extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        // The budget leads. It is the number that decides whether this job is
-        // worth taking, and it is the one thing the technician may want to
-        // negotiate before accepting - so it sits above everything, next to
-        // the button that starts that conversation.
-        _BudgetPanel(job: job),
+        // The price leads (2026-11-17): labor for the symptom, the travel or
+        // delivery fee for the distance, and the total - the number that
+        // decides whether this job is worth taking. It replaced the client's
+        // budget range, which was a guess made before anyone was matched.
+        _PricePanel(
+          job: job,
+          price: JobPrice.forSnapshot(
+            job,
+            distanceKm: match.breakdown.context.distanceKm,
+          ),
+        ),
         const SizedBox(height: AppSizes.lg),
 
         _SectionLabel('The device'),
@@ -214,101 +222,11 @@ class _JobRequestDetails extends StatelessWidget {
           onPressed: isBusy
               ? null
               : () async {
-                  final bool? proceed = await showDialog<bool>(
-                    context: context,
-                    barrierDismissible: true,
-                    builder: (BuildContext dialogContext) {
-                      final String weather =
-                          match.breakdown.context.weatherLabel ??
-                          'Not available';
-                      final String traffic =
-                          match.breakdown.context.trafficLabel ??
-                          'Not available';
-
-                      return AlertDialog(
-                        backgroundColor: AppColors.surface,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                        titlePadding: const EdgeInsets.fromLTRB(
-                          AppSizes.xl,
-                          AppSizes.xl,
-                          AppSizes.xl,
-                          AppSizes.sm,
-                        ),
-                        contentPadding: const EdgeInsets.fromLTRB(
-                          AppSizes.xl,
-                          0,
-                          AppSizes.xl,
-                          0,
-                        ),
-                        actionsPadding: const EdgeInsets.fromLTRB(
-                          AppSizes.lg,
-                          0,
-                          AppSizes.lg,
-                          AppSizes.lg,
-                        ),
-                        title: Text(
-                          'Before you accept',
-                          style: AppTextStyles.title.copyWith(
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        content: SizedBox(
-                          width: 320,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                'Here is the live context for this task.',
-                                style: AppTextStyles.caption.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(height: AppSizes.lg),
-                              _ContextStatusRow(
-                                icon: Icons.wb_sunny_outlined,
-                                label: 'Weather',
-                                value: weather,
-                              ),
-                              const SizedBox(height: AppSizes.sm),
-                              _ContextStatusRow(
-                                icon: Icons.traffic_rounded,
-                                label: 'Traffic',
-                                value: traffic,
-                              ),
-                            ],
-                          ),
-                        ),
-                        actions: <Widget>[
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(false),
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.textSecondary,
-                            ),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(true),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSizes.lg,
-                                vertical: AppSizes.sm,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text('Proceed to accept task'),
-                          ),
-                        ],
-                      );
-                    },
+                  // "Ready to take this job?" - earnings, weather, traffic and
+                  // tips, in one place, right before they commit.
+                  final bool? proceed = await showAcceptJobDialog(
+                    context,
+                    match: match,
                   );
 
                   if (proceed != true) return;
@@ -346,62 +264,12 @@ class _JobRequestDetails extends StatelessWidget {
 }
 
 /// The budget, given the space it deserves.
-class _ContextStatusRow extends StatelessWidget {
-  const _ContextStatusRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSizes.md),
-      decoration: BoxDecoration(
-        color: AppColors.fieldFill,
-        borderRadius: BorderRadius.circular(AppSizes.radius),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 18, color: AppColors.secondary),
-          const SizedBox(width: AppSizes.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  label,
-                  style: AppTextStyles.micro.copyWith(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BudgetPanel extends StatelessWidget {
-  const _BudgetPanel({required this.job});
+/// The price of this job, at the top of the sheet (2026-11-17).
+class _PricePanel extends StatelessWidget {
+  const _PricePanel({required this.job, required this.price});
 
   final JobSnapshot job;
+  final JobPrice price;
 
   @override
   Widget build(BuildContext context) {
@@ -427,7 +295,7 @@ class _BudgetPanel extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                'Their budget',
+                'Price',
                 style: AppTextStyles.overline.copyWith(
                   color: AppColors.primaryDark,
                   letterSpacing: 0.3,
@@ -436,34 +304,89 @@ class _BudgetPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSizes.sm),
-          Text(
-            job.budgetLabel,
-            style: AppTextStyles.displayLarge.copyWith(
-              fontSize: 20,
-              color: AppColors.primaryDark,
+          if (price.labor != null) ...<Widget>[
+            Text(
+              price.labor!.symptom,
+              style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
             ),
+            const SizedBox(height: AppSizes.sm),
+          ],
+          _PriceLine(
+            label: 'Labor fee',
+            value: price.labor?.fee ?? 'To be confirmed',
           ),
-          if (hasRange) ...<Widget>[
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 13,
-                  color: AppColors.textSecondary,
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    'A range the client estimated, not a fixed price. If the '
-                    'repair costs more, message them before you accept.',
-                    style: AppTextStyles.caption,
-                  ),
-                ),
-              ],
+          // Urgent jobs: 20% of the labor on top (2026-11-17).
+          if (price.hasUrgentFee)
+            _PriceLine(
+              label: JobPrice.urgentFeeLabel,
+              value: price.urgentFeeText!,
+            ),
+          // Pickup and delivery prints as its two trips (2026-11-17).
+          if (price.distanceFeeLines
+              case final List<({String label, int amount})> lines)
+            for (final ({String label, int amount}) line in lines)
+              _PriceLine(label: line.label, value: '₱${line.amount}')
+          else if (price.feeLabel != null)
+            _PriceLine(
+              label: price.distanceFeeLabel!,
+              value: 'Agree with the client',
+            ),
+          if (price.total != null) ...<Widget>[
+            const Divider(height: AppSizes.lg, color: AppColors.primarySoft),
+            _PriceLine(
+              label: 'Estimated total',
+              value: price.total!,
+              bold: true,
             ),
           ],
+          // The client's own range, kept as a footnote when they set one: it
+          // tells the technician how far a higher diagnosis can go.
+          if (hasRange) ...<Widget>[
+            const SizedBox(height: AppSizes.sm),
+            Text(
+              "Client's budget: ${job.budgetLabel}. If the repair costs more, "
+              'message them before you accept.',
+              style: AppTextStyles.caption,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PriceLine extends StatelessWidget {
+  const _PriceLine({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSizes.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(flex: 3, child: Text(label, style: AppTextStyles.caption)),
+          const SizedBox(width: AppSizes.sm),
+          Flexible(
+            flex: 2,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: bold ? 16 : 13,
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
+                color: AppColors.primaryDark,
+              ),
+            ),
+          ),
         ],
       ),
     );

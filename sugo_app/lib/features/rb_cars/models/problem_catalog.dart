@@ -1,3 +1,4 @@
+import 'basic_problem.dart';
 import 'issue_catalog.dart';
 import 'job_enums.dart';
 
@@ -31,8 +32,10 @@ class ProblemSymptom {
   final ServicePath pathWhenDamaged;
 
   /// True when the symptom alone cannot separate a software fault from a
-  /// hardware fault. Ambiguous symptoms go to the technician community first and are
-  /// written with `classification_confidence = 'low'`.
+  /// hardware fault. Ambiguous symptoms are still matched - a technician
+  /// diagnoses them on site - and are written with
+  /// `classification_confidence = 'low'`. (They went to the technician
+  /// community until 2026-11-15, which meant nobody was matched.)
   final bool isAmbiguous;
 
   final String? hint;
@@ -277,10 +280,17 @@ class ClassificationResult {
     required this.servicePath,
     required this.confidence,
     required this.reason,
+    this.isBasic = false,
   });
 
   final ServicePath servicePath;
   final ClassificationConfidence confidence;
+
+  /// The picked issue is on the basic list and nothing says it needs a
+  /// technician's hands, so the suggestion is the Technician Community
+  /// (2026-11-17). The problem step shows the basic-problem card exactly
+  /// when this is true, so the card and the "Suggested" badge agree.
+  final bool isBasic;
 
   /// Plain-language justification shown to the client, so the suggestion never
   /// looks like a black box.
@@ -322,13 +332,16 @@ class ClassificationResult {
       );
     }
 
+    // An ambiguous symptom is matched like any other, at low confidence - the
+    // same rule as `ServiceRoute.needsDiagnosis` (2026-11-15). It used to go
+    // to the technician community, which meant no technician was matched.
     if (symptom.isAmbiguous && !hasPhysicalDamage) {
       return ClassificationResult(
-        servicePath: ServicePath.itCommunity,
+        servicePath: symptom.pathWhenIntact,
         confidence: ClassificationConfidence.low,
         reason:
-            '${symptom.label} can be either a software or a hardware fault. '
-            'Technicians in the community will confirm which service is best.',
+            '${symptom.label} can be either a software or a hardware fault, so '
+            'a technician diagnoses it first.',
       );
     }
 
@@ -349,11 +362,23 @@ class ClassificationResult {
 
   /// Turns a picked issue into a stored path plus a confidence.
   ///
-  /// Visible damage overrides any route that avoids a visit: nobody can talk a
-  /// client through a cracked panel, and "needs diagnosis" is moot once the
-  /// fault is something you can see. Appliances are the standing exception -
-  /// they are too big to travel, so they are serviced where they stand no
-  /// matter what state they are in.
+  /// In order, so the suggestion follows the symptom (2026-11-17):
+  ///
+  /// 1. Visible damage, or an issue whose route is Shop pickup -> Shop
+  ///    Repair. Nobody can talk a client through a cracked panel, and
+  ///    "needs diagnosis" is moot once the fault is something you can see.
+  ///    Appliances are the standing exception - they are too big to travel,
+  ///    so they are serviced where they stand no matter what state they are
+  ///    in.
+  /// 2. A basic repair (`config/basic_problems.dart`) -> the Technician
+  ///    Community, free advice first. Not for a "needs diagnosis" issue: those
+  ///    are matched with a technician (2026-11-15), and a basic-sounding
+  ///    label such as "Will not turn on" does not change that.
+  /// 3. Otherwise the issue's own route: Home Service, or the community for
+  ///    remote assist.
+  ///
+  /// The client can still pick any of the three; this only places the
+  /// "Suggested" badge and the first selection.
   static ClassificationResult _fromIssue(
     IssueOption issue,
     bool hasPhysicalDamage,
@@ -380,6 +405,18 @@ class ClassificationResult {
       );
     }
 
+    if (_isBasicRepair(issue, hasPhysicalDamage)) {
+      return ClassificationResult(
+        servicePath: ServicePath.itCommunity,
+        confidence: ClassificationConfidence.high,
+        isBasic: true,
+        reason:
+            '${issue.label} is often fixed with a few simple checks. Ask the '
+            'Technician Community first - it is free - and book a technician '
+            'if the tips do not fix it.',
+      );
+    }
+
     return ClassificationResult(
       servicePath: route.servicePath,
       confidence: route.confidence,
@@ -387,5 +424,24 @@ class ClassificationResult {
           '${issue.label} normally means '
           '${route.label.toLowerCase()}. ${route.blurb}',
     );
+  }
+
+  /// Rule 2 of [_fromIssue]: basic, and nothing that outranks it.
+  static bool _isBasicRepair(IssueOption issue, bool hasPhysicalDamage) {
+    if (hasPhysicalDamage) return false;
+    // A cleaning or an installation is work to book, not a fault to talk
+    // through.
+    if (issue.kind != IssueKind.repair) return false;
+    switch (issue.suggestedRoute) {
+      case ServiceRoute.pickup:
+      case ServiceRoute.needsDiagnosis:
+        return false;
+      case ServiceRoute.homeService:
+      case ServiceRoute.remoteAssist:
+        break;
+    }
+    // The issue alone - its code or its label. The description is typed on
+    // the next step and must not move the badge after the client chose.
+    return BasicProblemDetector.check(issueCode: issue.code) != null;
   }
 }

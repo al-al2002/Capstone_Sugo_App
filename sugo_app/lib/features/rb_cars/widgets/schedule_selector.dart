@@ -5,7 +5,7 @@ import '../models/schedule_preference.dart';
 import '../theme/posting_text.dart';
 import '../../../core/constants/app_colors.dart';
 
-/// "Flexible / This week / Urgent", the control that replaced the two-option
+/// "Flexible / Urgent" (since 2026-11-17), the control that replaced the two-option
 /// urgency toggle and the separate date picker.
 ///
 /// It writes two columns at once - see [SchedulePreference] for why - so this

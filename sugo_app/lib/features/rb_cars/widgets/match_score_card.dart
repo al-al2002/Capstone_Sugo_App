@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/sugo_button.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_pill.dart';
 import '../models/match_result.dart';
+import '../models/preference_match.dart';
 import '../models/score_breakdown.dart';
 import '../models/technician.dart';
+import '../models/technician_preferences.dart';
+import 'trust_badge_pill.dart';
 import 'score_indicator.dart';
 import 'technician_avatar.dart';
 
@@ -47,6 +51,7 @@ class MatchScoreCard extends StatelessWidget {
     this.onSelect,
     this.selectLabel = 'Book now',
     this.highlighted = false,
+    this.preferences,
   });
 
   final MatchResult match;
@@ -62,6 +67,11 @@ class MatchScoreCard extends StatelessWidget {
   /// True for the technician the client arrived with pre-selected.
   final bool highlighted;
 
+  /// The client's must-haves from posting. When any are set, the card shows
+  /// each one with this technician's own value - the pre-filter already
+  /// removed anyone who failed one, so this says WHY they qualify.
+  final TechnicianPreferences? preferences;
+
   @override
   Widget build(BuildContext context) {
     final Technician? technician = match.technician;
@@ -73,6 +83,9 @@ class MatchScoreCard extends StatelessWidget {
       child: SugoCard(
         margin: const EdgeInsets.only(bottom: AppSizes.md),
         onTap: declined ? null : onTap,
+        // The top pick gets a faint wash as well as its cyan edge, so it
+        // reads as the recommendation before a word is read.
+        background: match.isTopPick && !declined ? AppColors.cyanSoft : null,
         borderColor: match.isTopPick && !declined
             ? AppColors.cyan
             : highlighted
@@ -117,6 +130,27 @@ class MatchScoreCard extends StatelessWidget {
 
             _Identity(technician: technician),
             const SizedBox(height: AppSizes.md),
+
+            // The client's preferences as bars (2026-11-17), in the same
+            // form as Match and Acceptance below: one row per preference
+            // they set, filled by how well this technician fits it.
+            if (preferences?.hasAny ?? false) ...<Widget>[
+              _PreferenceBars(
+                bars: preferenceBars(
+                  preferences!,
+                  distanceKm:
+                      match.breakdown.context.distanceKm ??
+                      technician?.distanceKm,
+                  rating: technician?.rating,
+                  trustForJob: technician?.trustBadgeForJob,
+                  skillPercent: match.breakdown.skillPercent,
+                  away: technician?.isAway ?? false,
+                  busy: technician?.isBusy ?? false,
+                ),
+                muted: declined,
+              ),
+              const SizedBox(height: AppSizes.md),
+            ],
 
             _TechnicianFacts(
               technician: technician,
@@ -264,15 +298,16 @@ class _RankLine extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: top ? AppColors.cyan : AppColors.border,
-            shape: BoxShape.circle,
-          ),
+        // The recommendation score as a ring that fills on arrival, with the
+        // rank inside it (2026-11-17). It replaced an 8px dot: the number the
+        // whole card is ranked by deserved more than a full stop.
+        _ScoreRing(
+          percent: match.recommendationPercent,
+          rank: match.rank,
+          top: top,
+          muted: declined,
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: AppSizes.sm),
         Flexible(
           child: Text(
             top
@@ -287,6 +322,168 @@ class _RankLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A small ring showing the recommendation score, with the rank in the
+/// middle. Fills once when the card appears; still under reduced motion.
+class _ScoreRing extends StatelessWidget {
+  const _ScoreRing({
+    required this.percent,
+    required this.rank,
+    required this.top,
+    required this.muted,
+  });
+
+  final int percent;
+  final int rank;
+  final bool top;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color colour = muted
+        ? AppColors.hint
+        : top
+        ? AppColors.cyanDark
+        : AppColors.secondaryDark;
+
+    return ExcludeSemantics(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: (percent / 100).clamp(0, 1)),
+        duration: AppMotion.reduced(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 700),
+        curve: AppMotion.standard,
+        builder: (BuildContext context, double value, Widget? child) =>
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  SizedBox(
+                    width: 34,
+                    height: 34,
+                    child: CircularProgressIndicator(
+                      value: value,
+                      strokeWidth: 3.5,
+                      strokeCap: StrokeCap.round,
+                      backgroundColor: AppColors.divider,
+                      color: colour,
+                    ),
+                  ),
+                  child!,
+                ],
+              ),
+            ),
+        child: Text(
+          '$rank',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: colour,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Meets your must-haves" - each preference the client set while posting,
+/// ticked, with this technician's own value beside it (2026-11-17).
+class _PreferenceBars extends StatelessWidget {
+  const _PreferenceBars({required this.bars, this.muted = false});
+
+  final List<PreferenceBar> bars;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final int met = bars.where((PreferenceBar b) => b.met).length;
+    final bool all = met == bars.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.md,
+        AppSizes.sm + 2,
+        AppSizes.md,
+        AppSizes.md,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(AppSizes.radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.tune_rounded,
+                size: 15,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Your preferences',
+                  style: AppTextStyles.micro.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              SugoPill.badge(
+                label: all ? 'Meets all' : '$met of ${bars.length} met',
+                icon: all ? Icons.verified_rounded : Icons.info_outline_rounded,
+                tint: all ? AppColors.successSoft : AppColors.warningSoft,
+                foreground: all ? AppColors.success : AppColors.warning,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.sm + 2),
+          for (int i = 0; i < bars.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(height: AppSizes.sm + 2),
+            ScoreIndicator(
+              label: bars[i].label,
+              percent: bars[i].percent,
+              qualifier: bars[i].detail,
+              muted: muted,
+            ),
+            const SizedBox(height: 3),
+            Padding(
+              // Under the bar, lined up with where the bar starts.
+              padding: const EdgeInsets.only(left: 84),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    bars[i].met
+                        ? Icons.check_circle_rounded
+                        : Icons.error_outline_rounded,
+                    size: 12,
+                    color: bars[i].met ? AppColors.success : AppColors.warning,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    // Two lines: "Skill verified · wants Community Trusted"
+                    // was cut off at one.
+                    child: Text(
+                      bars[i].detail,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.micro.copyWith(fontSize: 11.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -342,6 +539,14 @@ class _Identity extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.caption,
               ),
+              // The trust badge as it applies to THIS job (20261115000002).
+              // From Skill verified up only: ID verified already has the blue
+              // check beside the name.
+              if (t?.trustBadgeForJob case final TrustBadge badge
+                  when badge.atLeast(TrustBadge.skillVerified)) ...<Widget>[
+                const SizedBox(height: AppSizes.xs),
+                TrustBadgePill(badge: badge, compact: true),
+              ],
               const SizedBox(height: AppSizes.xs),
               Row(
                 children: <Widget>[
@@ -436,7 +641,17 @@ class _FactRow extends StatelessWidget {
       children: <Widget>[
         Icon(icon, size: 15, color: AppColors.secondary),
         const SizedBox(width: 6),
-        SizedBox(width: 58, child: Text(label, style: AppTextStyles.caption)),
+        // Wide enough for "Location:" on one line - at 58 the colon wrapped
+        // under the word.
+        SizedBox(
+          width: 72,
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            style: AppTextStyles.caption,
+          ),
+        ),
         Expanded(
           child: Text(
             value,

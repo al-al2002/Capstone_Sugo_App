@@ -3,37 +3,40 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/theme/app_elevation.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/widgets/sugo_icon_button.dart';
+import '../../../core/widgets/sugo_brand_cover.dart';
+import '../../../core/widgets/sugo_glass_icon_button.dart';
 import '../../../core/widgets/sugo_logo.dart';
 import '../../../core/widgets/sugo_search_field.dart';
 
-/// The top of the client home: brand, the two things not on a tab, a
-/// greeting, and the search.
+/// The top of the client home: brand, inbox and bell, a greeting, the
+/// invitation to book, and the search.
 ///
-/// ## The Dispatch header (2026-09-29)
+/// ## The 2026-11-16 renovation
 ///
-/// The navy block from the 2026-09-28 reference is gone. The header now sits
-/// on the page's own Paper ground: the SUGO mark and wordmark on the left, the
-/// inbox and the bell on the right as hairline discs, then the greeting and a
-/// flat search bar.
+/// At the user's request ("renovate both dashboards"). The header now sits on
+/// the illustrated Davao cover ([SugoBrandCover], daylight), the same scene
+/// as the client's profile, so the home, the posting flow and the profile
+/// read as one app.
 ///
-/// Why: the Dispatch design spends its one strong element on the booking
-/// itself - the route card or the "Need a tech fix?" banner just below. A
-/// navy header above a navy banner was two heroes competing for the first
-/// glance, and the header won, although it is the part of the screen with
-/// the least to say. On a light header the eye lands on the card.
+/// **One hero, still.** A navy header was removed on 2026-09-29 because it
+/// competed with the navy "Need a tech fix?" banner under it - two heroes
+/// for the first glance. That reasoning is kept, not ignored: the banner is
+/// now *inside* the header. With no booking under way the header carries the
+/// invitation and its button ([onBookNow]); with one, the header is just the
+/// greeting and the white booking card below is the one strong element.
+///
+/// **The search floats.** It overlaps the header's bottom edge on a soft
+/// shadow, so it reads as the doorway between the header and the page - and
+/// stays where a thumb finds it.
 ///
 /// ## Why the greeting may wrap
 ///
 /// "Good evening, Christopher" does not fit on one line of a 320dp phone at
-/// title size. It wraps to a second line rather than ellipsising: cutting
-/// somebody's name off in the one place the app addresses them personally is
-/// worse than not greeting them at all.
-///
-/// The wave emoji is gone too. It rendered in whatever emoji font the phone
-/// had (a box in tests), and ui-ux-pro-max's `no-emoji-icons` rule applies
-/// to decoration as much as to controls.
+/// title size. It wraps rather than ellipsising: cutting somebody's name off
+/// in the one place the app addresses them personally is worse than not
+/// greeting them at all.
 class HomeHeader extends StatelessWidget {
   const HomeHeader({
     super.key,
@@ -43,29 +46,34 @@ class HomeHeader extends StatelessWidget {
     required this.onOpenNotifications,
     required this.onOpenMessages,
     required this.onSearch,
+    this.onBookNow,
     this.topInset = 0,
     this.now,
   });
 
-  /// The client's full name, or null before the profile has loaded.
   final String? name;
   final int unreadNotifications;
 
-  /// Unread messages across every thread. Messages live here rather than in
-  /// the bottom bar so Community can keep that tab.
+  /// Unread messages across every thread. The inbox is not a tab, so its
+  /// count lives here.
   final int unreadMessages;
 
   final VoidCallback onOpenNotifications;
   final VoidCallback onOpenMessages;
   final VoidCallback onSearch;
 
-  /// The status bar's height. The header runs underneath it, so the content
-  /// is pushed down by exactly this much.
+  /// "Book a technician". Null hides the invitation - the dashboard passes
+  /// it only when no booking is under way.
+  final VoidCallback? onBookNow;
+
+  /// The status-bar height. The cover runs under the status bar.
   final double topInset;
 
-  /// The time the greeting is chosen for; the clock when null. Tests pin it,
-  /// or a golden taken in the afternoon fails every morning.
+  /// For tests and goldens: the moment the greeting is worked out from.
   final DateTime? now;
+
+  /// Half the search bar's height: how far it hangs below the cover.
+  static const double _searchOverlap = 24;
 
   String get _salutation {
     final int hour = (now ?? DateTime.now()).hour;
@@ -82,59 +90,142 @@ class HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppSizes.screenPadding,
-        topInset + AppSizes.sm,
-        AppSizes.screenPadding,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              const SugoLogoMark(size: 32),
-              const SizedBox(width: AppSizes.sm + 2),
-              Text(
-                AppStrings.appName,
-                style: AppTextStyles.sectionTitle.copyWith(
-                  color: AppColors.primary,
-                  letterSpacing: 0.6,
+    return Stack(
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: _searchOverlap),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(28),
+            ),
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: SugoBrandCover(
+                    style: SugoCoverStyle.client,
+                    // Quiet: the greeting runs across the whole cover, so
+                    // the skyline stays low and no route crosses the words.
+                    quiet: true,
+                    topInset: topInset + 56,
+                    motifHeight: 160,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              SugoIconButton(
-                icon: Icons.chat_bubble_outline_rounded,
-                tooltip: 'Messages',
-                badgeCount: unreadMessages,
-                size: 40,
-                onPressed: onOpenMessages,
-              ),
-              const SizedBox(width: AppSizes.xs),
-              SugoIconButton(
-                icon: Icons.notifications_none_rounded,
-                tooltip: 'Notifications',
-                badgeCount: unreadNotifications,
-                size: 40,
-                onPressed: onOpenNotifications,
-              ),
-            ],
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSizes.screenPadding,
+                    topInset + AppSizes.xs,
+                    AppSizes.screenPadding - 4,
+                    _searchOverlap + AppSizes.lg + 2,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          const SugoLogoMark(size: 30, onDark: true),
+                          const SizedBox(width: AppSizes.sm + 2),
+                          Text(
+                            AppStrings.appName,
+                            style: AppTextStyles.sectionTitle.copyWith(
+                              color: Colors.white,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                          const Spacer(),
+                          SugoGlassIconButton(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            tooltip: 'Messages',
+                            badgeCount: unreadMessages,
+                            onPressed: onOpenMessages,
+                          ),
+                          SugoGlassIconButton(
+                            icon: Icons.notifications_none_rounded,
+                            tooltip: 'Notifications',
+                            badgeCount: unreadNotifications,
+                            onPressed: onOpenNotifications,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSizes.md),
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          '$_salutation, $_firstName',
+                          maxLines: 2,
+                          style: AppTextStyles.title.copyWith(
+                            color: Colors.white,
+                            fontSize: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        onBookNow == null
+                            ? 'What needs fixing today?'
+                            : 'Trusted technicians near you, ready to help.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.4,
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
+                      ),
+                      if (onBookNow != null) ...<Widget>[
+                        const SizedBox(height: AppSizes.md),
+                        _BookButton(onPressed: onBookNow!),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppSizes.lg),
-          Text(
-            '$_salutation, $_firstName',
-            maxLines: 2,
-            style: AppTextStyles.title,
+        ),
+        Positioned(
+          left: AppSizes.screenPadding,
+          right: AppSizes.screenPadding,
+          bottom: 0,
+          // The standard card depth on the field's own radius: lifted off
+          // the cover's edge, no heavier than any card on the page.
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppSizes.radius),
+              boxShadow: AppElevation.md,
+            ),
+            child: SugoSearchField.button(
+              onTap: onSearch,
+              hint: 'Search a service or device',
+            ),
           ),
-          const SizedBox(height: 2),
-          const Text('What needs fixing today?', style: AppTextStyles.subtitle),
-          const SizedBox(height: AppSizes.lg),
-          SugoSearchField.button(
-            onTap: onSearch,
-            hint: 'Search a service or device',
-          ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The header's one call to action, white on the navy cover.
+class _BookButton extends StatelessWidget {
+  const _BookButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.add_rounded, size: 18),
+      label: const Text('Book a technician'),
+      style: FilledButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.primary,
+        minimumSize: const Size(0, 42),
+        padding: const EdgeInsets.symmetric(horizontal: AppSizes.lg),
+        shape: const StadiumBorder(),
+        // Named: a button's textStyle replaces the theme's, not merges.
+        textStyle: const TextStyle(
+          fontFamily: AppTextStyles.fontFamily,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

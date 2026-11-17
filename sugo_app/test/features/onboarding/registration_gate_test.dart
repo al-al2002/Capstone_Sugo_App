@@ -84,10 +84,7 @@ void main() {
 
     test('an unchosen role goes to role selection', () {
       expect(
-        _profile(
-          status: 'incomplete',
-          roleChosenAt: DateTime(0),
-        ).destination,
+        _profile(status: 'incomplete', roleChosenAt: DateTime(0)).destination,
         isNot(LandingDestination.clientDashboard),
       );
 

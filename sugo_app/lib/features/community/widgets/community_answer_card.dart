@@ -63,10 +63,16 @@ class CommunityAnswerCard extends StatelessWidget {
 
           if (isAnswer) ...<Widget>[
             const SizedBox(height: AppSizes.md),
-            Row(
+            // A Wrap with space-between (2026-11-17): the same look as the
+            // old Row-with-Spacer on a normal phone, but the points drop to a
+            // second line instead of overflowing a small one at large text.
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppSizes.sm,
+              runSpacing: AppSizes.xs,
               children: <Widget>[
                 _HelpfulButton(answer: answer, onToggle: onToggleHelpful),
-                const Spacer(),
                 if (answer.helpfulCount > 0) _PointsEarned(answer: answer),
               ],
             ),
@@ -195,9 +201,7 @@ class _HelpfulButtonState extends State<_HelpfulButton>
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Icon(
-                  voted
-                      ? Icons.thumb_up_rounded
-                      : Icons.thumb_up_outlined,
+                  voted ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
                   size: 14,
                   color: voted ? AppColors.success : AppColors.textSecondary,
                 ),
@@ -209,9 +213,7 @@ class _HelpfulButtonState extends State<_HelpfulButton>
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: voted
-                        ? AppColors.success
-                        : AppColors.textSecondary,
+                    color: voted ? AppColors.success : AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -232,26 +234,23 @@ class _ReadOnlyTally extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (count == 0) {
-      return Text(
-        'No ratings yet',
-        style: AppTextStyles.micro,
-      );
+      return Text('No ratings yet', style: AppTextStyles.micro);
     }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        const Icon(
-          Icons.thumb_up_rounded,
-          size: 13,
-          color: AppColors.success,
-        ),
+        const Icon(Icons.thumb_up_rounded, size: 13, color: AppColors.success),
         const SizedBox(width: 5),
-        Text(
-          count == 1 ? '1 client found this helpful' : '$count found helpful',
-          style: AppTextStyles.micro.copyWith(
-            fontWeight: FontWeight.w600,
-            color: AppColors.success,
+        // Flexible, so on a small phone at large text it wraps rather than
+        // overflowing the answer card (2026-11-17).
+        Flexible(
+          child: Text(
+            count == 1 ? '1 client found this helpful' : '$count found helpful',
+            style: AppTextStyles.micro.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppColors.success,
+            ),
           ),
         ),
       ],

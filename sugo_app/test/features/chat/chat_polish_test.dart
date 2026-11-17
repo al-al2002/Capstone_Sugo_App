@@ -39,8 +39,18 @@ void main() {
     final DateTime t = DateTime(now.year, now.month, now.day, 0, 1);
     final _FakeChat chat = _FakeChat(<ChatMessage>[
       message('1', 'them', 'Good morning! I can come at 2pm.', t),
-      message('2', 'them', 'Is the gate open?', t.add(const Duration(minutes: 1))),
-      message('3', 'me', 'Yes, see you then. The unit is in the kitchen.', t.add(const Duration(minutes: 3))),
+      message(
+        '2',
+        'them',
+        'Is the gate open?',
+        t.add(const Duration(minutes: 1)),
+      ),
+      message(
+        '3',
+        'me',
+        'Yes, see you then. The unit is in the kitchen.',
+        t.add(const Duration(minutes: 3)),
+      ),
     ]);
 
     await tester.pumpWidget(
@@ -67,7 +77,13 @@ void main() {
     final _FakeChat chat = _FakeChat(const <ChatMessage>[]);
 
     await tester.pumpWidget(
-      host(ChatThreadScreen(jobId: 'job-1', title: 'Lance Dela Cruz', service: chat)),
+      host(
+        ChatThreadScreen(
+          jobId: 'job-1',
+          title: 'Lance Dela Cruz',
+          service: chat,
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -85,34 +101,97 @@ void main() {
   testWidgets('the inbox counts unread threads and fits a two-digit badge', (
     WidgetTester tester,
   ) async {
-    final _FakeChat chat = _FakeChat(const <ChatMessage>[], rows: <Conversation>[
-      Conversation.fromJson(<String, dynamic>{
-        'job_id': 'job-1',
-        'counterpart': <String, dynamic>{'id': 't1', 'full_name': 'Lance Dela Cruz'},
-        'job_status': JobStatus.confirmed.wire,
-        'device_type': 'laptop',
-        'problem_symptom': 'laptop_wont_power_on',
-        'last_message': 'On my way now, about fifteen minutes out.',
-        'last_message_at': DateTime.now().toIso8601String(),
-        'unread_count': 12,
-      }),
-      Conversation.fromJson(<String, dynamic>{
-        'job_id': 'job-2',
-        'counterpart': <String, dynamic>{'id': 't2', 'full_name': 'Vance'},
-        'job_status': JobStatus.completed.wire,
-        'device_type': 'appliance',
-        'problem_symptom': 'x',
-        'unread_count': 0,
-      }),
-    ]);
+    final _FakeChat chat = _FakeChat(
+      const <ChatMessage>[],
+      rows: <Conversation>[
+        Conversation.fromJson(<String, dynamic>{
+          'job_id': 'job-1',
+          'counterpart': <String, dynamic>{
+            'id': 't1',
+            'full_name': 'Lance Dela Cruz',
+          },
+          'job_status': JobStatus.confirmed.wire,
+          'device_type': 'laptop',
+          'problem_symptom': 'laptop_wont_power_on',
+          'last_message': 'On my way now, about fifteen minutes out.',
+          'last_message_at': DateTime.now().toIso8601String(),
+          'unread_count': 12,
+        }),
+        Conversation.fromJson(<String, dynamic>{
+          'job_id': 'job-2',
+          'counterpart': <String, dynamic>{'id': 't2', 'full_name': 'Vance'},
+          'job_status': JobStatus.completed.wire,
+          'device_type': 'appliance',
+          'problem_symptom': 'x',
+          'unread_count': 0,
+        }),
+      ],
+    );
 
-    await tester.pumpWidget(host(Scaffold(body: ConversationListView(service: chat))));
+    await tester.pumpWidget(
+      host(Scaffold(body: ConversationListView(service: chat))),
+    );
     await tester.pumpAndSettle();
 
     expect(find.textContaining('unread conversation'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
     // The device reads as a label, not a wire value.
     expect(find.text('Laptop / PC · Confirmed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // The renovated inbox (2026-11-17): a sliding filter. "Pending"
+  // appears only while a negotiation is open.
+  testWidgets('the inbox filters to unread threads and to open offers', (
+    WidgetTester tester,
+  ) async {
+    Conversation row(
+      String id,
+      String name, {
+      int unread = 0,
+      bool offer = false,
+    }) => Conversation.fromJson(<String, dynamic>{
+      'job_id': id,
+      'counterpart': <String, dynamic>{'id': 'p-$id', 'full_name': name},
+      'job_status': JobStatus.confirmed.wire,
+      'device_type': 'phone',
+      'problem_symptom': 'x',
+      'last_message': 'Hello',
+      'last_message_at': DateTime.now().toIso8601String(),
+      'unread_count': unread,
+      'is_pending_offer': offer,
+    });
+
+    final _FakeChat chat = _FakeChat(
+      const <ChatMessage>[],
+      rows: <Conversation>[
+        row('a', 'Ana Reyes', unread: 2),
+        row('b', 'Ben Cruz'),
+        row('c', 'Carla Lim', offer: true),
+      ],
+    );
+    await tester.pumpWidget(
+      host(Scaffold(body: ConversationListView(service: chat))),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ben Cruz'), findsOneWidget);
+    expect(find.text('Pending'), findsOneWidget);
+
+    await tester.tap(find.text('Unread'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ana Reyes'), findsOneWidget);
+    expect(find.text('Ben Cruz'), findsNothing);
+    expect(find.text('Carla Lim'), findsNothing);
+
+    await tester.tap(find.text('Pending'));
+    await tester.pumpAndSettle();
+    expect(find.text('Carla Lim'), findsOneWidget);
+    expect(find.text('Ana Reyes'), findsNothing);
+
+    await tester.tap(find.text('All'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ben Cruz'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -14,8 +14,9 @@ import 'package:sugo_app/core/widgets/sugo_avatar.dart';
 /// `flutter_test` blocks real HTTP, so every `Image.network` here fails to
 /// load. That is precisely the condition being tested.
 void main() {
-  Widget host(Widget child) =>
-      MaterialApp(home: Scaffold(body: Center(child: child)));
+  Widget host(Widget child) => MaterialApp(
+    home: Scaffold(body: Center(child: child)),
+  );
 
   group('SugoAvatar', () {
     testWidgets('shows initials when there is no photo', (

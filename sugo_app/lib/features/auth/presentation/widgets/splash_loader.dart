@@ -96,10 +96,7 @@ class _SplashLoaderState extends State<SplashLoader>
                     Positioned(
                       left: t * (SplashLoader.roadWidth - _van),
                       bottom: 5,
-                      child: Opacity(
-                        opacity: fade.clamp(0.0, 1.0),
-                        child: van,
-                      ),
+                      child: Opacity(opacity: fade.clamp(0.0, 1.0), child: van),
                     ),
                   ],
                 );

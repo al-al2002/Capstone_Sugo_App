@@ -11,6 +11,7 @@ import '../../../core/widgets/sugo_status_badge.dart';
 import '../../../core/widgets/sugo_timeline.dart';
 import '../../../core/widgets/id_document_picker.dart';
 import '../models/identity_verification.dart';
+import 'onboarding_step_intro.dart';
 
 /// The mandatory ID + selfie step, shared by both onboarding flows.
 ///
@@ -80,15 +81,16 @@ class IdVerificationStep extends StatelessWidget {
           const SizedBox(height: AppSizes.xl),
         ],
 
-        Text(
-          rejection != null ? 'Retake your photos' : 'Verify your identity',
-          style: AppTextStyles.headline,
-        ),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'Every SUGO account is verified by a real person before it goes '
-          'live. This keeps technicians and clients safe from each other.',
-          style: AppTextStyles.subtitle,
+        OnboardingStepIntro(
+          icon: rejection != null
+              ? Icons.restart_alt_rounded
+              : Icons.badge_rounded,
+          title: rejection != null
+              ? 'Retake your photos'
+              : 'Verify your identity',
+          subtitle:
+              'Every SUGO account is verified by a real person before it goes '
+              'live. This keeps technicians and clients safe from each other.',
         ),
         const SizedBox(height: AppSizes.lg),
 
@@ -100,8 +102,7 @@ class IdVerificationStep extends StatelessWidget {
         // is what stops the step feeling open-ended.
         _PartProgress(
           done:
-              (capture.idDocument != null &&
-                      validation.idDocumentError == null
+              (capture.idDocument != null && validation.idDocumentError == null
                   ? 1
                   : 0) +
               (capture.selfie != null && validation.selfieError == null
@@ -610,7 +611,9 @@ class _ReviewBadgeState extends State<_ReviewBadge>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!widget.approved && !AppMotion.reduced(context) && !_sweep.isCompleted) {
+    if (!widget.approved &&
+        !AppMotion.reduced(context) &&
+        !_sweep.isCompleted) {
       _sweep.forward();
     }
   }

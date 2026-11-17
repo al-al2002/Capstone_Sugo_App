@@ -106,93 +106,53 @@ class _LoginFormState extends State<LoginForm> {
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: AppSizes.xl),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final bool compact = constraints.maxWidth < 300;
-
-                if (compact) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: Checkbox(
-                              value: _rememberMe,
-                              onChanged: controller.isBusy
-                                  ? null
-                                  : (bool? value) =>
-                                        setState(() => _rememberMe = value ?? false),
-                              activeColor: AppColors.secondary,
-                            ),
-                          ),
-                          const SizedBox(width: AppSizes.sm),
-                          Expanded(
-                            child: Text(
-                              'Remember me',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: controller.isBusy
-                              ? null
-                              : () => Navigator.of(context).pushNamed(
-                                  AppRoutes.forgotPassword,
-                                ),
-                          child: const Text(AppStrings.forgotPassword),
-                        ),
-                      ),
-                    ],
-                  );
-                }
-
-                return Row(
+            // A Wrap rather than a Row behind a width breakpoint.
+            //
+            // The breakpoint was 300 px, but "Remember me" and "Forgot
+            // password?" need about 330 px side by side - so every phone
+            // between the two (most of them, at larger text) got the one-line
+            // layout and overflowed by 30-60 px. A Wrap needs no number: when
+            // both fit, spaceBetween pushes them to opposite edges exactly as
+            // the Row and Spacer did; when they do not, "Forgot password?"
+            // drops to its own line, left-aligned, as the compact layout did.
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: AppSizes.xs,
+              children: <Widget>[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: Checkbox(
-                            value: _rememberMe,
-                            onChanged: controller.isBusy
-                                ? null
-                                : (bool? value) =>
-                                      setState(() => _rememberMe = value ?? false),
-                            activeColor: AppColors.secondary,
-                          ),
-                        ),
-                        const SizedBox(width: AppSizes.sm),
-                        Text(
-                          'Remember me',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
+                    SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: Checkbox(
+                        value: _rememberMe,
+                        onChanged: controller.isBusy
+                            ? null
+                            : (bool? value) =>
+                                  setState(() => _rememberMe = value ?? false),
+                        activeColor: AppColors.secondary,
+                      ),
                     ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: controller.isBusy
-                          ? null
-                          : () => Navigator.of(context).pushNamed(
-                              AppRoutes.forgotPassword,
-                            ),
-                      child: const Text(AppStrings.forgotPassword),
+                    const SizedBox(width: AppSizes.sm),
+                    Text(
+                      'Remember me',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ],
-                );
-              },
+                ),
+                TextButton(
+                  onPressed: controller.isBusy
+                      ? null
+                      : () => Navigator.of(
+                          context,
+                        ).pushNamed(AppRoutes.forgotPassword),
+                  child: const Text(AppStrings.forgotPassword),
+                ),
+              ],
             ),
           ),
           PrimaryButton(
@@ -200,67 +160,7 @@ class _LoginFormState extends State<LoginForm> {
             isLoading: controller.isSubmitting,
             onPressed: controller.isBusy ? null : _submit,
           ),
-          const SizedBox(height: AppSizes.xl),
-          Row(
-            children: <Widget>[
-              const Expanded(child: Divider()),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSizes.md),
-                child: Text(
-                  'or continue with',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.hint),
-                ),
-              ),
-              const Expanded(child: Divider()),
-            ],
-          ),
-          const SizedBox(height: AppSizes.md),
-          _SocialButton(
-            icon: const Text(
-              'G',
-              style: TextStyle(
-                color: Color(0xFF4285F4),
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            label: 'Continue with Google',
-          ),
-          const SizedBox(height: AppSizes.sm),
-          _SocialButton(
-            icon: const Icon(Icons.apple, size: 22, color: Colors.black),
-            label: 'Continue with Apple',
-          ),
         ],
-      ),
-    );
-  }
-}
-
-class _SocialButton extends StatelessWidget {
-  const _SocialButton({required this.icon, required this.label});
-
-  final Widget icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: AppSizes.socialButtonHeight,
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: null,
-        icon: icon,
-        label: Text(label),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textPrimary,
-          disabledForegroundColor: AppColors.textPrimary,
-          side: const BorderSide(color: AppColors.border),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-          ),
-          textStyle: AppTextStyles.socialButton,
-        ),
       ),
     );
   }

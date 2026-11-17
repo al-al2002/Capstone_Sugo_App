@@ -164,8 +164,17 @@ class CommunityPostCard extends StatelessWidget {
               top: 0,
               bottom: 0,
               width: 4,
-              child: ColoredBox(
-                color: answered ? AppColors.success : AppColors.accent,
+              // A gradient since 2026-11-17, in the same two colours.
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: answered
+                        ? const <Color>[AppColors.success, Color(0xFF34C77B)]
+                        : const <Color>[AppColors.accent, Color(0xFFFBBF24)],
+                  ),
+                ),
               ),
             ),
           ],
@@ -289,9 +298,7 @@ class _AnswerCount extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(
-            answered
-                ? Icons.check_circle_rounded
-                : Icons.help_outline_rounded,
+            answered ? Icons.check_circle_rounded : Icons.help_outline_rounded,
             size: 12,
             color: ink,
           ),

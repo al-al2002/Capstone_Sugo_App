@@ -164,9 +164,7 @@ class _ShellState extends State<_Shell> {
           ),
         ],
         currentIndex: _tab,
-        composeAction: widget.isClient
-            ? SugoComposeAction(onTap: () {})
-            : null,
+        composeAction: widget.isClient ? SugoComposeAction(onTap: () {}) : null,
         onChanged: (int index) => setState(() => _tab = index),
       ),
     );

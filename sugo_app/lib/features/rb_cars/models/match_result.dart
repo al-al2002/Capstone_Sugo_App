@@ -3,6 +3,7 @@ import 'job_enums.dart';
 import 'json_utils.dart';
 import 'score_breakdown.dart';
 import 'technician.dart';
+import 'technician_preferences.dart';
 
 /// One row of `job_matches`: a ranked offer the engine produced for a job.
 ///
@@ -28,6 +29,7 @@ class MatchResult {
     this.acceptanceScore = 0,
     this.finalScore = 0,
     this.createdAt,
+    this.offeredAt,
   });
 
   factory MatchResult.fromJson(Map<String, dynamic> json) {
@@ -53,8 +55,14 @@ class MatchResult {
       technician: snapshot == null ? null : Technician.fromJson(snapshot),
       job: jobSnapshot == null ? null : JobSnapshot.fromJson(jobSnapshot),
       createdAt: asDate(json['created_at']),
+      offeredAt: asDate(json['offered_at']),
     );
   }
+
+  /// How long a technician has to accept an URGENT request before it passes
+  /// to the next one (2026-11-17). The server's `urgent-offer-sweep` uses the
+  /// same five minutes (`_shared/urgent.ts`).
+  static const Duration urgentWindow = Duration(minutes: 5);
 
   final String id;
   final String jobId;
@@ -77,6 +85,20 @@ class MatchResult {
   final JobSnapshot? job;
 
   final DateTime? createdAt;
+
+  /// When the client sent this request (status became `offered`), set by the
+  /// `job_matches_offer_clock` trigger. Null for a row never offered.
+  final DateTime? offeredAt;
+
+  /// The job was posted as Urgent.
+  bool get isUrgent => job?.isUrgent ?? false;
+
+  /// When an urgent request passes to the next technician, or null when this
+  /// is not a live urgent request.
+  DateTime? get urgentDeadline =>
+      isUrgent && isAwaitingTechnician && offeredAt != null
+      ? offeredAt!.add(urgentWindow)
+      : null;
 
   /// 0-100 for the score ring on the match card.
   int get scorePercent => (finalScore.clamp(0, 1) * 100).round();
@@ -221,6 +243,8 @@ class MatchingRun {
     this.considered = const <ConsideredTechnician>[],
     this.message,
     this.evaluated = 0,
+    this.preferencesBlocked = false,
+    this.relaxHints = const <RelaxHint>[],
   });
 
   final List<MatchResult> matches;
@@ -231,4 +255,14 @@ class MatchingRun {
 
   /// How many technicians made it past the hard gates and were scored.
   final int evaluated;
+
+  /// The engine's `no_match_relax_preferences`: the client's own preferences
+  /// removed everyone who passed the other gates. The review screen then
+  /// offers to relax them rather than showing an empty list. False whenever
+  /// relaxing could not help.
+  final bool preferencesBlocked;
+
+  /// For each preference, how many technicians removing only it would bring
+  /// back. Empty unless [preferencesBlocked].
+  final List<RelaxHint> relaxHints;
 }

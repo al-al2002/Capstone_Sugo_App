@@ -1,29 +1,23 @@
 import 'job_enums.dart';
 
-/// "Flexible", "This week" or "Urgent" - the one question that answers two
-/// columns.
+/// "Flexible" or "Urgent" - the one question that answers two columns.
 ///
-/// ## Three buttons over a two-value column
+/// ## Two buttons (2026-11-17)
 ///
-/// `jobs.urgency` is checked against `('need_today','can_wait')` and the
-/// migration is frozen, so a third urgency value is not available. But two
-/// buttons could not express what clients actually mean: "can wait" covers both
-/// *no rush at all* and *sometime this week*, and those two produce very
-/// different bookings.
-///
-/// The missing information already has a column - `jobs.preferred_schedule` -
-/// so the third option is stored as a deadline rather than as an urgency. Each
-/// choice writes both:
+/// There used to be a third, "This week", stored as a seven-day deadline in
+/// `jobs.preferred_schedule` because `jobs.urgency` only holds
+/// `('need_today','can_wait')`. At the user's request it was removed: a client
+/// either needs it today or does not. Each choice writes both columns:
 ///
 /// | choice     | `urgency`    | `preferred_schedule` |
 /// |------------|--------------|----------------------|
 /// | Flexible   | `can_wait`   | null                 |
-/// | This week  | `can_wait`   | 7 days out           |
 /// | Urgent     | `need_today` | end of today         |
 ///
-/// That keeps the scorer honest - it reads `urgency` exactly as it always did,
-/// and the urgency-path table still flips on `need_today` alone - while the
-/// client gets the middle option they were reaching for.
+/// Urgent now also means something on the price and the clock: a 20% urgent
+/// fee on the labor (`JobPrice`), and the chosen technician has five minutes
+/// to accept before the request passes to the next one
+/// (`urgent-offer-sweep`).
 ///
 /// This is the same presentation-vocabulary trick [DeviceCategory] plays on
 /// `jobs.device_type` and [ServiceRoute] plays on `jobs.service_path`.
@@ -34,15 +28,12 @@ enum SchedulePreference {
     Urgency.canWait,
     null,
   ),
-  thisWeek(
-    'This week',
-    'Booked within the next seven days.',
-    Urgency.canWait,
-    Duration(days: 7),
-  ),
+  // "This week" was removed on 2026-11-17 at the user's request: two choices,
+  // Flexible and Urgent. A job saved with a seven-day deadline reads back as
+  // Flexible (see [fromJob]).
   urgent(
     'Urgent',
-    'Today if at all possible.',
+    'Today. +20% urgent fee, and the technician has 5 minutes to accept.',
     Urgency.needToday,
     Duration.zero,
   );
@@ -75,15 +66,14 @@ enum SchedulePreference {
 
   /// Reads a stored job back into the button that produced it.
   ///
-  /// `need_today` is unambiguous. Without it, a deadline means the client asked
-  /// for one, which is the middle option; no deadline means they did not.
+  /// `need_today` is Urgent; anything else is Flexible - including a job saved
+  /// with a "this week" deadline before that option was removed.
   static SchedulePreference fromJob({
     required Urgency urgency,
     required DateTime? preferredSchedule,
   }) {
-    if (urgency == Urgency.needToday) return SchedulePreference.urgent;
-    return preferredSchedule == null
-        ? SchedulePreference.flexible
-        : SchedulePreference.thisWeek;
+    return urgency == Urgency.needToday
+        ? SchedulePreference.urgent
+        : SchedulePreference.flexible;
   }
 }

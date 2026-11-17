@@ -36,10 +36,7 @@ class AuthFooterPrompt extends StatelessWidget {
                   minimumSize: const Size(0, 44),
                   tapTargetSize: MaterialTapTargetSize.padded,
                 ),
-                child: Text(
-                  actionLabel,
-                  style: AppTextStyles.link,
-                ),
+                child: Text(actionLabel, style: AppTextStyles.link),
               ),
             ],
           );
@@ -58,10 +55,7 @@ class AuthFooterPrompt extends StatelessWidget {
                 minimumSize: const Size(0, 44),
                 tapTargetSize: MaterialTapTargetSize.padded,
               ),
-              child: Text(
-                actionLabel,
-                style: AppTextStyles.link,
-              ),
+              child: Text(actionLabel, style: AppTextStyles.link),
             ),
           ],
         );

@@ -82,9 +82,7 @@ class RecommendationReasonsSheet extends StatelessWidget {
             style: AppTextStyles.subtitle,
           )
         else
-          ...positives.map(
-            (RecommendationReason r) => _ReasonRow(reason: r),
-          ),
+          ...positives.map((RecommendationReason r) => _ReasonRow(reason: r)),
 
         if (caveats.isNotEmpty) ...<Widget>[
           const SizedBox(height: AppSizes.md),

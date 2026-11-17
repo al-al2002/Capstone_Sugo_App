@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,11 +10,13 @@ import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../../../core/widgets/sugo_timeline.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../controllers/registration_flow_controller.dart';
 import '../models/registration_status.dart';
 import 'onboarding_stepper.dart';
+import '../../../core/widgets/sugo_button.dart';
 
 /// The shell both registration flows render inside.
 ///
@@ -20,6 +24,11 @@ import 'onboarding_stepper.dart';
 /// buttons, so the two flow screens contain only their step bodies. Anything
 /// that should look and behave identically for a technician and a client
 /// belongs here by construction.
+///
+/// Renovated 2026-11-17 ("Dispatch, levelled up"): the progress rail sits on
+/// the brand band with a completion ring ([OnboardingStepper]), each step
+/// slides in from the side it came from ([_StepSwitcher]), errors slide in,
+/// and the footer is a floating tray like the chat composer's.
 class OnboardingScaffold extends StatelessWidget {
   const OnboardingScaffold({
     super.key,
@@ -75,7 +84,7 @@ class OnboardingScaffold extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSizes.screenPadding,
-                0,
+                AppSizes.xs,
                 AppSizes.screenPadding,
                 AppSizes.lg,
               ),
@@ -88,9 +97,14 @@ class OnboardingScaffold extends StatelessWidget {
             ),
 
             if (controller.error != null)
-              _ErrorBanner(
-                message: controller.error!,
-                onDismiss: controller.clearError,
+              // Slides down into place; a new message replays it.
+              SugoRiseIn(
+                key: ValueKey<String>(controller.error!),
+                offset: -10,
+                child: _ErrorBanner(
+                  message: controller.error!,
+                  onDismiss: controller.clearError,
+                ),
               ),
 
             Expanded(
@@ -101,7 +115,7 @@ class OnboardingScaffold extends StatelessWidget {
                   AppSizes.screenPadding,
                   AppSizes.xxl,
                 ),
-                child: child,
+                child: _StepSwitcher(index: controller.stepIndex, child: child),
               ),
             ),
 
@@ -115,8 +129,13 @@ class OnboardingScaffold extends StatelessWidget {
   Widget _footer(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppSizes.screenPadding),
+      // A floating tray (2026-11-17): rounded on top and lifted, so the one
+      // action of the step reads as the thing you hold.
       decoration: const BoxDecoration(
         color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSizes.sheetRadius),
+        ),
         // Elevated rather than hairlined, matching the posting flow's CTA bar
         // so both of the app's multi-step flows end in the same footer.
         boxShadow: AppElevation.xl,
@@ -177,6 +196,66 @@ class OnboardingScaffold extends StatelessWidget {
       OnboardingStepId.location => 'Set your location to continue.',
       _ => 'Finish this step to continue.',
     };
+  }
+}
+
+/// The step body, sliding in from the side it came from (2026-11-17):
+/// from the right going forward, from the left going back, so the flow feels
+/// like moving along a path rather than pages being swapped. The step that
+/// leaves just fades.
+///
+/// Keyed by the step's index, so a step keeps its state for as long as it is
+/// on screen - the same as before - and gets a fresh one when it returns,
+/// which is also what happened before, because each step is its own widget.
+class _StepSwitcher extends StatefulWidget {
+  const _StepSwitcher({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StepSwitcher> createState() => _StepSwitcherState();
+}
+
+class _StepSwitcherState extends State<_StepSwitcher> {
+  bool _forward = true;
+
+  @override
+  void didUpdateWidget(_StepSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      _forward = widget.index > oldWidget.index;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Key current = ValueKey<int>(widget.index);
+    return AnimatedSwitcher(
+      duration: AppMotion.reduced(context) ? Duration.zero : AppMotion.slow,
+      switchInCurve: AppMotion.emphasized,
+      switchOutCurve: AppMotion.exit,
+      layoutBuilder: (Widget? now, List<Widget> leaving) => Stack(
+        alignment: Alignment.topCenter,
+        children: <Widget>[...leaving, if (now != null) now],
+      ),
+      transitionBuilder: (Widget child, Animation<double> a) {
+        final bool incoming = child.key == current;
+        return FadeTransition(
+          opacity: a,
+          child: incoming
+              ? SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(_forward ? 0.08 : -0.08, 0),
+                    end: Offset.zero,
+                  ).animate(a),
+                  child: child,
+                )
+              : child,
+        );
+      },
+      child: KeyedSubtree(key: current, child: widget.child),
+    );
   }
 }
 
@@ -350,37 +429,20 @@ class _PendingReviewScreenState extends State<PendingReviewScreen>
                       const _WhatHappensNext(),
 
                     const SizedBox(height: AppSizes.xl),
-                    SizedBox(
-                      height: AppSizes.buttonHeight,
-                      child: OutlinedButton.icon(
-                        onPressed: _isLeaving ? null : _backToLogin,
-                        icon: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: _isLeaving
-                              ? const SizedBox(
-                                  key: ValueKey<String>('leaving'),
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.arrow_back_rounded,
-                                  key: ValueKey<String>('back'),
-                                  size: 18,
-                                ),
-                        ),
-                        label: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: Text(
-                            _isLeaving
-                                ? 'Returning to login...'
-                                : 'Back to login',
-                            key: ValueKey<bool>(_isLeaving),
-                          ),
-                        ),
-                      ),
+                    // A SUGO button like every other (2026-11-17): it was a
+                    // plain Material outline that matched nothing else in
+                    // the app. Navy fill when it is the only way on; an
+                    // outline beside "Retake my photos", which leads.
+                    SugoButton(
+                      label: _isLeaving
+                          ? 'Returning to login...'
+                          : 'Back to login',
+                      icon: Icons.arrow_back_rounded,
+                      isLoading: _isLeaving,
+                      variant: rejected && widget.onRetake != null
+                          ? SugoButtonVariant.outlined
+                          : SugoButtonVariant.primary,
+                      onPressed: _isLeaving ? null : _backToLogin,
                     ),
                     const SizedBox(height: AppSizes.sm),
                     // Signing out does not withdraw the application, and
@@ -438,12 +500,22 @@ class _StatusHalo extends StatelessWidget {
         // The glyph lands in the first half; the ring widens after it.
         final double pop = AppMotion.playful.transform((t * 2).clamp(0, 1));
         final double ring = ((t - 0.3) / 0.7).clamp(0, 1);
+        // A one-time burst of confetti dots when the registration is sent
+        // (2026-11-17), on the halo's own clock. None for a rejection, and
+        // none under reduced motion, where t starts at 1 and the dots have
+        // already faded.
+        final double burst = ((t - 0.2) / 0.8).clamp(0, 1);
         return SizedBox(
           width: 128,
           height: 128,
           child: Stack(
             alignment: Alignment.center,
             children: <Widget>[
+              if (!rejected && burst < 1)
+                CustomPaint(
+                  size: const Size.square(128),
+                  painter: _BurstPainter(burst),
+                ),
               Container(
                 width: 88 + 40 * ring,
                 height: 88 + 40 * ring,
@@ -470,6 +542,40 @@ class _StatusHalo extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Twelve dots flying outward from the halo and fading, once.
+class _BurstPainter extends CustomPainter {
+  const _BurstPainter(this.progress);
+
+  /// 0 at the start of the burst, 1 when it has gone.
+  final double progress;
+
+  static const List<Color> _colors = <Color>[
+    AppColors.cyan,
+    AppColors.accent,
+    AppColors.secondary,
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset c = size.center(Offset.zero);
+    final double eased = Curves.easeOutCubic.transform(progress);
+    final double radius = 40 + 24 * eased;
+    final double opacity = (1 - progress).clamp(0, 1);
+    for (int i = 0; i < 12; i++) {
+      final double a = i * math.pi / 6 + (i.isOdd ? 0.18 : 0);
+      final Offset at = c + Offset(math.cos(a), math.sin(a)) * radius;
+      canvas.drawCircle(
+        at,
+        (i.isEven ? 3.4 : 2.4) * (1 - 0.4 * eased),
+        Paint()..color = _colors[i % 3].withValues(alpha: opacity),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BurstPainter old) => old.progress != progress;
 }
 
 /// Registered, being reviewed, live - with the promise to notify on the step

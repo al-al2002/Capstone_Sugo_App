@@ -138,7 +138,9 @@ void main() {
 
     test('distance survives copyWith, which the vacation merge uses', () {
       expect(
-        tech(distanceKm: 3.4).copyWith(awayUntil: DateTime(2026, 9, 27)).distanceKm,
+        tech(
+          distanceKm: 3.4,
+        ).copyWith(awayUntil: DateTime(2026, 9, 27)).distanceKm,
         3.4,
       );
     });

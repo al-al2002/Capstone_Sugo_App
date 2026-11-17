@@ -9,7 +9,10 @@ import '../../../../core/constants/app_sizes.dart';
 import '../widgets/splash_artwork.dart';
 import '../widgets/splash_loader.dart';
 
-/// The launch screen: the SUGO poster, a loading animation, then the app.
+/// The launch screen: the SUGO scene, a loading animation, then the app.
+///
+/// Since 2026-11-16 the scene is drawn ([SplashArtwork]) rather than a poster
+/// image, in SUGO's own palette and with the real emblem.
 ///
 /// ## What happens, in order (2026-09-29)
 ///
@@ -100,9 +103,10 @@ class _SplashViewState extends State<SplashView> {
     super.didChangeDependencies();
     if (_precached) return;
     _precached = true;
-    // Useful work for the wait: the sign-in header is the next thing a
-    // signed-out person sees, so it is decoded now rather than popping in.
-    precacheImage(const AssetImage(AppAssets.brandHeader), context);
+    // Useful work for the wait: the emblem is drawn on the splash and again
+    // on the sign-in header (both drawn in code since 2026-11-16), so it is
+    // decoded once, now, rather than popping in.
+    precacheImage(const AssetImage(AppAssets.brandEmblem), context);
   }
 
   @override

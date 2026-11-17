@@ -10,7 +10,7 @@ import '../widgets/schedule_selector.dart';
 import 'review_and_post_screen.dart';
 import '../../../core/constants/app_colors.dart';
 
-/// Step 4 of 5: where the job is, how soon it is needed, what it is worth.
+/// Step 5 of 6: where the job is, how soon it is needed, what it is worth.
 ///
 /// Location drives proximity and the traffic and weather lookups; the schedule
 /// choice flips the urgency-path table.
@@ -32,7 +32,7 @@ class WhereAndWhenScreen extends StatelessWidget {
 
   Widget _build(BuildContext context) {
     return PostingScaffold(
-      step: 4,
+      step: 5,
       title: 'Where and when?',
       subtitle: 'Your location decides who is close enough to reach you.',
       stepName: 'Where & when',
@@ -40,7 +40,7 @@ class WhereAndWhenScreen extends StatelessWidget {
       ctaHint: 'Search, use your location, or tap the map to continue.',
       onCta: posting.canLeaveWhereAndWhen
           ? () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
+              PostingRoute<void>(
                 builder: (_) => ReviewAndPostScreen(posting: posting),
               ),
             )

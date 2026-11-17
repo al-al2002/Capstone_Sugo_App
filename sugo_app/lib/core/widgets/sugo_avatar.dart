@@ -124,11 +124,8 @@ class SugoAvatar extends StatelessWidget {
                 // Initials while the bytes are in flight, so the circle is
                 // never empty and nothing reflows when the photo lands.
                 loadingBuilder:
-                    (
-                      BuildContext _,
-                      Widget child,
-                      ImageChunkEvent? progress,
-                    ) => progress == null ? child : initials,
+                    (BuildContext _, Widget child, ImageChunkEvent? progress) =>
+                        progress == null ? child : initials,
               ),
             )
           : initials,

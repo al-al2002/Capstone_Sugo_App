@@ -445,10 +445,7 @@ class _Label extends StatelessWidget {
         Text(text, style: AppTextStyles.label),
         if (optional) ...<Widget>[
           const SizedBox(width: 6),
-          Text(
-            'Optional',
-            style: AppTextStyles.micro,
-          ),
+          Text('Optional', style: AppTextStyles.micro),
         ],
         const Spacer(),
         if (counter != null)
@@ -548,7 +545,11 @@ class _PhotoField extends StatelessWidget {
           // phone shot would otherwise push the Post button two screens down.
           AspectRatio(
             aspectRatio: 16 / 10,
-            child: Image.memory(data, fit: BoxFit.cover, width: double.infinity),
+            child: Image.memory(
+              data,
+              fit: BoxFit.cover,
+              width: double.infinity,
+            ),
           ),
           Positioned(
             top: AppSizes.sm,
@@ -623,56 +624,60 @@ class _TopicPicker extends StatelessWidget {
     return Wrap(
       spacing: AppSizes.sm,
       runSpacing: AppSizes.sm,
-      children: CommunityTopic.values.map((CommunityTopic topic) {
-        final bool active = topic == selected;
+      children: CommunityTopic.values
+          .map((CommunityTopic topic) {
+            final bool active = topic == selected;
 
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => onChanged(topic),
-            borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-            child: AnimatedContainer(
-              duration: AppMotion.fast,
-              curve: AppMotion.standard,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSizes.md + 2,
-                vertical: 8,
-              ),
-              decoration: BoxDecoration(
-                color: active ? AppColors.primarySoft : AppColors.fieldFill,
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => onChanged(topic),
                 borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-                border: Border.all(
-                  color: active ? AppColors.primary : AppColors.border,
-                  width: active ? 1.4 : 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(
-                    topic.icon,
-                    size: 14,
-                    color: active
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
+                child: AnimatedContainer(
+                  duration: AppMotion.fast,
+                  curve: AppMotion.standard,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.md + 2,
+                    vertical: 8,
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    topic.label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                      color: active
-                          ? AppColors.primaryDark
-                          : AppColors.textSecondary,
+                  decoration: BoxDecoration(
+                    color: active ? AppColors.primarySoft : AppColors.fieldFill,
+                    borderRadius: BorderRadius.circular(AppSizes.pillRadius),
+                    border: Border.all(
+                      color: active ? AppColors.primary : AppColors.border,
+                      width: active ? 1.4 : 1,
                     ),
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        topic.icon,
+                        size: 14,
+                        color: active
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        topic.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: active
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                          color: active
+                              ? AppColors.primaryDark
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-        );
-      }).toList(growable: false),
+            );
+          })
+          .toList(growable: false),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -10,13 +11,15 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/sugo_list_tile.dart';
+import '../../../core/widgets/sugo_brand_cover.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
-import '../../../core/widgets/sugo_stat_tile.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../community/services/community_service.dart';
 import '../../onboarding/models/registration_status.dart';
+import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
 import '../../rb_cars/models/technician.dart';
+import '../../rb_cars/services/rb_cars_service.dart';
 import '../../technician/services/technician_service.dart';
 import '../../technician/widgets/vacation_card.dart';
 import '../../community/screens/community_feed_view.dart';
@@ -70,24 +73,44 @@ class ProfileView extends StatefulWidget {
 class _ProfileViewState extends State<ProfileView> {
   final TechnicianService _technicians = TechnicianService();
   final CommunityService _community = CommunityService();
+  final RbCarsService _jobs = RbCarsService();
 
   Technician? _technician;
   ({int points, int helpfulVotes, int answers})? _reputation;
-  bool _loadingExtras = false;
+
+  /// A client's bookings, for the figures in the header (2026-11-16).
+  ({int total, int completed})? _bookings;
 
   @override
   void initState() {
     super.initState();
     // Deferred so the first frame paints from the session alone; the figures
-    // arrive into their skeletons a moment later.
+    // replace their dashes a moment later.
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadExtras());
   }
 
   Future<void> _loadExtras() async {
     final SessionProfile? profile = context.read<SessionController>().profile;
-    if (profile == null || !profile.isTechnician) return;
+    if (profile == null) return;
 
-    setState(() => _loadingExtras = true);
+    // A client's figures are their bookings. Decoration, like the
+    // technician's below: a failure shows dashes, never an error.
+    if (profile.isClient) {
+      final List<Job> jobs = await _jobs.myJobs().catchError(
+        (_) => const <Job>[],
+      );
+      if (!mounted) return;
+      setState(() {
+        _bookings = (
+          total: jobs.length,
+          completed: jobs
+              .where((Job j) => j.status == JobStatus.completed)
+              .length,
+        );
+      });
+      return;
+    }
+    if (!profile.isTechnician) return;
 
     // Both are decoration on top of a profile that already renders, so each
     // failure degrades to "no figure" rather than to an error screen.
@@ -101,7 +124,6 @@ class _ProfileViewState extends State<ProfileView> {
     setState(() {
       _technician = technician;
       _reputation = reputation;
-      _loadingExtras = false;
     });
   }
 
@@ -142,16 +164,12 @@ class _ProfileViewState extends State<ProfileView> {
           AppSizes.xxl,
         ),
         children: <Widget>[
-          _Hero(profile: profile, technician: _technician),
-
-          if (profile?.isTechnician ?? false) ...<Widget>[
-            const SizedBox(height: AppSizes.md),
-            _TechnicianStats(
-              technician: _technician,
-              reputation: _reputation,
-              loading: _loadingExtras,
-            ),
-          ],
+          _Hero(
+            profile: profile,
+            technician: _technician,
+            reputation: _reputation,
+            bookings: _bookings,
+          ),
 
           const SizedBox(height: AppSizes.lg),
           _StatusCard(status: status),
@@ -319,29 +337,48 @@ class _ProfileViewState extends State<ProfileView> {
   }
 }
 
-/// The identity panel: the cover, the avatar, the name and the badges.
+/// The identity panel: the cover, the avatar, the name, badges and figures.
 ///
-/// Layout and cover live in [ProfileCoverHeader]; this decides only what the
-/// badges say for this account.
+/// Layout and cover live in [ProfileCoverHeader]; this decides what this
+/// account's badges and figures say. Since 2026-11-16 the figures sit inside
+/// the panel for both roles - a technician's rating, jobs and community
+/// points (they were three tiles under it), and a client's bookings, which
+/// the profile never showed, so a client's page was a name and nothing else.
 class _Hero extends StatelessWidget {
-  const _Hero({required this.profile, required this.technician});
+  const _Hero({
+    required this.profile,
+    required this.technician,
+    required this.reputation,
+    required this.bookings,
+  });
 
   final SessionProfile? profile;
   final Technician? technician;
+  final ({int points, int helpfulVotes, int answers})? reputation;
+  final ({int total, int completed})? bookings;
 
   @override
   Widget build(BuildContext context) {
     final bool isTechnician = profile?.isTechnician ?? false;
+    final DateTime? joined =
+        profile?.onboardingCompletedAt ?? profile?.roleChosenAt;
 
     return ProfileCoverHeader(
       name: profile?.displayName ?? 'SUGO user',
       avatarUrl: profile?.avatarUrl,
       verified: isTechnician && (profile?.isVerified ?? false),
+      style: isTechnician ? SugoCoverStyle.technician : SugoCoverStyle.client,
+      roleLabel: isTechnician ? 'Technician' : 'Client',
+      // Photo and workshop only - the name is fixed to the verified ID. The
+      // step it reopens exists once the account is active.
+      onEdit: profile?.registrationStatus == 'active'
+          ? () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ProfileSetupScreen.edit(),
+              ),
+            )
+          : null,
       badges: <Widget>[
-        ProfileBadge(
-          icon: isTechnician ? Icons.engineering_rounded : Icons.person_rounded,
-          label: isTechnician ? 'Technician' : 'Client',
-        ),
         if (isTechnician && technician != null)
           ProfileBadge(
             icon: Icons.workspace_premium_rounded,
@@ -358,73 +395,71 @@ class _Hero extends StatelessWidget {
             label: 'ID verified',
             tone: ProfileBadgeTone.success,
           ),
+        if (!isTechnician && joined != null)
+          ProfileBadge(
+            icon: Icons.calendar_month_rounded,
+            label: 'Since ${DateFormat('MMM yyyy').format(joined)}',
+          ),
       ],
+      stats: isTechnician ? _technicianStats() : _clientStats(),
     );
   }
-}
 
-/// Rating, jobs and community standing.
-class _TechnicianStats extends StatelessWidget {
-  const _TechnicianStats({
-    required this.technician,
-    required this.reputation,
-    required this.loading,
-  });
-
-  final Technician? technician;
-  final ({int points, int helpfulVotes, int answers})? reputation;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading && technician == null) {
-      return const Row(
-        children: <Widget>[
-          Expanded(child: SugoSkeleton(height: 96, radius: AppSizes.tileRadius)),
-          SizedBox(width: AppSizes.md),
-          Expanded(child: SugoSkeleton(height: 96, radius: AppSizes.tileRadius)),
-          SizedBox(width: AppSizes.md),
-          Expanded(child: SugoSkeleton(height: 96, radius: AppSizes.tileRadius)),
-        ],
-      );
-    }
-
-    if (technician == null && reputation == null) {
-      return const SizedBox.shrink();
-    }
-
+  List<ProfileStat> _technicianStats() {
     final double rating = technician?.rating ?? 0;
+    final int? jobs = technician?.totalJobs;
+    final int? points = reputation?.points;
+    return <ProfileStat>[
+      ProfileStat(
+        label: 'Rating',
+        // Not rolled up: a rating rolling from 0 to 4.8 reads as a slot
+        // machine, and it is an average rather than a tally.
+        value: rating > 0 ? rating.toStringAsFixed(1) : '—',
+        icon: Icons.star_rounded,
+        color: AppColors.accent,
+      ),
+      ProfileStat(
+        label: 'Jobs done',
+        value: jobs == null ? '—' : '$jobs',
+        count: jobs,
+        icon: Icons.task_alt_rounded,
+        color: AppColors.success,
+      ),
+      ProfileStat(
+        label: 'Points',
+        value: points == null ? '—' : '$points',
+        count: points,
+        icon: Icons.auto_awesome_rounded,
+        color: AppColors.accentDark,
+      ),
+    ];
+  }
 
-    return SugoStatRow(
-      tiles: <Widget>[
-        SugoStatTile(
-          icon: Icons.star_rounded,
-          // Not counted up: a rating rolling from 0 to 4.8 reads as a slot
-          // machine, and it is a average rather than a tally.
-          value: rating > 0 ? rating.toStringAsFixed(1) : '—',
-          animate: false,
-          label: 'Rating',
-          tint: AppColors.warningSoft,
-          foreground: AppColors.warning,
-        ),
-        SugoStatTile(
-          icon: Icons.task_alt_rounded,
-          value: '${technician?.totalJobs ?? 0}',
-          numericValue: technician?.totalJobs ?? 0,
-          label: 'Jobs done',
-          tint: AppColors.successSoft,
-          foreground: AppColors.success,
-        ),
-        SugoStatTile(
-          icon: Icons.auto_awesome_rounded,
-          value: '${reputation?.points ?? 0}',
-          numericValue: reputation?.points ?? 0,
-          label: 'Community points',
-          tint: AppColors.accentSoft,
-          foreground: AppColors.accentDark,
-        ),
-      ],
-    );
+  List<ProfileStat> _clientStats() {
+    final ({int total, int completed})? b = bookings;
+    final int? active = b == null ? null : b.total - b.completed;
+    return <ProfileStat>[
+      ProfileStat(
+        label: 'Bookings',
+        value: b == null ? '—' : '${b.total}',
+        count: b?.total,
+        icon: Icons.receipt_long_rounded,
+      ),
+      ProfileStat(
+        label: 'Completed',
+        value: b == null ? '—' : '${b.completed}',
+        count: b?.completed,
+        icon: Icons.task_alt_rounded,
+        color: AppColors.success,
+      ),
+      ProfileStat(
+        label: 'In progress',
+        value: active == null ? '—' : '$active',
+        count: active,
+        icon: Icons.bolt_rounded,
+        color: AppColors.accentDark,
+      ),
+    ];
   }
 }
 

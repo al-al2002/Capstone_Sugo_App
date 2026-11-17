@@ -170,8 +170,11 @@ class _RegisterFormState extends State<RegisterForm> {
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _passwordController,
                   builder:
-                      (BuildContext context, TextEditingValue value, Widget? _) =>
-                          PasswordRequirements(password: value.text),
+                      (
+                        BuildContext context,
+                        TextEditingValue value,
+                        Widget? _,
+                      ) => PasswordRequirements(password: value.text),
                 ),
               ],
             ),
@@ -280,9 +283,7 @@ class _RoleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color border = selected
-        ? AppColors.secondary
-        : AppColors.border;
+    final Color border = selected ? AppColors.secondary : AppColors.border;
     final Color foreground = selected
         ? AppColors.secondaryDark
         : AppColors.textSecondary;
@@ -300,10 +301,7 @@ class _RoleTile extends StatelessWidget {
           padding: const EdgeInsets.all(AppSizes.sm),
           decoration: BoxDecoration(
             color: selected ? AppColors.secondarySoft : AppColors.fieldFill,
-            border: Border.all(
-              color: border,
-              width: selected ? 1.5 : 1,
-            ),
+            border: Border.all(color: border, width: selected ? 1.5 : 1),
             borderRadius: BorderRadius.circular(AppSizes.radius),
           ),
           child: Column(

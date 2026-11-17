@@ -120,7 +120,10 @@ class _ReviewCard extends StatelessWidget {
           const Spacer(),
           Text(
             at == null ? '' : DateFormat('d MMM y').format(at),
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ),

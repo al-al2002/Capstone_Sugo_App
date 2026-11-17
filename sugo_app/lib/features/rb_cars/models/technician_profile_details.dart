@@ -34,9 +34,7 @@ class TechnicianReview {
       jobDeviceType: DeviceType.fromWire(json['job_device_type'] as String?),
       jobBrand: json['job_brand'] as String?,
       jobSymptom: json['job_symptom'] as String?,
-      jobServicePath: ServicePath.fromWire(
-        json['job_service_path'] as String?,
-      ),
+      jobServicePath: ServicePath.fromWire(json['job_service_path'] as String?),
     );
   }
 
@@ -186,15 +184,13 @@ class TechnicianProfileDetails {
           .whereType<Map<String, dynamic>>()
           .map(TechnicianReview.fromJson)
           .toList(growable: false),
-      workHistory:
-          (json['work_history'] as List<dynamic>? ?? const <dynamic>[])
-              .whereType<Map<String, dynamic>>()
-              .map(WorkHistoryEntry.fromJson)
-              .where((WorkHistoryEntry e) => e.jobs > 0)
-              .toList(growable: false),
+      workHistory: (json['work_history'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .map(WorkHistoryEntry.fromJson)
+          .where((WorkHistoryEntry e) => e.jobs > 0)
+          .toList(growable: false),
       starBreakdown: <int, int>{
-        for (int star = 1; star <= 5; star++)
-          star: asInt(breakdown['$star']),
+        for (int star = 1; star <= 5; star++) star: asInt(breakdown['$star']),
       },
       contactUnlocked: json['contact_unlocked'] as bool? ?? false,
       phone: json['phone'] as String?,
@@ -232,8 +228,7 @@ class TechnicianProfileDetails {
   final double? shopLongitude;
 
   /// True when we can actually point the client at the workshop.
-  bool get hasShopLocation =>
-      shopLatitude != null && shopLongitude != null;
+  bool get hasShopLocation => shopLatitude != null && shopLongitude != null;
 
   int get reviewCount => technician.reviewCount;
   double get averageRating => technician.rating;

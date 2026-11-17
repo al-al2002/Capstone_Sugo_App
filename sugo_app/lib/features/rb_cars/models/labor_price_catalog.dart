@@ -1,3 +1,4 @@
+import 'delivery_fee.dart';
 import 'device_category.dart';
 import 'issue_catalog.dart';
 import 'job_enums.dart';
@@ -12,23 +13,47 @@ class LaborPrice {
 class LaborPriceCatalog {
   const LaborPriceCatalog._();
 
-  static int? travelFee(double? distanceKm) {
-    if (distanceKm == null) return null;
-    if (distanceKm <= 3) return 50;
-    return 50 + ((distanceKm - 3).ceil() * 15);
+  /// A home visit's travel fee: ONE trip of the rule in [DeliveryFee]. A shop
+  /// repair's pickup and delivery is two trips - [DeliveryFee.total], since
+  /// 2026-11-17 - and is not this.
+  static int? travelFee(double? distanceKm) =>
+      distanceKm == null ? null : DeliveryFee.calculate(distanceKm).oneWay;
+
+  /// The urgent fee's share of the labor: 20% (2026-11-17, the user's rule -
+  /// "symptom cost 600, plus 20% urgent fee, is 120").
+  static const double urgentRate = 0.20;
+
+  /// The labor fee as a number of pesos, or null when it is not one flat
+  /// amount ("₱800/camera").
+  static int? laborAmount(LaborPrice labor) {
+    if (labor.fee.contains('/')) return null;
+    return int.tryParse(labor.fee.replaceAll(RegExp(r'[^0-9]'), ''));
+  }
+
+  /// 20% of the labor, rounded to the peso, for an urgent job. Null when the
+  /// labor is not one flat amount - the screen then says "+20% of labor".
+  static int? urgentFee(LaborPrice labor) {
+    final int? amount = laborAmount(labor);
+    return amount == null ? null : (amount * urgentRate).round();
   }
 
   static String estimatedTotal({
     required LaborPrice labor,
     required int travelFee,
+    int urgentFee = 0,
   }) {
-    final String digits = labor.fee.replaceAll(RegExp(r'[^0-9]'), '');
-    final int? amount = int.tryParse(digits);
-    if (amount == null || labor.fee.contains('/')) {
-      return 'See labor fee + ₱$travelFee';
+    final int? amount = laborAmount(labor);
+    if (amount == null) {
+      return 'See labor fee + ₱${travelFee + urgentFee}';
     }
-    return '₱${amount + travelFee}';
+    return '₱${_grouped(amount + urgentFee + travelFee)}';
   }
+
+  /// "1250" -> "1,250", so a total reads like the catalogue's own prices.
+  static String _grouped(int pesos) => pesos.toString().replaceAllMapped(
+    RegExp(r'(\d)(?=(\d{3})+$)'),
+    (Match m) => '${m[1]},',
+  );
 
   static LaborPrice? forJob({
     required DeviceType deviceType,
@@ -48,6 +73,17 @@ class LaborPriceCatalog {
       'laptop_input_dead': '₱600',
       'laptop_malware': '₱500',
       'laptop_no_os': '₱500',
+      // ---- Maintenance and installation (2026-11-16), priced for Davao.
+      //
+      // Researched on 2026-11-16 for the user, Davao sources first. Where no
+      // Davao rate is published, the Philippine figure is used and marked.
+      // One figure each, not a range, because `estimatedTotal` adds the
+      // travel fee to it. Sources and the reasoning per row are in
+      // docs/maintenance-installation.md.
+      //
+      // Davao: one shop's minimum repair charge is ₱750; PH shops ask
+      // ₱900-₱2,000 for a laptop clean; thermal paste is ₱150 in Davao.
+      'laptop_cleaning_tune_up': '₱1,000',
       'phone_screen_cracked': '₱400',
       'phone_battery_drain': '₱350',
       'phone_wont_power_on': '₱600',
@@ -56,16 +92,33 @@ class LaborPriceCatalog {
       'phone_water_damage': '₱700',
       'phone_software_stuck': '₱300',
       'phone_audio_dead': '₱400',
+      // PH: port clean-out ₱250-₱450; battery checks are often free.
+      'phone_checkup': '₱300',
       'appliance_no_power': '₱500',
       'appliance_strange_noise': '₱500',
       'appliance_not_cooling': '₱700',
       'appliance_water_leak': '₱600',
       'appliance_electrical_fault': '₱700',
       'appliance_part_replacement': '₱500',
+      // Davao (HandledPH 2026): window ₱500-₱800, split basic ₱800-₱1,200.
+      'appliance_aircon_cleaning': '₱800',
+      // PH home-service check-up fees: ₱450-₱600.
+      'appliance_checkup': '₱500',
+      // Davao installer: window ₱1,000-₱2,000.
+      'appliance_aircon_install_window': '₱1,500',
+      // Davao installer: 1.0-1.5 HP split ₱2,500-₱4,500, 3 m piping included.
+      'appliance_aircon_install_split': '₱3,500',
+      // ESTIMATE: no published PH rate found. Set beside the ₱750 Davao
+      // minimum repair charge; confirm with a local technician.
+      'appliance_tv_mounting': '₱800',
+      // PH: ₱450 (Teko) to ₱500-₱700 for newer models.
+      'appliance_washer_install': '₱500',
       'network_no_internet': '₱350',
       'network_weak_signal': '₱500',
       'network_router_dead': '₱500',
       'network_new_install': '₱800',
+      // PH technician check-up fees: ₱500 (Globe), ₱300-₱500 (independents).
+      'network_checkup': '₱500',
       'network_device_wont_connect': '₱300',
       'cctv_new_install': '₱800/camera',
       'cctv_no_video': '₱600',

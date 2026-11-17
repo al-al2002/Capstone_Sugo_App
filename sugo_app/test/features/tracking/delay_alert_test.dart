@@ -163,5 +163,30 @@ void main() {
       expect(result, isTrue);
       expect(find.text('Running late'), findsNothing);
     });
+
+    // Redesign (2026-11-17): the new arrival time, and a cause chip that
+    // carries the icon once. `open` uses pumpAndSettle, so this also proves
+    // the cause animation stops by itself (3 cycles) instead of looping.
+    testWidgets('says the new arrival time, from the live estimate', (
+      WidgetTester tester,
+    ) async {
+      final JobTracking late = JobTracking(
+        id: 'track-1',
+        jobId: 'job-2',
+        technicianId: 'tech-1',
+        stage: TrackingStage.headingToPickup,
+        expectedArrivalAt: promise,
+        projectedArrivalAt: DateTime.now().add(
+          const Duration(minutes: 34, seconds: 30),
+        ),
+        delayMinutes: 15,
+        delayReason: 'traffic',
+      );
+      await open(tester, late);
+
+      expect(find.text('Heavy traffic on the way'), findsOneWidget);
+      expect(find.text('Now arriving in'), findsOneWidget);
+      expect(find.text('35 min'), findsOneWidget);
+    });
   });
 }

@@ -47,9 +47,7 @@ void main() {
               const Expanded(
                 child: TechnicianMatchingLoader(phase: MatchingPhase.saving),
               ),
-              Expanded(
-                child: TechnicianMatchingLoader(session: matching),
-              ),
+              Expanded(child: TechnicianMatchingLoader(session: matching)),
               Expanded(
                 child: TechnicianMatchingLoader(
                   phase: MatchingPhase.done,

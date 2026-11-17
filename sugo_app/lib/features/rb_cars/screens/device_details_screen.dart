@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/theme/app_motion.dart';
+import '../models/basic_problem.dart';
+import '../models/job_enums.dart';
 import '../providers/job_posting_provider.dart';
+import '../widgets/basic_problem_card.dart';
 import '../widgets/device_brand_picker.dart';
 import '../widgets/posting_field.dart';
 import '../widgets/posting_scaffold.dart';
 import 'where_and_when_screen.dart';
 
-/// Step 3 of 5: which exact machine, and what happened to it?
+/// Step 4 of 6: which exact machine, and what happened to it?
 ///
 /// Everything on this screen is optional, and the CTA is never disabled. The
 /// fields here sharpen the match - brand and device feed the Stage 1 ladder,
@@ -47,7 +51,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     widget.posting.setDescription(_description.text);
 
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      PostingRoute<void>(
         builder: (_) => WhereAndWhenScreen(posting: widget.posting),
       ),
     );
@@ -66,7 +70,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final String category = posting.deviceCategory?.label ?? 'Device';
 
     return PostingScaffold(
-      step: 3,
+      step: 4,
       title: 'Device details',
       subtitle: 'Brand and model help us match someone who knows your unit.',
       stepName: 'Details',
@@ -113,6 +117,42 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           decoration: const InputDecoration(
             hintText: 'Describe what happened...',
           ),
+        ),
+
+        // The client's own words can say "basic" when the picked issue did
+        // not (2026-11-16) - "needs a restart", "maluwag yung cable". Only in
+        // that case: if the issue itself was basic, the card was already on
+        // the previous step and the client chose, so it is not asked twice.
+        // Never when the suggestion is Shop Repair (2026-11-17): a unit that
+        // needs the bench is not nudged towards advice.
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _description,
+          builder: (BuildContext context, TextEditingValue value, Widget? _) {
+            final bool wordsAreBasic =
+                !posting.basicProblem &&
+                posting.draft.classification?.servicePath !=
+                    ServicePath.pickup &&
+                BasicProblemDetector.check(description: value.text) != null;
+
+            return AnimatedSize(
+              duration: AppMotion.base,
+              curve: AppMotion.standard,
+              alignment: Alignment.topCenter,
+              child: wordsAreBasic
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: AppSizes.md),
+                      child: BasicProblemCard(
+                        communitySelected:
+                            posting.draft.servicePath ==
+                            ServicePath.itCommunity,
+                        onTryCommunity: () => posting.overrideServicePath(
+                          ServicePath.itCommunity,
+                        ),
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            );
+          },
         ),
       ],
     );

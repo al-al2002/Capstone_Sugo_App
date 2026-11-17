@@ -125,7 +125,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(service.started, isFalse);
-    expect(find.text('Location is switched off on this phone.'), findsOneWidget);
+    expect(
+      find.text('Location is switched off on this phone.'),
+      findsOneWidget,
+    );
     expect(find.text('Settings'), findsOneWidget);
   });
 }

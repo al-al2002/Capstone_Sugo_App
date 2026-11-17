@@ -224,6 +224,7 @@ class ClientRegistrationController extends RegistrationFlowController {
     OnboardingStepId.specialization => true,
     OnboardingStepId.assessment => true,
     OnboardingStepId.documents => true,
+    OnboardingStepId.workType => true,
   };
 
   @override
@@ -260,6 +261,7 @@ class ClientRegistrationController extends RegistrationFlowController {
       case OnboardingStepId.specialization:
       case OnboardingStepId.assessment:
       case OnboardingStepId.documents:
+      case OnboardingStepId.workType:
         return true;
     }
   }

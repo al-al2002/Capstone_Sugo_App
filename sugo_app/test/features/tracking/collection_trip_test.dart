@@ -63,21 +63,23 @@ void main() {
     test('the trip exists only between "on my way" and "arrived"', () {
       expect(row().clientOnTheWay, isFalse);
       expect(row(started: setOff).clientOnTheWay, isTrue);
-      expect(
-        row(started: setOff, arrived: setOff).clientOnTheWay,
-        isFalse,
-      );
+      expect(row(started: setOff, arrived: setOff).clientOnTheWay, isFalse);
       expect(row(started: setOff, arrived: setOff).clientArrived, isTrue);
       // Only ever on the collection leg.
       expect(
-        row(stage: TrackingStage.outForDelivery, started: setOff).clientOnTheWay,
+        row(
+          stage: TrackingStage.outForDelivery,
+          started: setOff,
+        ).clientOnTheWay,
         isFalse,
       );
     });
 
     test('on the map, the client is the one drawn - not the technician', () {
-      final JobTracking map = row(started: setOff, clientLat: 7.02)
-          .asClientTrip();
+      final JobTracking map = row(
+        started: setOff,
+        clientLat: 7.02,
+      ).asClientTrip();
       expect(map.latitude, 7.02);
       expect(map.longitude, 125.4);
     });
@@ -141,7 +143,10 @@ void main() {
         find.text('About 15 minutes behind because of bad weather.'),
         findsOneWidget,
       );
-      expect(find.textContaining('Your client is still on the way'), findsOneWidget);
+      expect(
+        find.textContaining('Your client is still on the way'),
+        findsOneWidget,
+      );
     });
   });
 
@@ -151,7 +156,11 @@ void main() {
       home: Scaffold(
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          child: CollectionTripPanel(tracking: tracking, service: service),
+          child: CollectionTripPanel(
+            jobId: tracking.jobId,
+            tracking: tracking,
+            service: service,
+          ),
         ),
       ),
     );
@@ -229,7 +238,10 @@ void main() {
         find.text('Running about 15 minutes behind · heavy traffic'),
         findsOneWidget,
       );
-      expect(find.textContaining('Waiting for their first position'), findsOneWidget);
+      expect(
+        find.textContaining('Waiting for their first position'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('says when they have arrived', (WidgetTester tester) async {

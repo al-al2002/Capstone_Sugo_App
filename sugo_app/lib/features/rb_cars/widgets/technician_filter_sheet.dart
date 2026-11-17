@@ -66,7 +66,9 @@ class TechnicianFilters {
   }) {
     return TechnicianFilters(
       categories: categories ?? this.categories,
-      maxDistanceKm: clearDistance ? null : (maxDistanceKm ?? this.maxDistanceKm),
+      maxDistanceKm: clearDistance
+          ? null
+          : (maxDistanceKm ?? this.maxDistanceKm),
       minRating: minRating ?? this.minRating,
       maxHourlyFee: clearFee ? null : (maxHourlyFee ?? this.maxHourlyFee),
       availableOnly: availableOnly ?? this.availableOnly,
@@ -223,9 +225,8 @@ class _FilterBodyState extends State<_FilterBody> {
                 label: label,
                 icon: value == 0 ? null : Icons.star_rounded,
                 selected: _draft.minRating == value,
-                onTap: () => setState(
-                  () => _draft = _draft.copyWith(minRating: value),
-                ),
+                onTap: () =>
+                    setState(() => _draft = _draft.copyWith(minRating: value)),
               ),
           ],
         ),

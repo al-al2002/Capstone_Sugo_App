@@ -13,6 +13,8 @@ import '../widgets/id_verification_step.dart';
 import '../widgets/location_pin_step.dart';
 import '../widgets/onboarding_scaffold.dart';
 import '../widgets/otp_code_field.dart';
+import '../../../core/widgets/sugo_staggered_column.dart';
+import '../widgets/onboarding_step_intro.dart';
 
 /// The five-step client registration flow.
 ///
@@ -121,7 +123,8 @@ class _ClientRegistrationView extends StatelessWidget {
       // Not part of the client flow.
       OnboardingStepId.specialization ||
       OnboardingStepId.assessment ||
-      OnboardingStepId.documents => const SizedBox.shrink(),
+      OnboardingStepId.documents ||
+      OnboardingStepId.workType => const SizedBox.shrink(),
     };
   }
 }
@@ -134,67 +137,85 @@ class _ClientAccountRecap extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Welcome to SUGO', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'Three quick steps before you can book a technician.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.waving_hand_rounded,
+          title: 'Welcome to SUGO',
+          subtitle: 'Three quick steps before you can book a technician.',
         ),
         const SizedBox(height: AppSizes.xl),
-        ...<({String title, String blurb, IconData icon})>[
-          (
-            title: 'Verify your identity',
-            blurb:
-                'A government ID and a selfie holding it. Technicians are '
-                'verified too — this is the same check, both ways.',
-            icon: Icons.badge_outlined,
-          ),
-          (
-            title: 'Confirm your mobile number',
-            blurb: 'So your technician can reach you on the day.',
-            icon: Icons.phone_iphone_rounded,
-          ),
-          (
-            title: 'Set your default address',
-            blurb: 'Where most of your bookings will be.',
-            icon: Icons.home_outlined,
-          ),
-        ].map(
-          (({String title, String blurb, IconData icon}) item) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSizes.lg),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySoft,
-                    borderRadius: BorderRadius.circular(AppSizes.sm),
-                  ),
-                  child: Icon(item.icon, size: 18, color: AppColors.primary),
-                ),
-                const SizedBox(width: AppSizes.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        item.title,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
+        SugoStaggeredColumn(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            ...<({String title, String blurb, IconData icon})>[
+              (
+                title: 'Verify your identity',
+                blurb:
+                    'A government ID and a selfie holding it. Technicians are '
+                    'verified too — this is the same check, both ways.',
+                icon: Icons.badge_outlined,
+              ),
+              // Was "Confirm your mobile number": phone verification was removed
+              // in September, and the step this promises is the emailed code
+              // (OnboardingStepId.email). Corrected 2026-11-17.
+              (
+                title: 'Confirm your email',
+                blurb: 'A six-digit code to the address you signed up with.',
+                icon: Icons.mark_email_read_outlined,
+              ),
+              (
+                title: 'Set your default address',
+                blurb: 'Where most of your bookings will be.',
+                icon: Icons.home_outlined,
+              ),
+            ].map(
+              (({String title, String blurb, IconData icon}) item) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSizes.lg),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: <Color>[
+                            AppColors.primarySoft,
+                            AppColors.cyanSoft,
+                          ],
                         ),
+                        borderRadius: BorderRadius.circular(AppSizes.sm),
                       ),
-                      const SizedBox(height: 2),
-                      Text(item.blurb, style: AppTextStyles.caption),
-                    ],
-                  ),
+                      child: Icon(
+                        item.icon,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSizes.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            item.title,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(item.blurb, style: AppTextStyles.caption),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ],
     );
@@ -247,12 +268,12 @@ class _EmailStepState extends State<_EmailStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Confirm your email', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'We send a six-digit code to the address you signed up with. It '
-          'confirms we can reach you about a booking.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.mark_email_read_rounded,
+          title: 'Confirm your email',
+          subtitle:
+              'We send a six-digit code to the address you signed up with. It '
+              'confirms we can reach you about a booking.',
         ),
         const SizedBox(height: AppSizes.xl),
 
@@ -581,12 +602,12 @@ class _ClientReview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Check and submit', style: AppTextStyles.headline),
-        const SizedBox(height: AppSizes.sm),
-        const Text(
-          'A SUGO reviewer checks your ID before your account goes live. '
-          'This usually takes under a day.',
-          style: AppTextStyles.subtitle,
+        const OnboardingStepIntro(
+          icon: Icons.fact_check_rounded,
+          title: 'Check and submit',
+          subtitle:
+              'A SUGO reviewer checks your ID before your account goes live. '
+              'This usually takes under a day.',
         ),
         const SizedBox(height: AppSizes.xl),
 

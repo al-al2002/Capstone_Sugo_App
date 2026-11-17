@@ -30,16 +30,19 @@ void main() {
       expect(d, closeTo(100, 1));
     });
 
-    test('past the end, distance is to the endpoint, not the extended line', () {
-      // Due east of the last point, on the line's extension. Measuring to the
-      // infinite line would say 0 and never trigger a reroute for someone who
-      // has driven straight past the destination street.
-      final double d = RouteGeometry.distanceToPolylineMeters(
-        const LatLng(7.0700, 125.6200 + 200 / (111195 * 0.9925)),
-        street,
-      );
-      expect(d, closeTo(200, 2));
-    });
+    test(
+      'past the end, distance is to the endpoint, not the extended line',
+      () {
+        // Due east of the last point, on the line's extension. Measuring to the
+        // infinite line would say 0 and never trigger a reroute for someone who
+        // has driven straight past the destination street.
+        final double d = RouteGeometry.distanceToPolylineMeters(
+          const LatLng(7.0700, 125.6200 + 200 / (111195 * 0.9925)),
+          street,
+        );
+        expect(d, closeTo(200, 2));
+      },
+    );
 
     test('ordinary GPS jitter does not count as off route', () {
       final double d = RouteGeometry.distanceToPolylineMeters(

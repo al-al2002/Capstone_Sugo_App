@@ -56,7 +56,10 @@ void main() {
     // Still at the bench, so the card says so above the route. With no
     // workshop on record (none in a test) it falls back to "message them".
     expect(find.textContaining('Still being repaired'), findsOneWidget);
-    expect(find.textContaining('has not added a workshop address'), findsOneWidget);
+    expect(
+      find.textContaining('has not added a workshop address'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -103,7 +106,10 @@ class _FakeTracking implements TrackingService {
   Future<ReturnMethod> returnMethod(String jobId) async => current;
 
   @override
-  Future<ReturnMethod> setReturnMethod(String jobId, ReturnMethod method) async {
+  Future<ReturnMethod> setReturnMethod(
+    String jobId,
+    ReturnMethod method,
+  ) async {
     saved.add(method);
     current = method;
     return method;

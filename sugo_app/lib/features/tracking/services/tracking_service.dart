@@ -9,7 +9,6 @@ import '../../../core/services/supabase_service.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/job_tracking.dart';
 import '../models/route_result.dart';
-import '../models/tracking_weather.dart';
 
 /// Reads and writes live job tracking.
 ///
@@ -176,38 +175,6 @@ class TrackingService {
       );
     } catch (error) {
       _log('currentPosition', error);
-      return null;
-    }
-  }
-
-  /// Conditions at the destination of the current leg.
-  ///
-  /// Goes through the `job-weather` edge function rather than calling
-  /// OpenWeatherMap directly: the API key is a Supabase secret, and calling the
-  /// provider from Flutter would ship that key inside the APK.
-  ///
-  /// NEVER call this from the tracking stream. That stream emits on every GPS
-  /// fix - a few seconds apart for the length of a delivery - and one forecast
-  /// request per fix would exhaust the free tier in a day. Callers fetch once
-  /// per leg; `WeatherChip` refetches only when the leg flips.
-  ///
-  /// Returns null instead of throwing. The chip is supplementary to a screen
-  /// whose job is showing a moving van, so a failed forecast disappears rather
-  /// than becoming an error the client has to dismiss.
-  Future<TrackingWeather?> weatherFor(String jobId) async {
-    try {
-      final FunctionResponse response = await _client.functions.invoke(
-        'job-weather',
-        body: <String, dynamic>{'job_id': jobId},
-      );
-
-      final Object? data = response.data;
-      if (data is! Map<String, dynamic>) return null;
-
-      final TrackingWeather weather = TrackingWeather.fromJson(data);
-      return weather.available ? weather : null;
-    } catch (error) {
-      _log('weatherFor', error);
       return null;
     }
   }
@@ -387,7 +354,9 @@ class TrackingService {
       return <String, ReturnMethod>{
         for (final Map<String, dynamic> row
             in rows.whereType<Map<String, dynamic>>())
-          row['job_id'] as String: ReturnMethod.fromWire(row['method'] as String?),
+          row['job_id'] as String: ReturnMethod.fromWire(
+            row['method'] as String?,
+          ),
       };
     } catch (error) {
       _log('returnMethods', error);
@@ -400,7 +369,10 @@ class TrackingService {
   /// Through `set_return_method()`, which holds the rules: only the client,
   /// only a pickup job a technician has, and not once the unit is already on
   /// its way back. Its refusals are sentences, and are shown as such.
-  Future<ReturnMethod> setReturnMethod(String jobId, ReturnMethod method) async {
+  Future<ReturnMethod> setReturnMethod(
+    String jobId,
+    ReturnMethod method,
+  ) async {
     try {
       await _client.rpc<Object?>(
         'set_return_method',
@@ -596,6 +568,26 @@ class TrackingService {
       'position.',
       fix: LocationFix.locationSettings,
     );
+  }
+
+  /// Whether SUGO may read the position right now, WITHOUT asking.
+  ///
+  /// For screens that would like a route but have not been asked for one -
+  /// the drop-off card draws the road at once when this is true, and
+  /// otherwise waits for a tap before [prepareLocation] shows the prompt.
+  /// Never throws.
+  Future<bool> locationAllowed() async {
+    try {
+      final LocationPermission permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return false;
+      }
+      return await Geolocator.isLocationServiceEnabled();
+    } catch (error) {
+      _log('locationAllowed', error);
+      return false;
+    }
   }
 
   /// Continuous position updates while a leg is in progress.

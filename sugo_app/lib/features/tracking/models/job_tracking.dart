@@ -49,6 +49,18 @@ enum TrackingJourney {
 /// timeline on the tracking screen is drawn from [index], so a stage is
 /// "reached" when the current stage's index is at least its own.
 enum TrackingStage {
+  // The client bringing the unit to the shop on a drop-off job
+  // (20261117000006). Created by the client's "I'm on my way"; the
+  // technician's "Unit received" moves it to [inRepair]. The CLIENT travels,
+  // so the technician-tracking map stays off - the client has the drop-off
+  // route card, and the technician sees them on the client-trip card.
+  droppingOff(
+    'dropping_off',
+    'Dropping it off',
+    'On its way to the workshop.',
+    Icons.directions_walk_rounded,
+    showsMap: false,
+  ),
   headingToPickup(
     'heading_to_pickup',
     'On the way to you',
@@ -141,6 +153,15 @@ enum TrackingStage {
   /// True once the repair is done and the unit is waiting at the shop.
   bool get isAwaitingCollection => this == TrackingStage.readyForCollection;
 
+  /// True on the legs where the CLIENT travels to the workshop - bringing the
+  /// unit in ([droppingOff]) or collecting it ([readyForCollection]). The
+  /// position on those legs is the client's, the arrival time is theirs, and a
+  /// delay is the technician's to be told about. Mirrors `CLIENT_TRIP_STAGES`
+  /// in `_shared/eta_sampler.ts`.
+  bool get isClientTrip =>
+      this == TrackingStage.droppingOff ||
+      this == TrackingStage.readyForCollection;
+
   /// True at the one stage where the client is asked how they want the unit
   /// back — delivered, or collected from the workshop.
   ///
@@ -226,6 +247,8 @@ enum TrackingStage {
   /// Both branches converge on [delivered], so nothing downstream needs to know
   /// which route was taken.
   List<TrackingStage> get nextOptions => switch (this) {
+    // "Unit received": a drop-off has no pickup legs.
+    TrackingStage.droppingOff => const <TrackingStage>[TrackingStage.inRepair],
     TrackingStage.headingToPickup => const <TrackingStage>[
       TrackingStage.collected,
     ],
@@ -262,14 +285,28 @@ enum TrackingStage {
   /// shown, because that is what happens unless someone says otherwise.
   ///
   /// A home visit is two stages long: on the way, then repairing.
+  ///
+  /// A drop-off ([dropOff], 2026-11-17) has no pickup legs: the client brings
+  /// it in, it is repaired, and they collect it (or, rarely, it is delivered).
   static List<TrackingStage> timelineFor(
     TrackingStage current, {
     TrackingJourney journey = TrackingJourney.workshop,
+    bool dropOff = false,
   }) {
     if (journey == TrackingJourney.homeVisit) {
       return const <TrackingStage>[
         TrackingStage.headingToPickup,
         TrackingStage.inRepair,
+      ];
+    }
+    if (dropOff || current == TrackingStage.droppingOff) {
+      return <TrackingStage>[
+        TrackingStage.droppingOff,
+        TrackingStage.inRepair,
+        current == TrackingStage.outForDelivery
+            ? TrackingStage.outForDelivery
+            : TrackingStage.readyForCollection,
+        TrackingStage.delivered,
       ];
     }
     return <TrackingStage>[
@@ -310,6 +347,10 @@ class JobTracking {
     this.clientPositionAt,
     this.clientTripStartedAt,
     this.clientArrivedAt,
+    this.trafficLabel,
+    this.trafficCongestion,
+    this.weatherLabel,
+    this.weatherSeverity,
   });
 
   factory JobTracking.fromJson(Map<String, dynamic> json) {
@@ -345,6 +386,10 @@ class JobTracking {
       clientPositionAt: asDate(json['client_position_at']),
       clientTripStartedAt: asDate(json['client_trip_started_at']),
       clientArrivedAt: asDate(json['client_arrived_at']),
+      trafficLabel: json['traffic_label'] as String?,
+      trafficCongestion: asDouble(json['traffic_congestion']),
+      weatherLabel: json['weather_label'] as String?,
+      weatherSeverity: asDouble(json['weather_severity']),
     );
   }
 
@@ -377,6 +422,26 @@ class JobTracking {
 
   final DateTime? etaSampledAt;
 
+  // ------------------------------------------------ conditions (2026-11-17)
+  //
+  // Saved by the server's ETA sampler from the SAME traffic and weather it
+  // used for the ETA and [delayReason] (20261117000005), so a card built from
+  // these always agrees with the delay pop-up. Null until the first sample,
+  // and when a provider was down. Read through `TripConditions`.
+
+  /// The matcher's words: "clear roads", "light traffic", "moderate
+  /// traffic", "heavy traffic" or "road closure nearby".
+  final String? trafficLabel;
+
+  /// 0..1, 1 being a standstill.
+  final double? trafficCongestion;
+
+  /// e.g. "clear weather", "light rain".
+  final String? weatherLabel;
+
+  /// 0..1 on the matcher's scale; 0.4 and up is bad weather.
+  final double? weatherSeverity;
+
   // ------------------------------------------------ the client's own trip
   //
   // At `ready_for_collection` the CLIENT travels, to collect the unit
@@ -394,15 +459,15 @@ class JobTracking {
   /// When the client said "I've arrived". Ends the trip.
   final DateTime? clientArrivedAt;
 
-  /// The client is travelling to the workshop right now.
+  /// The client is travelling to the workshop right now - to collect the
+  /// unit, or to drop it off (2026-11-17).
   bool get clientOnTheWay =>
-      stage == TrackingStage.readyForCollection &&
+      stage.isClientTrip &&
       clientTripStartedAt != null &&
       clientArrivedAt == null;
 
-  /// The client has reached the workshop and not yet collected.
-  bool get clientArrived =>
-      stage == TrackingStage.readyForCollection && clientArrivedAt != null;
+  /// The client has reached the workshop: to collect it, or to hand it over.
+  bool get clientArrived => stage.isClientTrip && clientArrivedAt != null;
 
   bool get hasClientPosition =>
       clientLatitude != null && clientLongitude != null;
@@ -428,6 +493,10 @@ class JobTracking {
     etaSampledAt: etaSampledAt,
     clientTripStartedAt: clientTripStartedAt,
     clientArrivedAt: clientArrivedAt,
+    trafficLabel: trafficLabel,
+    trafficCongestion: trafficCongestion,
+    weatherLabel: weatherLabel,
+    weatherSeverity: weatherSeverity,
   );
 
   bool get hasPosition => latitude != null && longitude != null;

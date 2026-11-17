@@ -508,6 +508,88 @@ class TechnicianRegistrationService {
     }
   }
 
+  // ------------------------------------------------------------ work type
+
+  /// The work this technician takes, and their shop (2026-11-17).
+  ///
+  /// The columns default to both (20261117000007), so "both, with no shop
+  /// pinned" is what an untouched row looks like - the controller reads that
+  /// as "not chosen yet".
+  Future<
+    ({
+      bool homeService,
+      bool shopRepair,
+      String? shopName,
+      double? shopLatitude,
+      double? shopLongitude,
+    })
+  >
+  loadWorkType() async {
+    try {
+      final Map<String, dynamic>? row = await _client
+          .from('technicians')
+          .select(
+            'offers_home_service, offers_shop_repair, shop_name, '
+            'shop_latitude, shop_longitude',
+          )
+          .eq('id', _uid)
+          .maybeSingle();
+      return (
+        homeService: row?['offers_home_service'] as bool? ?? true,
+        shopRepair: row?['offers_shop_repair'] as bool? ?? true,
+        shopName: row?['shop_name'] as String?,
+        shopLatitude: (row?['shop_latitude'] as num?)?.toDouble(),
+        shopLongitude: (row?['shop_longitude'] as num?)?.toDouble(),
+      );
+    } on PostgrestException catch (error) {
+      _log('loadWorkType', error);
+      return (
+        homeService: true,
+        shopRepair: true,
+        shopName: null,
+        shopLatitude: null,
+        shopLongitude: null,
+      );
+    }
+  }
+
+  /// Saves the choice. The shop is written only when Shop Repair is chosen;
+  /// unticking it later leaves a pinned shop in place, harmlessly, for when
+  /// they tick it again.
+  Future<void> saveWorkType({
+    required bool homeService,
+    required bool shopRepair,
+    String? shopName,
+    double? shopLatitude,
+    double? shopLongitude,
+  }) async {
+    await ensureTechnicianRow();
+
+    try {
+      await _client
+          .from('technicians')
+          .update(<String, dynamic>{
+            'offers_home_service': homeService,
+            'offers_shop_repair': shopRepair,
+            if (shopRepair &&
+                shopLatitude != null &&
+                shopLongitude != null) ...<String, dynamic>{
+              'shop_latitude': shopLatitude,
+              'shop_longitude': shopLongitude,
+              'shop_name': (shopName?.trim().isEmpty ?? true)
+                  ? null
+                  : shopName!.trim(),
+            },
+          })
+          .eq('id', _uid);
+    } on PostgrestException catch (error) {
+      _log('saveWorkType', error);
+      throw RbCarsFailure(
+        _describe(error, 'Could not save the work you take.'),
+      );
+    }
+  }
+
   Future<({double? latitude, double? longitude, double radiusKm})>
   loadBaseLocation() async {
     try {

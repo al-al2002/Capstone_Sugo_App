@@ -75,9 +75,9 @@ class ScoreBreakdownSheet extends StatelessWidget {
               const SizedBox(height: AppSizes.xs),
               Text(
                 recommendation == null
-                    ? 'RB-CARS scored every available technician on two '
+                    ? 'SUGO scored every available technician on two '
                           'stages. Here is the whole calculation for this one.'
-                    : 'RB-CARS checked the conditions, chose its matching '
+                    : 'SUGO checked the conditions, chose its matching '
                           'rules, then scored every available technician in '
                           'three stages. Here is the whole calculation for '
                           'this one.',
@@ -236,7 +236,7 @@ String factorDisplayName(String key) => switch (key) {
   'specialization' => 'Brand and device match',
   'skill_tag' => 'Skill match',
   'tier' => 'Tier',
-  'verification_tier' => 'Verification tier',
+  'verification_tier' => 'Trust badge',
   'diagnosis_accuracy' => 'Diagnosis accuracy',
   'rating' => 'Client rating',
   'context_fit' => 'Fit to conditions',

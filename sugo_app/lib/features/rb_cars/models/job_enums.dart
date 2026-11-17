@@ -166,3 +166,40 @@ enum TechnicianTier {
     return TechnicianTier.standard;
   }
 }
+
+/// How a shop repair's unit gets to and from the shop (2026-11-16).
+///
+/// Mirrors `jobs.delivery_option`. Only meaningful on a shop repair
+/// (`ServicePath.pickup`); null everywhere else, and on shop jobs from before
+/// it existed, which behave as [delivery].
+enum DeliveryOption {
+  /// The client brings the unit in and collects it. Free.
+  self(
+    'self',
+    "I'll bring it / pick it up myself",
+    'Drop it off at the shop and collect it when it is fixed.',
+    Icons.directions_walk_rounded,
+  ),
+
+  /// The technician collects it and brings it back. Priced by distance.
+  delivery(
+    'delivery',
+    'Shop pickup/delivery',
+    'The technician collects it and brings it back to you.',
+    Icons.local_shipping_rounded,
+  );
+
+  const DeliveryOption(this.wire, this.label, this.blurb, this.icon);
+
+  final String wire;
+  final String label;
+  final String blurb;
+  final IconData icon;
+
+  static DeliveryOption? fromWire(String? value) {
+    for (final DeliveryOption option in DeliveryOption.values) {
+      if (option.wire == value) return option;
+    }
+    return null;
+  }
+}

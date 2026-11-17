@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/models/technician.dart';
+import '../../rb_cars/models/trust_badge.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/time_off.dart';
 import '../services/technician_service.dart';
@@ -32,6 +33,7 @@ class TechnicianDashboardProvider extends ChangeNotifier {
   List<MatchResult> _offers = <MatchResult>[];
   List<Job> _activeJobs = <Job>[];
   List<TechnicianOutcome> _outcomes = <TechnicianOutcome>[];
+  TrustBadgeProgress? _trustBadge;
 
   bool _isLoading = true;
   bool _isBusy = false;
@@ -44,6 +46,10 @@ class TechnicianDashboardProvider extends ChangeNotifier {
   List<MatchResult> get offers => _offers;
   List<Job> get activeJobs => _activeJobs;
   List<TechnicianOutcome> get outcomes => _outcomes;
+
+  /// The Progressive Trust Badge and the path to the next rung. Null when it
+  /// could not be loaded - the card is then left out, never shown wrong.
+  TrustBadgeProgress? get trustBadge => _trustBadge;
 
   bool get isLoading => _isLoading;
 
@@ -143,6 +149,7 @@ class TechnicianDashboardProvider extends ChangeNotifier {
         _service.activeJobs(),
         _service.recentOutcomes(),
         _vacationToday(),
+        _service.myTrustBadge(),
       ]);
 
       _technician = results[0] as Technician?;
@@ -150,6 +157,7 @@ class TechnicianDashboardProvider extends ChangeNotifier {
       _activeJobs = results[2] as List<Job>;
       _outcomes = results[3] as List<TechnicianOutcome>;
       _currentVacation = results[4] as TimeOff?;
+      _trustBadge = results[5] as TrustBadgeProgress?;
     } on RbCarsFailure catch (failure) {
       _error = failure.message;
     } catch (_) {
@@ -208,22 +216,14 @@ class TechnicianDashboardProvider extends ChangeNotifier {
     'Declined. It has moved to the next technician.',
   );
 
-  /// Closes a job. `diagnosisCorrect` and `reroutedMidJob` are the two signals
-  /// that feed back into Stage 1 scoring, which is why the UI asks for them
-  /// rather than defaulting them.
-  Future<bool> completeJob(
-    String jobId, {
-    required bool diagnosisCorrect,
-    bool reroutedMidJob = false,
-  }) {
+  /// Closes a job. `diagnosisCorrect` feeds back into Stage 1 scoring, which
+  /// is why the UI asks for it rather than defaulting it; the server works
+  /// out `rerouted_mid_job` itself (2026-11-16).
+  Future<bool> completeJob(String jobId, {required bool? diagnosisCorrect}) {
     return _act(
       TechnicianAction.complete,
       jobId,
-      () => _service.complete(
-        jobId,
-        diagnosisCorrect: diagnosisCorrect,
-        reroutedMidJob: reroutedMidJob,
-      ),
+      () => _service.complete(jobId, diagnosisCorrect: diagnosisCorrect),
       'Job completed. The client can now rate it.',
     );
   }

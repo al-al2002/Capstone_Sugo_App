@@ -175,7 +175,6 @@ class _TrackingMapState extends State<TrackingMap>
     }
   }
 
-
   /// Auth headers for the tile proxy, built once per toggle.
   ///
   /// `traffic-tile` requires a signed-in caller, so the session token rides on
@@ -184,8 +183,7 @@ class _TrackingMapState extends State<TrackingMap>
   /// expires while the overlay is open simply stops returning tiles, which
   /// degrades to the plain base map.
   Map<String, String> _tileHeaders() {
-    final String? token =
-        SupabaseService.auth.currentSession?.accessToken;
+    final String? token = SupabaseService.auth.currentSession?.accessToken;
     return <String, String>{
       'apikey': AppEnv.supabaseAnonKey,
       if (token != null) 'Authorization': 'Bearer $token',
@@ -356,9 +354,7 @@ class _TrackingMapState extends State<TrackingMap>
                               Marker(
                                 point: destination,
                                 width: SugoMapPin.markerWidth,
-                                height: SugoMapPin.markerHeight(
-                                  labelled: true,
-                                ),
+                                height: SugoMapPin.markerHeight(labelled: true),
                                 alignment: Alignment.topCenter,
                                 child: SugoMapPin(
                                   icon: widget.destinationIcon,
@@ -584,7 +580,10 @@ class _MapUnavailable extends StatelessWidget {
             ),
             Text(
               tracking.freshnessLabel,
-              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
             ),
           ],
         ],
