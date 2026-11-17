@@ -76,6 +76,11 @@ the row it is about to touch.
 
 *Can this technician fix this device, for this symptom, well?*
 
+**Work-type gate (2026-11-17).** Before scoring, only technicians who take the
+job's kind of work are considered: Home Service → `offers_home_service`, Shop
+Repair → `offers_shop_repair` (`scoring/work_type.ts`, migration
+20261117000007). See `docs/technician-work-types.md`.
+
 Deliberately free of live context, so it is reproducible: same data in, same
 score out. Weights live in
 `supabase/functions/match-technician/scoring/constants.ts`.
@@ -309,6 +314,13 @@ real quality gap always wins.
   Top 3 with options the client cannot use.
 - Below a **0.20** recommendation score, we would rather show fewer than three
   options than three bad ones.
+- **The client's own preferences** (2026-11-15). Optional minimums for
+  specialisation, distance, rating, availability and trust badge, applied
+  after the gates above and before any scoring. See
+  [client-preference-filter.md](client-preference-filter.md).
+- **The Trust Badge criterion** reads the Progressive Trust Badge
+  (2026-11-15), the same badge the client filter checks. See
+  [trust-badge.md](trust-badge.md).
 
 The Top 3 are labelled **Recommended**, **Alternative** and **Another match** -
 never "best technician". The ranking knows who fits this request right now,
@@ -358,16 +370,30 @@ rule base, held as data rather than as branching code so the whole rule set can
 be read on one screen. Each symptom carries a path for the intact case and one
 for the damaged case, plus an `isAmbiguous` flag.
 
-Routing to the IT community happens in three cases:
+The technician community is a question, not a booking: no technician is
+matched. Routing there happens in four cases:
 
-1. The client picks **"I am not sure"**.
-2. The symptom is **ambiguous** and there is no visible damage, e.g. "will not
-   power on" - charger, battery or board, and guessing costs a wasted visit.
-3. The symptom code is unrecognised.
+1. The client picks **"I am not sure"** (low confidence).
+2. The issue is **remote assist**, e.g. "no internet": confident nobody needs
+   to travel (high confidence).
+3. The issue is a **basic repair** on the list in
+   `config/basic_problems.dart`, e.g. "very slow or freezing", with no visible
+   damage and a Home Service or remote-assist route (high confidence,
+   2026-11-17). The basic-problem card shows with it, so the card and the
+   "Suggested" badge agree. Damage or a Shop pickup route outranks it, and a
+   "needs diagnosis" issue never qualifies (see below). Details in
+   `docs/basic-problem-and-delivery.md`.
+4. The symptom code is unrecognised (low confidence).
 
-All three write `classification_confidence = 'low'`. Everything else writes
-`'high'`. The client can override the suggested path, and the override is
-recorded, so a rule that is regularly wrong shows up in the data.
+An **ambiguous** symptom ("needs diagnosis", e.g. "will not power on" or "blue
+screen": charger, battery or board) is **matched**. It goes to home service
+at low confidence, a technician diagnoses it on site, and the existing "take
+to shop" reroute moves it to pickup if it needs the bench. Until 2026-11-15 it
+went to the community, which is why those posts found no technician.
+
+Low confidence is recorded on the job and shown to the technician; it does not
+change scoring. The client can override the suggested path, and the override
+is recorded, so a rule that is regularly wrong shows up in the data.
 
 ---
 
@@ -518,6 +544,32 @@ and this is the screen where a client would want to do it.
 On completion, `job-response` writes one `job_outcomes` row with
 `diagnosis_correct`, `rerouted_mid_job` and `final_rating`. Only the client who
 posted the job can supply a rating; a technician cannot rate themselves.
+
+### Where the two signals come from (since 2026-11-16)
+
+The technician's "Mark as complete" opens a **Wrap up this job** sheet. It used
+to ask the engine's questions word for word ("Was the original diagnosis
+correct?" and a "Rerouted mid-job" switch). At the user's request both were
+removed:
+
+| Signal | Before | Now |
+| --- | --- | --- |
+| `rerouted_mid_job` | A switch the technician set | Worked out by `job-response` (`_shared/reroute.ts`): the accepted match's snapshot (`score_breakdown.job.service_path`) was not a pickup, and the job now is. Both ways of moving a job to the shop, `reroute` at accept and `needs_shop` mid-job, set `service_path = 'pickup'`, so the system already knows. |
+| `diagnosis_correct` | "Was the original diagnosis correct?" | **What did you fix?** The problem the client reported, or "Something else" (then a grid of that device's other faults, or "Not on the list"). The app records `true` for the reported problem and `false` for anything else. Nothing is preselected, so accuracy is never inflated by a default. A "Not sure yet" job has no diagnosis to judge, so it records `null`, which `accuracy.ts` already treats as no verdict. |
+
+Dropping `diagnosis_correct` outright was not an option: it is the only input
+to Stage 1's accuracy factor, so every technician would have stayed at the
+0.70 prior for good.
+
+The sheet also has two things that fit how SUGO works. Neither is stored or
+scored:
+
+- **Before you close:** "it works and the client has seen it" (or "has it
+  back" / "has collected it" for a shop job), and "payment is settled". SUGO
+  does not take payment, so this is the moment to make sure it happened.
+- **An optional aftercare note.** It is sent to the client in the job chat,
+  with what was fixed, only after the completion succeeds. A failed send never
+  undoes the completion.
 
 `aggregate-outcomes` runs nightly under pg_cron and does two things:
 

@@ -14,6 +14,7 @@ pop-up were added on 2026-09-29.
 | Unit to the shop | `collected`, `returning_to_shop` | technician | client |
 | Delivery back | `out_for_delivery` | technician | client |
 | Client collecting from the shop | `ready_for_collection` | **client** | **technician** |
+| Client dropping it off (2026-11-17) | `dropping_off` | **client** | **technician** |
 
 ## Two journeys, one table
 
@@ -108,6 +109,50 @@ pointed the other way.
   `authenticated`) cannot.
 - **Privacy.** The client's position exists only during the trip. Arriving
   clears it, and so does any stage change. Nothing keeps a history.
+
+## The client's trip IN: drop-off (2026-11-17)
+
+A Shop Repair booked with "I'll bring it" had no tracking at all until the
+technician tapped "Unit received". Now the client's trip *to* the shop runs
+through the same machinery as the collection trip above. Approved by the user
+("Yes, new stage"); migration `20261117000006_drop_off_trip.sql`.
+
+- **A new stage, `dropping_off`**, before `in_repair`, used only on a drop-off:
+  `dropping_off → in_repair → ready_for_collection → delivered`. No new table
+  or column, and RLS is unchanged.
+- **"I'm on my way" creates the row.** On a drop-off there is no tracking row
+  until the unit arrives, so `start_collection_trip()` inserts one at
+  `dropping_off` when the job's own client taps it on a confirmed self
+  drop-off. The row belongs to the assigned technician, so their existing
+  update policy lets them move it on. `share_collection_position()` and
+  `end_collection_trip()` accept both client stages.
+- **"Unit received"** moves the row to `in_repair`. The stage change wipes the
+  client's position (guard rule B), so their location is gone the moment the
+  unit changes hands.
+- **Edge functions**: `CLIENT_TRIP_STAGES` (`_shared/eta_sampler.ts`) lists both
+  client legs, so `tracking-eta` lets the client sample, `tracking-eta-sweep`
+  picks up their trip when the phone goes quiet, `job-route` live mode draws
+  their road, and the destination resolves to the shop. `notify-event` says
+  "bringing the {device} to your shop" instead of "coming to collect".
+
+**What each side sees:**
+
+| | Client (the drop-off card: job page, tracking screen) | Technician (drop-off screen) |
+| --- | --- | --- |
+| Before setting off | Route to the shop, **"Call {technician}"** with the number, "I'm on my way" | "Waiting for the client to set off", "Unit received" |
+| On the way | "On your way to the shop"; trip card **"You arrive in 2 min · Weather is good and traffic is light"** | The client on the map (`ClientTripCard`), trip card **"Your client arrives in 2 min"**, push "… is on the way" |
+| Running late | Trip card: "Running about 10 minutes behind · Slowed by heavy traffic. Your technician can see why." | Pop-up and push **"Your client is running late"**, with the cause; trip card "Delayed by heavy traffic." |
+| Arrived | "You've arrived. Hand it over…" | "The client has arrived. Take the unit, then tap Unit received." |
+
+The trip card's sentences flip on who travels (`TripConditions.clientTravels`):
+the traveller reads "you", the person waiting reads "your client" or "your
+technician". The collection trip gained the same card on both sides.
+
+The technician's number comes from `technician_profile`, released once the
+booking is confirmed - the same gate as the shop location.
+
+Tests: `tool/sql_tests/trust_badge` → `npm run test:drop-off-trip` (20 checks),
+`test/features/tracking/drop_off_trip_test.dart` (15).
 
 ## Location switches itself on
 
@@ -220,6 +265,63 @@ push (`FirebaseMessaging.onMessage`) now makes the home screen re-read the trip.
 The home screen follows the trip live only while someone is moving, because the
 live feed polls every 15 seconds as a fallback to realtime.
 
+## The trip card: arrival, weather and traffic (2026-11-17)
+
+On every leg where the technician travels (home service; shop pickup's
+"heading to pickup", "collected", "heading to the shop"; and delivery), both
+sides now see the same card:
+
+> **YOUR TECHNICIAN ARRIVES IN · 20 min** · to your home · 4.2 km · Updated just now
+> Weather **Good** · Traffic **Light**
+> ✓ Weather is good and traffic is light. On schedule.
+
+The technician's version says "You arrive in" and "to the client".
+
+**Where the facts come from.** The sampler already fetched TomTom traffic and
+OpenWeatherMap weather on every sample, to compute the ETA and to blame a
+delay. Until now it threw the labels away. Migration `20261117000005` keeps
+them on `job_tracking` (`traffic_label`, `traffic_congestion`,
+`weather_label`, `weather_severity`). The user chose this over asking the
+weather service separately. It costs no extra API call, and the card and the
+delay pop-up come from the **same sample**, so the card can never say
+"traffic is light" while the pop-up says "delayed by heavy traffic".
+
+**Only the server writes them.** The update guard keeps the app from changing
+them (a technician must not be able to report "clear roads" to cover a late
+arrival), and a new insert guard empties them when the app creates the row.
+A new leg clears them, like the ETA columns. Tested in PGlite:
+`npm run test:tracking-conditions` in `tool/sql_tests/trust_badge` (7 checks).
+
+**Levels use the server's own lines.** Traffic uses the five words of
+`describe()` in `tomtom.ts`. Weather turns "Bad" at severity 0.4, the line at
+which the sampler blames a delay on the weather. So a "Bad" tile and "delayed
+by bad weather" always agree. Readings that are missing say "Checking…"
+before the first sample and "Not available" after it, and never a guess.
+
+**The animations mean something** (`condition_glyphs.dart`):
+
+- The sun turns slowly in good weather, a cloud drifts in fair weather, and
+  rain falls in bad.
+- The cars' speed is the traffic: quick on clear roads, crawling with brake
+  lights when it is heavy, and stopped at a barrier for a road closure.
+- The countdown rolls to its new value, and the header warms from navy to
+  amber when the trip is late.
+- Under reduced motion everything holds a still frame that still reads
+  correctly.
+
+**The delay, for each side.** The client keeps the pop-up, now redesigned. It
+opens on an animated picture of the cause (rain, crawling cars, both, or a
+ticking clock when no cause was found) and shows the new arrival time. The
+picture plays three cycles and stops, because a pop-up is read once. The
+technician gets a strip inside the card instead of a pop-up, because **they
+are driving**, and a modal dialog over the road is the wrong thing at that
+moment.
+
+The card replaced the old ETA tiles, the delay banner and the weather chip on
+the client's screen. `WeatherChip` and `TrackingService.weatherFor` were
+deleted. The `job-weather` function is still deployed, but the app no longer
+calls it.
+
 ## A bug fixed along the way
 
 `heading_to_pickup` ("On the way to you") used to resolve to the **workshop**,
@@ -262,6 +364,30 @@ Until they are deployed:
 - the "on the way" push says "to collect your …";
 - "I'm on my way" fails, because its function does not exist yet;
 - tapping a delay push opens nothing, because the old push carried no job id.
+
+### Deploying the trip card (2026-11-17)
+
+```sh
+npx supabase db push --remote                       # 20261117000005, FIRST
+npx supabase functions deploy tracking-eta tracking-eta-sweep --use-api
+```
+
+**The order matters.** The sampler writes the new columns in the same update
+as the ETA. A function deployed before the migration would have that whole
+update refused, so the ETA itself would stop being saved. The app tolerates
+both states: with no labels it shows "Checking…", and with no new app the
+columns are ignored.
+
+### Deploying the drop-off trip (2026-11-17)
+
+```sh
+npx supabase db push --remote                       # 20261117000006, FIRST
+npx supabase functions deploy tracking-eta tracking-eta-sweep job-route notify-event --use-api
+```
+
+Until the migration is pushed, "I'm on my way" on a drop-off fails ("There is
+nothing to collect for this job"), because the live function only knows the
+collection stage. The collection trip keeps working in every order.
 
 ## Not done
 
