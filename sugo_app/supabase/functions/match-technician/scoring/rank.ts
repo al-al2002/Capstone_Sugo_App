@@ -31,6 +31,7 @@ import {
   scoreRecommendation,
 } from "./recommendation.ts";
 import { buildReasons } from "./reasons.ts";
+import { trustBadgeForJob, trustRungOf } from "./preferences.ts";
 import type {
   AccuracyStats,
   ConsideredCandidate,
@@ -66,6 +67,7 @@ function jobSnapshot(job: JobRow, servicePath: ServicePath): JobSnapshot {
     preferred_schedule: job.preferred_schedule,
     description: job.description,
     photo_urls: job.photo_urls ?? [],
+    delivery_option: job.delivery_option ?? null,
   };
 }
 
@@ -73,6 +75,7 @@ function jobSnapshot(job: JobRow, servicePath: ServicePath): JobSnapshot {
 function snapshot(
   technician: TechnicianRow,
   matchedSpecializations: string[],
+  deviceCandidates: string[],
 ): TechnicianSnapshot {
   return {
     id: technician.id,
@@ -97,6 +100,8 @@ function snapshot(
     longitude: technician.longitude,
     barangay: technician.barangay ?? null,
     verification_tier: technician.verification_tier ?? "basic",
+    // The trust badge for THIS job - what the match card prints.
+    trust_badge_for_job: trustBadgeForJob(technician, deviceCandidates),
     // The exact brands that earned this match, so the review screen can say
     // "Assessed on Samsung aircon" instead of only showing a number.
     matched_specializations: matchedSpecializations,
@@ -140,8 +145,9 @@ export function buildExplainability(
     parts.push(`covers ${matchedSpecializations[0].replace("/", " ")}`);
   }
 
-  if (technician.verification_tier === "certified_pro") {
-    parts.push("Certified Pro");
+  // The top rung of the Progressive Trust Badge, for this job's device.
+  if (trustRungOf(technician, context.deviceCandidates) === 3) {
+    parts.push("Community Trusted");
   }
 
   if (accuracy.similarRepairs > 0) {
@@ -328,7 +334,7 @@ export function scoreCandidate(
         weights: RECOMMENDATION_WEIGHTS,
       },
       explainability,
-      technician: snapshot(technician, matchedSpecializations),
+      technician: snapshot(technician, matchedSpecializations, context.deviceCandidates),
       job: jobSnapshot(job, context.servicePath),
     },
   };

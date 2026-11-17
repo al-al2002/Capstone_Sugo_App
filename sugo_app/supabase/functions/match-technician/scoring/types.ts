@@ -71,7 +71,44 @@ export interface JobRow {
    * `job_device_candidates()`.
    */
   device_detail: string | null;
+
+  // ------------------------------------------- client preferences (20261115)
+  //
+  // Hard gates the client chose while posting. Every one is optional: null is
+  // "No preference" and filters nobody. Optional (`?`) as well as nullable so
+  // a job read before the migration was applied still type-checks and still
+  // matches exactly as it did.
+  pref_specialization?: PreferredSpecialization | null;
+  pref_max_distance_km?: number | null;
+  pref_min_rating?: number | string | null;
+  pref_availability?: "now" | "on_date" | null;
+  /** `YYYY-MM-DD`, set only with `pref_availability = 'on_date'`. */
+  pref_available_on?: string | null;
+  pref_min_trust?: TrustRequirement | null;
+
+  // ------------------------------------- shop repair delivery (20261116)
+  /** self = client brings and collects it; delivery = shop pickup/delivery. */
+  delivery_option?: "self" | "delivery" | null;
+  /** Written by `job-response` on select. */
+  distance_km?: number | string | null;
+  delivery_fee?: number | null;
 }
+
+/** `jobs.pref_specialization` - one of the five fixed options. */
+export type PreferredSpecialization =
+  | "computer"
+  | "phone_tablet"
+  | "network_setup"
+  | "appliance"
+  | "pc_building";
+
+/**
+ * The Progressive Trust Badge (20261115000002), an ORDERED ladder. Stored in
+ * `technicians.badge`; `jobs.pref_min_trust` names a minimum rung. A rung is
+ * met by itself or any rung above it - see `TRUST_LADDER` in
+ * `preferences.ts`.
+ */
+export type TrustRequirement = "id_verified" | "skill_verified" | "community_trusted";
 
 /**
  * A candidate technician, as `matching_candidates` returns them.
@@ -90,6 +127,12 @@ export interface TechnicianRow {
    * is frozen) but read by nothing: availability is `away_until` now.
    */
   is_available?: boolean;
+  /**
+   * The Progressive Trust Badge: `id_verified` | `skill_verified` |
+   * `community_trusted`, or null below the baseline. Account-wide - written
+   * by `evaluate_technician_badge()`. What it means for ONE job is
+   * `trustRungOf()`, because skill verification is per specialisation.
+   */
   badge: string | null;
   rating: number | null;
   total_jobs: number | null;
@@ -120,6 +163,14 @@ export interface TechnicianRow {
 
   /** Every (device, brand) pair they declared. */
   specializations: SpecializationRow[];
+
+  /**
+   * The work they take (20261117000007): Home Service, Shop Repair, or both.
+   * A Stage 1 gate - see `work_type.ts`. Optional only so a view older than
+   * the migration still type-checks; missing counts as yes.
+   */
+  offers_home_service?: boolean;
+  offers_shop_repair?: boolean;
 
   created_at: string | null;
 
@@ -400,6 +451,12 @@ export interface JobSnapshot {
   preferred_schedule: string | null;
   description: string | null;
   photo_urls: string[];
+  /**
+   * Shop repairs: self (client drops it off) or delivery. As at matching
+   * time; `job-response` updates it on the chosen technician's row when the
+   * client confirms, so the offer card is right when it arrives.
+   */
+  delivery_option: "self" | "delivery" | null;
 }
 
 /**
@@ -433,8 +490,22 @@ export interface TechnicianSnapshot {
   latitude: number | null;
   longitude: number | null;
 
+  /**
+   * Public barangay or area label (20261109). `snapshot()` in `rank.ts` has
+   * written it since then; the type was missing it.
+   */
+  barangay?: string | null;
+
   /** basic | verified | certified_pro - what SUGO actually checked. */
   verification_tier: VerificationTier;
+
+  /**
+   * The trust badge as it applies to THIS job (20261115000002): a Community
+   * Trusted technician who is not skill verified for this job's device counts
+   * as ID verified here. Null below the baseline. The match card shows this;
+   * `badge` is the account-wide level the profile shows.
+   */
+  trust_badge_for_job: TrustRequirement | null;
 
   /** The declared brands relevant to this job, for the review screen. */
   matched_specializations: string[];

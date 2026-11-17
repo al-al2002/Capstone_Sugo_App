@@ -101,7 +101,11 @@ const LIVE_TECHNICIAN_STAGES = new Set([
 ]);
 
 /** The one leg the client travels: coming to collect (20260929000001). */
-const CLIENT_TRIP_STAGE = "ready_for_collection";
+// The legs the client travels: dropping the unit off (20261117000006) and
+// collecting it (20260929000001). Mirrors `CLIENT_TRIP_STAGES` in
+// `_shared/eta_sampler.ts`, kept local so this function does not bundle the
+// sampler and its push client.
+const CLIENT_TRIP_STAGES = new Set(["dropping_off", "ready_for_collection"]);
 
 /**
  * Car, not motorcycle. TomTom documents `motorcycle` as BETA, and a capstone
@@ -194,7 +198,7 @@ Deno.serve(async (req: Request) => {
 
       if (!leg) return json({ available: false, reason: "not_travelling" });
 
-      const clientTrip = leg.stage === CLIENT_TRIP_STAGE;
+      const clientTrip = CLIENT_TRIP_STAGES.has(leg.stage);
       const moving = clientTrip
         ? leg.client_trip_started_at !== null && leg.client_arrived_at === null
         : LIVE_TECHNICIAN_STAGES.has(leg.stage);

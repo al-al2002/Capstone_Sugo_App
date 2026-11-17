@@ -34,7 +34,18 @@ export interface PushMessage {
   body: string;
   /** Delivered alongside the notification for the app to route on. */
   data?: Record<string, string>;
+  /**
+   * An urgent job request (2026-11-17): the "hard notify" the user asked
+   * for. Sent on the app's `sugo_urgent` Android channel (created in
+   * MainActivity at full importance: sound, vibration, heads-up), at maximum
+   * notification priority, and as time-sensitive on iOS so Focus modes let
+   * it through. The technician has five minutes to answer it.
+   */
+  urgent?: boolean;
 }
+
+/** The Android channel urgent requests use. MainActivity creates it. */
+export const URGENT_CHANNEL_ID = "sugo_urgent";
 
 export interface PushResult {
   configured: boolean;
@@ -222,7 +233,31 @@ export async function sendPush(
               data: message.data ?? {},
               // A delay is time-critical: it is worth waking a dozing handset,
               // because a notification that lands after arrival is pointless.
-              android: { priority: "HIGH" },
+              android: message.urgent
+                ? {
+                  priority: "HIGH",
+                  // Gone with the request: no point ringing after it passed.
+                  ttl: "300s",
+                  notification: {
+                    channel_id: URGENT_CHANNEL_ID,
+                    notification_priority: "PRIORITY_MAX",
+                    default_sound: true,
+                    default_vibrate_timings: true,
+                    visibility: "PUBLIC",
+                  },
+                }
+                : { priority: "HIGH" },
+              apns: message.urgent
+                ? {
+                  headers: { "apns-priority": "10" },
+                  payload: {
+                    aps: {
+                      sound: "default",
+                      "interruption-level": "time-sensitive",
+                    },
+                  },
+                }
+                : undefined,
             },
           }),
         });

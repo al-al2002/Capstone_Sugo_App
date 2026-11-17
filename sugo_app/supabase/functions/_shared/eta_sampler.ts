@@ -18,11 +18,12 @@
  *
  * ## Who is travelling
  *
- * Every leg is the technician's, except one: `ready_for_collection`, where the
- * CLIENT comes to the workshop (20260929000001). On that leg the position is
- * `client_latitude` / `client_longitude`, the trip only counts between "I'm on
- * my way" and "I've arrived", and a delay is pushed to the TECHNICIAN - the
- * person waiting - instead of the client.
+ * Every leg is the technician's, except the two where the CLIENT comes to the
+ * workshop: `ready_for_collection` (collecting it, 20260929000001) and
+ * `dropping_off` (bringing it in, 20261117000006). On those legs the position
+ * is `client_latitude` / `client_longitude`, the trip only counts between
+ * "I'm on my way" and "I've arrived", and a delay is pushed to the TECHNICIAN
+ * - the person waiting - instead of the client.
  */
 import { resolveLegDestination } from "./leg_destination.ts";
 import {
@@ -32,6 +33,8 @@ import {
 import { fetchTraffic } from "../match-technician/clients/tomtom.ts";
 import { fetchWeather } from "../match-technician/clients/openweather.ts";
 import { sendPush } from "./fcm.ts";
+import { deviceNoun, firstNameOf, notifyUser } from "./notify.ts";
+import { announcesArrival } from "./arrival.ts";
 
 /**
  * How late counts as late.
@@ -75,6 +78,7 @@ interface TrackingRow {
   latitude: number | null;
   longitude: number | null;
   expected_arrival_at: string | null;
+  projected_arrival_at: string | null;
   eta_sampled_at: string | null;
   delay_notified_at: string | null;
   client_latitude: number | null;
@@ -83,8 +87,19 @@ interface TrackingRow {
   client_arrived_at: string | null;
 }
 
-/** The one leg the client travels: coming to collect the repaired unit. */
-export const CLIENT_TRIP_STAGE = "ready_for_collection";
+/**
+ * The legs the client travels: bringing the unit in on a drop-off
+ * (20261117000006), and coming back to collect it (20260929000001).
+ */
+export const CLIENT_TRIP_STAGES: readonly string[] = [
+  "dropping_off",
+  "ready_for_collection",
+];
+
+/** True on a leg where the client, not the technician, is travelling. */
+export function isClientTripStage(stage: string | null | undefined): boolean {
+  return stage != null && CLIENT_TRIP_STAGES.includes(stage);
+}
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
@@ -99,8 +114,8 @@ export async function sampleLegEta(
   const { data: tracking } = await db
     .from("job_tracking")
     .select(
-      "stage, latitude, longitude, expected_arrival_at, eta_sampled_at, " +
-        "delay_notified_at, client_latitude, client_longitude, " +
+      "stage, latitude, longitude, expected_arrival_at, projected_arrival_at, " +
+        "eta_sampled_at, delay_notified_at, client_latitude, client_longitude, " +
         "client_trip_started_at, client_arrived_at",
     )
     .eq("job_id", jobId)
@@ -111,7 +126,7 @@ export async function sampleLegEta(
   // The client's leg exists only between "on my way" and "arrived". Outside
   // that window nobody is travelling towards the shop, so there is nothing to
   // be late for.
-  const clientTrip = tracking.stage === CLIENT_TRIP_STAGE;
+  const clientTrip = isClientTripStage(tracking.stage);
   if (
     clientTrip &&
     (tracking.client_trip_started_at === null ||
@@ -216,6 +231,32 @@ export async function sampleLegEta(
     );
   }
 
+  // "Almost there" (2026-11-17). Stateless, so no column is needed: the
+  // previous sample's estimate is still on the row, and an announcement is
+  // the crossing - "it was further than three minutes then, it is within
+  // them now". Only on legs that end where someone is waiting: the
+  // technician heading to the client (to repair, collect or deliver), or the
+  // client heading to the shop. Never fatal.
+  const previousEta = tracking.projected_arrival_at && tracking.eta_sampled_at
+    ? (Date.parse(tracking.projected_arrival_at) -
+      Date.parse(tracking.eta_sampled_at)) / 60_000
+    : null;
+  const endsWithSomeoneWaiting = clientTrip ||
+    destination.stage === "heading_to_pickup" ||
+    destination.stage === "out_for_delivery";
+  const arrivingSoon = announcesArrival({
+    previousEtaMinutes: previousEta,
+    etaMinutes,
+    endsWithSomeoneWaiting,
+  });
+  if (arrivingSoon) {
+    await notifyArriving(db, job, {
+      clientTrip,
+      stage: destination.stage,
+      minutes: Math.max(1, Math.round(etaMinutes)),
+    });
+  }
+
   const { error: writeError } = await db
     .from("job_tracking")
     .update({
@@ -224,6 +265,13 @@ export async function sampleLegEta(
       delay_minutes: Number(delayMinutes.toFixed(1)),
       delay_reason: reason,
       eta_sampled_at: new Date(now).toISOString(),
+      // The conditions this sample was taken in (2026-11-17), for the trip
+      // card on both sides. Saved from the SAME fetch that decided
+      // `delay_reason`, so the card and the delay pop-up always agree.
+      traffic_label: traffic.available ? traffic.label : null,
+      traffic_congestion: traffic.available ? unitOrNull(traffic.congestion) : null,
+      weather_label: weather.available ? weather.label : null,
+      weather_severity: weather.available ? unitOrNull(weather.severity) : null,
       // Stamped whether or not the push actually went out. If FCM is
       // unconfigured or the client has no device registered, the delay is
       // still recorded as announced - the banner carries it over Realtime,
@@ -254,6 +302,71 @@ export async function sampleLegEta(
     traffic_label: traffic.available ? traffic.label : null,
     weather_label: weather.available ? weather.label : null,
   });
+}
+
+/**
+ * "Almost there", to whoever is waiting (2026-11-17). Never throws.
+ *
+ * The client hears it about their technician (or their repaired unit on its
+ * way back); the technician hears it about a client coming to the shop.
+ */
+async function notifyArriving(
+  // deno-lint-ignore no-explicit-any
+  db: any,
+  job: LegJobRow,
+  leg: { clientTrip: boolean; stage: string | null; minutes: number },
+): Promise<void> {
+  try {
+    const away = `About ${leg.minutes} min away.`;
+    if (leg.clientTrip) {
+      const client = await firstNameOf(db, job.client_id, "Your client");
+      await notifyUser(db, job.assigned_technician_id, {
+        title: `${client} is almost there`,
+        body: leg.stage === "dropping_off"
+          ? `${away} They are bringing the unit to your shop.`
+          : `${away} They are coming to collect it.`,
+        data: { type: "client_arriving", job_id: job.id },
+      });
+      return;
+    }
+
+    const technician = await firstNameOf(
+      db,
+      job.assigned_technician_id,
+      "Your technician",
+    );
+    const { data: row } = await db
+      .from("jobs")
+      .select("device_type")
+      .eq("id", job.id)
+      .maybeSingle();
+    const noun = deviceNoun((row as { device_type?: string } | null)?.device_type);
+    await notifyUser(db, job.client_id, leg.stage === "out_for_delivery"
+      ? {
+        title: `Your ${noun} is almost back`,
+        body: `${away} ${technician} is bringing it to you.`,
+        data: { type: "arriving", job_id: job.id },
+      }
+      : {
+        title: `${technician} is almost there`,
+        body: `${away} Get ready to meet them.`,
+        data: { type: "arriving", job_id: job.id },
+      });
+  } catch (error) {
+    console.warn("arriving push failed", (error as Error).message);
+  }
+}
+
+/**
+ * A 0..1 reading clamped and rounded for a `numeric(4,3)` column, or null.
+ *
+ * Guards the ETA write: a NaN from a provider would make PostgREST reject
+ * the WHOLE update, and the ETA - the part that matters - would be lost with
+ * the labels.
+ */
+function unitOrNull(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  return Number(Math.min(1, Math.max(0, value)).toFixed(3));
 }
 
 /**

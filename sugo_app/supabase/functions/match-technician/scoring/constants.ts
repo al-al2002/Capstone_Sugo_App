@@ -29,8 +29,10 @@ export const SUITABILITY_WEIGHTS = {
   /** Standard / pro / elite - a proxy for depth of experience. */
   tier: 0.10,
   /**
-   * basic / verified / certified_pro. The secondary sort key after the
-   * specialisation match.
+   * The Trust Badge criterion (key kept as `verification_tier` so stored
+   * breakdowns still render). Read from the Progressive Trust Badge since
+   * 20261115000002; the weight itself did not change. The secondary sort key
+   * after the specialisation match.
    *
    * This REPLACED a boolean `verified` factor. Identity approval is now a hard
    * gate in Stage 1, so every candidate scored 1 on that boolean and it
@@ -90,17 +92,20 @@ export const SPECIALIZATION_MATCH = {
 } as const;
 
 /**
- * Verification tier maps to a 0..1 score.
+ * The Trust Badge criterion's score, by rung (see `trustRungOf`).
  *
- * `basic` is not zero: identity was still approved by a human, which is the
- * hard requirement. The tier only says how much *extra* paperwork was checked,
- * so it should nudge a ranking rather than dominate it.
+ * Since 20261115000002 this reads the Progressive Trust Badge instead of
+ * `verification_tier`, so scoring and the client filter share one source of
+ * truth. The weight is unchanged and so are the three values - ID verified,
+ * Skill verified and Community Trusted take the places of basic, verified
+ * and certified_pro (0.55 / 0.80 / 1.00).
+ *
+ * Rung 1 is not zero: identity was approved by a human, the hard requirement.
+ * Rung 0 (identity approved, email never confirmed) scores the same as rung
+ * 1: everyone in the pool passed the identity gate, and the missing email is
+ * not a reason to bury them below it.
  */
-export const VERIFICATION_TIER_SCORE: Record<string, number> = {
-  basic: 0.55,
-  verified: 0.80,
-  certified_pro: 1.00,
-};
+export const TRUST_BADGE_SCORE: readonly number[] = [0.55, 0.55, 0.80, 1.00];
 
 /**
  * Stage 2 client-trust factor.

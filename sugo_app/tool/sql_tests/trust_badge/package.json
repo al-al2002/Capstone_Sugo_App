@@ -1,0 +1,17 @@
+{
+  "name": "sugo-trust-badge-sql-tests",
+  "private": true,
+  "type": "module",
+  "description": "Applies the 2026-11-15 migrations to a stub schema in PGlite (Postgres in WebAssembly) and checks the Progressive Trust Badge rules.",
+  "scripts": {
+    "test": "node run.mjs ../../../supabase/migrations",
+    "test:booking-cooldown": "node booking_cooldown.mjs ../../../supabase/migrations",
+    "test:tracking-conditions": "node tracking_conditions.mjs ../../../supabase/migrations",
+    "test:drop-off-trip": "node drop_off_trip.mjs ../../../supabase/migrations",
+    "test:work-types": "node work_types.mjs ../../../supabase/migrations",
+    "test:push-events": "node push_events.mjs ../../../supabase/migrations"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.2.17"
+  }
+}

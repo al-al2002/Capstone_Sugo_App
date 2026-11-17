@@ -19,6 +19,19 @@ import { distanceBetween } from "./geo.ts";
 import { buildAccuracyIndex, type OutcomeRow } from "./accuracy.ts";
 import { exposureFor, rankAll, scoreCandidate, toConsidered } from "./rank.ts";
 import { deriveSignals, selectRules } from "./rules.ts";
+import {
+  type AvailabilityFacts,
+  applyClientPreferenceFilter,
+  type ClientPreferences,
+  type DistanceFallback,
+  distanceFallback,
+  distanceFallbackMessage,
+  NO_AVAILABILITY_FACTS,
+  type PreferenceKey,
+  readPreferences,
+  relaxMessage,
+  type RelaxHint,
+} from "./preferences.ts";
 import type {
   ClientHistory,
   ClientTechnicianHistory,
@@ -33,6 +46,7 @@ import type {
 } from "./types.ts";
 import { fetchTraffic } from "../clients/tomtom.ts";
 import { fetchWeather } from "../clients/openweather.ts";
+import { takesWorkFor, workTypeLabel } from "./work_type.ts";
 
 export interface MatchOutcome {
   jobId: string;
@@ -44,6 +58,26 @@ export interface MatchOutcome {
    */
   considered: ConsideredCandidate[];
   message: string | null;
+  /**
+   * True only when the client's own preferences removed every candidate who
+   * survived the Stage 1 gates. The app then offers to relax them instead of
+   * showing an empty list. False whenever relaxing would not help - nobody
+   * verified, everyone beyond the ceiling, everyone already declined.
+   */
+  noMatchRelaxPreferences: boolean;
+  /** What the preference pre-filter did. Absent when no preference was set. */
+  preferenceFilter?: {
+    active: PreferenceKey[];
+    before: number;
+    after: number;
+    failing: Partial<Record<PreferenceKey, number>>;
+    relax_hints: RelaxHint[];
+  };
+  /**
+   * Set when nobody was within the client's distance limit and the engine
+   * showed the nearest qualified technicians instead (2026-11-17).
+   */
+  distanceFallback?: DistanceFallback;
   context: {
     traffic: string | null;
     weather: string | null;
@@ -148,6 +182,68 @@ async function loadTrackRecords(
 }
 
 /**
+ * The two availability facts the preference filter cannot read off the
+ * candidate row. Queried only for the preference the client set, so a job
+ * without an availability preference costs nothing extra.
+ *
+ * * `now` - on time off today is already on the row (`away_until`); this adds
+ *   who is on another unfinished job, by the same definition `job-response`
+ *   uses for the busy warning (`confirmed` / `in_progress`).
+ * * `on_date` - time off covering that date, inclusive on both ends, the way
+ *   `technician_away_until()` reads the table.
+ *
+ * A failed query applies the preference with no extra facts - for `now`
+ * that still excludes anyone on time off - and logs it. Removing everybody
+ * because a lookup failed would tell the client their requirements were
+ * impossible when they were not. `job-response` re-checks time off live
+ * before a booking anyway.
+ */
+async function loadAvailabilityFacts(
+  db: SupabaseClient,
+  job: JobRow,
+  candidateIds: string[],
+  prefs: ClientPreferences,
+): Promise<AvailabilityFacts> {
+  if (!prefs.availability || candidateIds.length === 0) return NO_AVAILABILITY_FACTS;
+
+  if (prefs.availability === "now") {
+    const { data, error } = await db
+      .from("jobs")
+      .select("assigned_technician_id")
+      .in("assigned_technician_id", candidateIds)
+      .in("status", ["confirmed", "in_progress"])
+      .neq("id", job.id)
+      .returns<{ assigned_technician_id: string }[]>();
+
+    if (error) {
+      console.warn("busy lookup unavailable:", error.message);
+      return NO_AVAILABILITY_FACTS;
+    }
+    return {
+      busy: new Set((data ?? []).map((row) => row.assigned_technician_id)),
+      awayOnDate: new Set(),
+    };
+  }
+
+  const { data, error } = await db
+    .from("technician_time_off")
+    .select("technician_id")
+    .in("technician_id", candidateIds)
+    .lte("starts_on", prefs.availableOn)
+    .gte("ends_on", prefs.availableOn)
+    .returns<{ technician_id: string }[]>();
+
+  if (error) {
+    console.warn("time-off lookup unavailable:", error.message);
+    return NO_AVAILABILITY_FACTS;
+  }
+  return {
+    busy: new Set(),
+    awayOnDate: new Set((data ?? []).map((row) => row.technician_id)),
+  };
+}
+
+/**
  * Scores the whole verified pool against one job and writes the Top 3.
  *
  * Assumes the caller has already established that whoever triggered this is
@@ -196,7 +292,10 @@ export async function runMatching(
 
   if (poolError) throw new Error(`Could not load technicians: ${poolError.message}`);
 
-  const pool = (technicians ?? []).filter((t) => !exclude.has(t.id));
+  // The work-type gate (2026-11-17): only technicians who take this kind of
+  // work - Home Service or Shop Repair - are considered. See `work_type.ts`.
+  const verified = (technicians ?? []).filter((t) => !exclude.has(t.id));
+  const pool = verified.filter((t) => takesWorkFor(t, job.service_path));
 
   if (pool.length === 0) {
     return {
@@ -204,9 +303,159 @@ export async function runMatching(
       evaluated: 0,
       matches: [],
       considered: [],
-      message: exclude.size > 0
+      message: verified.length > 0
+        ? `No verified technician takes ${workTypeLabel(job.service_path)} ` +
+          "jobs yet. You can switch the service type and search again."
+        : exclude.size > 0
         ? "Every available technician has already been offered this job."
         : "No ID-verified technicians on the platform yet.",
+      noMatchRelaxPreferences: false,
+      context: { traffic: null, weather: null },
+    };
+  }
+
+  // Which specialisation device types can serve this job. Computed in SQL so
+  // the coarse/fine vocabulary bridge lives in exactly one place.
+  //
+  // Fetched before the gates below, because the "Skill verified" trust
+  // preference is measured against these devices.
+  const { data: deviceRow } = await db.rpc("job_device_candidates", {
+    p_device_type: job.device_type,
+    p_device_detail: job.device_detail,
+  });
+
+  const deviceCandidates: string[] = Array.isArray(deviceRow) ? deviceRow : [];
+
+  // ------------------------------------------- distance, once per technician
+  //
+  // Measured from the technician's BASE, not their live `latitude`.
+  //
+  // `technicians.latitude` is a working position: it is null for anyone not
+  // currently on a job, and stale for anyone who finished one. Ranking on it
+  // meant a technician who had never worked had no distance at all, and one
+  // who had was ranked from wherever they happened to last be. Since
+  // registration now captures `base_latitude/base_longitude`, distance and
+  // ETA come from where they actually operate.
+  //
+  // The live position is still carried in the snapshot for the tracking map;
+  // it is simply not what ranking is based on.
+  //
+  // Computed once here because two gates and the scorer all need it.
+  const distances = new Map<string, number | null>();
+  for (const technician of pool) {
+    distances.set(
+      technician.id,
+      distanceBetween(
+        job.latitude,
+        job.longitude,
+        technician.base_latitude ?? technician.latitude,
+        technician.base_longitude ?? technician.longitude,
+      ),
+    );
+  }
+
+  // ------------------------------------------ Stage 1 hard gate: the ceiling
+  //
+  // Being outside a technician's own declared radius is not an exclusion. It
+  // is scored - heavily - by `proximityScore`, which is given the radius and
+  // decays toward zero past it. Deleting these candidates was handing clients
+  // an empty Top 3 whenever every nearby technician happened to be a little
+  // further out than they had declared, which is worse than showing them
+  // ranked last with "past their 10 km service area" printed on the card.
+  //
+  // The absolute ceiling stays a hard cut. Even a technician who typed 100 km
+  // is not a sensible call-out across a province, and no amount of rating
+  // makes a 60 km trip a repair the client can use. An unknown distance is
+  // kept, as it always was, and scored at the proximity prior.
+  const withinCeiling = pool.filter((technician) => {
+    const distanceKm = distances.get(technician.id) ?? null;
+    return distanceKm === null || distanceKm <= HARD_RADIUS_KM;
+  });
+  const beyondCeiling = pool.length - withinCeiling.length;
+
+  if (withinCeiling.length === 0) {
+    return {
+      jobId: job.id,
+      evaluated: 0,
+      matches: [],
+      considered: [],
+      message: `No technician is within ${HARD_RADIUS_KM} km of this job. ` +
+        `${beyondCeiling} ${beyondCeiling === 1 ? "was" : "were"} further ` +
+        `away than that.`,
+      // Relaxing a preference cannot bring back someone 60 km away.
+      noMatchRelaxPreferences: false,
+      context: { traffic: null, weather: null },
+    };
+  }
+
+  // ------------------------------------ client preference pre-filter (NEW)
+  //
+  // The client's own minimum requirements, as hard gates. Runs AFTER the
+  // Stage 1 gates and BEFORE any context or scoring, so a technician who
+  // fails one is removed from the pool rather than ranked low - and never
+  // influences the ranking of anyone else. Nothing set => `kept` is
+  // `withinCeiling`, unchanged. See `preferences.ts`.
+  const preferences = readPreferences(job);
+  const availabilityFacts = await loadAvailabilityFacts(
+    db,
+    job,
+    withinCeiling.map((technician) => technician.id),
+    preferences,
+  );
+  const filter = applyClientPreferenceFilter(
+    withinCeiling,
+    distances,
+    preferences,
+    deviceCandidates,
+    availabilityFacts,
+  );
+  // Nobody within the distance limit, but someone just beyond it who meets
+  // everything else: show them, and say so (2026-11-17, the user's request).
+  const fallback = distanceFallback(
+    filter,
+    withinCeiling,
+    distances,
+    preferences,
+    deviceCandidates,
+    availabilityFacts,
+  );
+  const candidates = fallback?.kept ?? filter.kept;
+  if (fallback) {
+    console.log(
+      `job ${job.id}: nobody within ${fallback.fallback.wanted_km} km; ` +
+        `showing ${candidates.length} from ${fallback.fallback.nearest_km} km`,
+    );
+  }
+
+  const preferenceFilter = filter.active.length === 0 ? undefined : {
+    active: filter.active,
+    before: filter.before,
+    after: candidates.length,
+    failing: filter.failing,
+    relax_hints: filter.relaxHints,
+  };
+
+  if (filter.active.length > 0) {
+    console.log(
+      `job ${job.id}: preferences=[${filter.active.join(",")}] ` +
+        `kept=${candidates.length}/${filter.before} ` +
+        `failing=${JSON.stringify(filter.failing)}`,
+    );
+  }
+
+  if (candidates.length === 0) {
+    // Edge case from the brief: the preferences left nobody. Nothing is
+    // written - the old shortlist, if any, stays until a run that finds
+    // someone replaces it - and the flag tells the app to offer relaxing
+    // them instead of showing an empty list.
+    return {
+      jobId: job.id,
+      evaluated: 0,
+      matches: [],
+      considered: [],
+      message: relaxMessage(filter, preferences),
+      noMatchRelaxPreferences: true,
+      preferenceFilter,
       context: { traffic: null, weather: null },
     };
   }
@@ -231,15 +480,6 @@ export async function runMatching(
     averageRating: trustRow?.avg_rating_from_technicians ?? null,
   };
 
-  // Which specialisation device types can serve this job. Computed in SQL so
-  // the coarse/fine vocabulary bridge lives in exactly one place.
-  const { data: deviceRow } = await db.rpc("job_device_candidates", {
-    p_device_type: job.device_type,
-    p_device_detail: job.device_detail,
-  });
-
-  const deviceCandidates: string[] = Array.isArray(deviceRow) ? deviceRow : [];
-
   const servicePath = job.service_path ?? "home_service";
 
   // ------------------------------------ Steps 2 and 3: context, then rules
@@ -250,6 +490,10 @@ export async function runMatching(
   const signals = deriveSignals(job, servicePath, traffic, weather);
   const rules = selectRules(signals);
 
+  // History is loaded for the whole Stage 1 pool, as it was before the
+  // preference filter existed - not just for `candidates`. Per-technician it
+  // makes no difference; keeping the query identical is the cheapest way to
+  // guarantee a job with no preferences ranks exactly as it used to.
   const poolIds = pool.map((t) => t.id);
   const [clientHistory, trackRecords] = await Promise.all([
     loadClientHistory(db, job),
@@ -298,91 +542,20 @@ export async function runMatching(
   const accuracyIndex = buildAccuracyIndex(outcomes ?? [], job);
 
   // -------------------------------------------------------------- score them
-  let beyondCeiling = 0;
-
-  const scored: ScoredCandidate[] = [];
-
-  for (const technician of pool) {
-    // Measured from the technician's BASE, not their live `latitude`.
-    //
-    // `technicians.latitude` is a working position: it is null for anyone not
-    // currently on a job, and stale for anyone who finished one. Ranking on it
-    // meant a technician who had never worked had no distance at all, and one
-    // who had was ranked from wherever they happened to last be. Since
-    // registration now captures `base_latitude/base_longitude`, distance and
-    // ETA come from where they actually operate.
-    //
-    // The live position is still carried in the snapshot for the tracking map;
-    // it is simply not what ranking is based on.
-    const distanceKm = distanceBetween(
-      job.latitude,
-      job.longitude,
-      technician.base_latitude ?? technician.latitude,
-      technician.base_longitude ?? technician.longitude,
-    );
-
-    if (distanceKm !== null) {
-      // ------------------------------------- Stage 1 hard gate: service radius
-      //
-      // Each technician declared how far they will travel. Exceeding it is a
-      // filter, not a penalty: they told us they will not go, so offering the
-      // job wastes a Top 3 slot on someone who will decline, and the cascade
-      // in `job-response` then has to run again.
-      //
-      // Falls back to `HARD_RADIUS_KM` for an account that predates the
-      // service-radius column, so an older technician is bounded by something
-      // sane rather than being treated as willing to travel anywhere.
-      const radius = technician.service_radius_km ?? HARD_RADIUS_KM;
-
-      // Being outside their own declared radius is no longer an exclusion.
-      // It is scored - heavily - by `proximityScore`, which is given the radius
-      // and decays toward zero past it. Deleting these candidates was handing
-      // clients an empty Top 3 whenever every nearby technician happened to be
-      // a little further out than they had declared, which is worse than
-      // showing them ranked last with "past their 10 km service area" printed
-      // on the card. No count is kept: the per-candidate note says it better
-      // than an aggregate ever did.
-      //
-      // The absolute ceiling stays a hard cut. Even a technician who typed
-      // 100 km is not a sensible call-out across a province, and no amount of
-      // rating makes a 60 km trip a repair the client can use.
-      if (distanceKm > HARD_RADIUS_KM) {
-        beyondCeiling += 1;
-        continue;
-      }
-    }
-
-    scored.push(
-      scoreCandidate(
-        job,
-        technician,
-        context,
-        distanceKm,
-        accuracyIndex,
-        trackRecords,
-      ),
-    );
-  }
-
-  if (scored.length === 0) {
-    return {
-      jobId: job.id,
-      evaluated: 0,
-      matches: [],
-      considered: [],
-      message: beyondCeiling > 0
-        ? `No technician is within ${HARD_RADIUS_KM} km of this job. ` +
-          `${beyondCeiling} ${beyondCeiling === 1 ? "was" : "were"} further ` +
-          `away than that.`
-        : `No technician is within ${HARD_RADIUS_KM} km of this job.`,
-      context: {
-        traffic: traffic.available ? traffic.label : null,
-        weather: weather.available ? weather.description : null,
-        signals,
-        rules: rules.applied.map((rule) => rule.label),
-      },
-    };
-  }
+  //
+  // Only the technicians who passed both the Stage 1 gates and the client's
+  // preferences. Distance comes from the map built above, so the number that
+  // gated a technician is the number they are scored on.
+  const scored: ScoredCandidate[] = candidates.map((technician) =>
+    scoreCandidate(
+      job,
+      technician,
+      context,
+      distances.get(technician.id) ?? null,
+      accuracyIndex,
+      trackRecords,
+    )
+  );
 
   // Rank the whole pool once. The first three become offers; the rest exist
   // only in the response, because `job_matches.rank` cannot hold a fourth.
@@ -416,7 +589,11 @@ export async function runMatching(
     suitability_score: candidate.suitability.score,
     acceptance_score: candidate.acceptance.score,
     final_score: candidate.finalScore,
-    score_breakdown: candidate.breakdown,
+    // The fallback rides on each row, so the app can explain it on any later
+    // visit to this shortlist, not only on the run that produced it.
+    score_breakdown: fallback
+      ? { ...candidate.breakdown, preference_fallback: fallback.fallback }
+      : candidate.breakdown,
     // NOT "offered". These three are the client's shortlist; none of them
     // reaches a technician's dashboard until the client selects one, which is
     // what promotes that single row to `offered`. Writing `offered` here is the
@@ -449,7 +626,10 @@ export async function runMatching(
     evaluated: scored.length,
     matches: inserted ?? [],
     considered,
-    message: null,
+    message: fallback ? distanceFallbackMessage(fallback.fallback) : null,
+    noMatchRelaxPreferences: false,
+    preferenceFilter,
+    distanceFallback: fallback?.fallback,
     context: {
       traffic: traffic.available ? traffic.label : null,
       weather: weather.available ? weather.description : null,

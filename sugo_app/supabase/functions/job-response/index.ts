@@ -7,7 +7,8 @@
  * { "job_id": "uuid", "action": "update_job", "job": { ...edited fields } }
  * { "match_id": "uuid", "action": "technician_status" }
  * { "job_id": "uuid", "action": "complete",
- *   "diagnosis_correct": true, "rerouted_mid_job": false, "final_rating": 4.5 }
+ *   "diagnosis_correct": true, "final_rating": 4.5 }
+ *   (`rerouted_mid_job` is worked out on the server since 2026-11-16)
  * ```
  *
  * ## Why this is server-side at all
@@ -39,7 +40,18 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 import { fail, json, preflight } from "../_shared/cors.ts";
 import { callerId, readJson, serviceClient } from "../_shared/supabase.ts";
+import {
+  bookingPausedUntil,
+  recordBookingCancellation,
+} from "../_shared/booking_cooldown.ts";
 import { deviceNoun, firstNameOf, notifyUser } from "../_shared/notify.ts";
+import { snapshotServicePath, wasRerouted } from "../_shared/reroute.ts";
+import { isUrgentJob, urgentOfferPush } from "../_shared/urgent.ts";
+import {
+  deliveryFee,
+  type ShopLocation,
+  shopDistanceKm,
+} from "../_shared/delivery_fee.ts";
 import { formatAwayUntil } from "../match-technician/scoring/acceptance.ts";
 import { runMatching } from "../match-technician/scoring/engine.ts";
 import type { JobRow } from "../match-technician/scoring/types.ts";
@@ -67,6 +79,12 @@ interface ResponseRequest {
   action?: Action;
   /** `update_job` only: the edited columns. Anything not whitelisted is ignored. */
   job?: Record<string, unknown>;
+  /**
+   * `select` only, shop repairs: the client's final answer from the booking
+   * dialog (2026-11-16). Falls back to the job's own `delivery_option`, then
+   * to delivery.
+   */
+  delivery_option?: "self" | "delivery";
   /** `complete` only. */
   diagnosis_correct?: boolean;
   rerouted_mid_job?: boolean;
@@ -206,9 +224,9 @@ async function handleClientSelect(
 
   const { data: match, error: matchError } = await db
     .from("job_matches")
-    .select("id, job_id, technician_id, rank, status")
+    .select("id, job_id, technician_id, rank, status, score_breakdown")
     .eq("id", matchId)
-    .maybeSingle<MatchRow>();
+    .maybeSingle<MatchRow & { score_breakdown: Record<string, unknown> | null }>();
 
   if (matchError) {
     return fail("Could not load the offer", 500, matchError.message);
@@ -244,6 +262,22 @@ async function handleClientSelect(
     );
   }
 
+  // Book-and-cancel cooldown (2026-11-17). A client who cancelled 2 bookings
+  // within an hour waits 2 minutes before booking again. Here because this
+  // is the only way a booking is ever made, so no build of the app and no
+  // direct call gets past it. Before every write: a refusal changes nothing.
+  // `retry_at` lets the app show the countdown.
+  const pausedUntil = await bookingPausedUntil(db, uid);
+  if (pausedUntil) {
+    return fail(
+      "Booking is paused for 2 minutes because you cancelled 2 bookings " +
+        "within an hour. This protects technicians from bookings that are " +
+        "cancelled straight away.",
+      429,
+      { code: "booking_paused", retry_at: pausedUntil },
+    );
+  }
+
   // A technician on vacation is shown but cannot be booked.
   //
   // Checked live, not read from the card: the card is a snapshot taken when
@@ -265,6 +299,79 @@ async function handleClientSelect(
       `This technician is on vacation until ${formatAwayUntil(awayUntil as string)} ` +
         "and cannot be booked. Choose another technician.",
       409,
+    );
+  }
+
+  // ------------------------------------------ shop repair: how it travels
+  //
+  // 2026-11-16. Decided here, at the moment a technician is chosen, because
+  // the fee depends on THAT technician's shop - unknown when the job was
+  // posted. Calculated on the server from the shop location the client never
+  // sees, so the saved fee cannot be the client's own number. Written before
+  // the promotion: a failure leaves the job exactly as it was.
+  let deliveryOption: "self" | "delivery" | null = null;
+  // Copied onto the offer below, so the technician sees the same fee.
+  let savedDistanceKm: number | null = null;
+  let savedFee: number | null = null;
+  if (job.service_path === "pickup") {
+    const requested = body.delivery_option ?? job.delivery_option ?? "delivery";
+    if (requested !== "self" && requested !== "delivery") {
+      return fail("Choose how the unit gets to the shop", 422);
+    }
+    deliveryOption = requested;
+
+    const { data: shop, error: shopError } = await db
+      .from("technicians")
+      .select("shop_latitude, shop_longitude, base_latitude, base_longitude")
+      .eq("id", match.technician_id)
+      .maybeSingle<ShopLocation>();
+
+    if (shopError) {
+      return fail("Could not read the technician's shop", 500, shopError.message);
+    }
+
+    const distanceKm = shop ? shopDistanceKm(job.latitude, job.longitude, shop) : null;
+    // Self is free. Delivery with no known distance is left unpriced rather
+    // than guessed; the technician confirms it in chat.
+    const fee = deliveryOption === "self"
+      ? 0
+      : distanceKm === null
+      ? null
+      : deliveryFee(distanceKm);
+
+    const { error: feeError } = await db
+      .from("jobs")
+      .update({
+        delivery_option: deliveryOption,
+        distance_km: distanceKm,
+        delivery_fee: fee,
+      })
+      .eq("id", job.id);
+
+    if (feeError) {
+      return fail("Could not save the delivery choice", 500, feeError.message);
+    }
+    savedDistanceKm = distanceKm;
+    savedFee = fee;
+
+    // "Bring it myself" covers the way back too: collection is pre-chosen,
+    // so the technician's screen never offers a delivery trip and the
+    // client's route to the shop opens straight away. Delivery writes its
+    // own row so a client who switched back is not left as a collector.
+    const { error: returnError } = await db
+      .from("job_return_preferences")
+      .upsert({
+        job_id: job.id,
+        method: deliveryOption === "self" ? "client_pickup" : "delivery",
+      });
+
+    if (returnError) {
+      console.warn("could not set the return method:", returnError.message);
+    }
+
+    console.log(
+      `job ${job.id}: ${deliveryOption} via technician ${match.technician_id}, ` +
+        `${distanceKm ?? "?"} km, fee ${fee ?? "unpriced"}`,
     );
   }
 
@@ -291,9 +398,29 @@ async function handleClientSelect(
   }
 
   // Promote the chosen one. This is what puts the job on their dashboard.
+  //
+  // A shop repair also tells the offer card how the unit travels: the job
+  // snapshot was written at matching time, before the client chose, and the
+  // technician should know "client drops it off" before they accept.
+  const breakdown = match.score_breakdown;
+  const promotion: Record<string, unknown> = { status: "offered" };
+  if (deliveryOption && breakdown && typeof breakdown.job === "object" && breakdown.job) {
+    promotion.score_breakdown = {
+      ...breakdown,
+      job: {
+        ...(breakdown.job as Record<string, unknown>),
+        delivery_option: deliveryOption,
+        // The fee and the distance to THIS technician's shop, as saved on
+        // the job (2026-11-17) - the offer card shows the same numbers.
+        distance_km: savedDistanceKm,
+        delivery_fee: savedFee,
+      },
+    };
+  }
+
   const { error: promoteError } = await db
     .from("job_matches")
-    .update({ status: "offered" })
+    .update(promotion)
     .eq("id", match.id);
 
   if (promoteError) {
@@ -308,12 +435,26 @@ async function handleClientSelect(
   // a request that sits unseen on a closed app is the slow technician the
   // client then cancels. Awaited, but never fatal - see notifyUser.
   const client = await firstNameOf(db, job.client_id, "A client");
-  await notifyUser(db, match.technician_id, {
-    title: "New job request",
-    body: `${client} booked you for a ${deviceNoun(job.device_type)} repair. ` +
-      "Open SUGO to accept it.",
-    data: { type: "booked", job_id: job.id },
-  });
+  // An Urgent job is a "hard" notification with a five-minute clock
+  // (2026-11-17); `urgent-offer-sweep` passes it on if it runs out.
+  await notifyUser(
+    db,
+    match.technician_id,
+    isUrgentJob(job)
+      ? urgentOfferPush(
+        client,
+        deviceNoun(job.device_type),
+        job.id,
+        match.id,
+        new Date(),
+      )
+      : {
+        title: "New job request",
+        body: `${client} booked you for a ${deviceNoun(job.device_type)} ` +
+          "repair. Open SUGO to accept it.",
+        data: { type: "booked", job_id: job.id },
+      },
+  );
 
   return json({
     job_id: job.id,
@@ -384,15 +525,35 @@ async function handleTechnicianStatus(
 
   const { data: job } = await db
     .from("jobs")
-    .select("id, client_id")
+    .select("id, client_id, service_path, latitude, longitude")
     .eq("id", match.job_id)
-    .maybeSingle<{ id: string; client_id: string }>();
+    .maybeSingle<{
+      id: string;
+      client_id: string;
+      service_path: string | null;
+      latitude: number | null;
+      longitude: number | null;
+    }>();
   if (!job || job.client_id !== uid) {
     return fail("This job belongs to someone else", 403);
   }
 
   const busy = (await activeJobOf(db, match.technician_id, job.id)) !== null;
-  return json({ busy });
+
+  // Shop repairs (2026-11-16): the distance to THIS technician's shop, so
+  // the booking dialog can show the delivery fee before the client sends.
+  // A number only - the shop's location stays private until they book.
+  let shopKm: number | null = null;
+  if (job.service_path === "pickup") {
+    const { data: shop } = await db
+      .from("technicians")
+      .select("shop_latitude, shop_longitude, base_latitude, base_longitude")
+      .eq("id", match.technician_id)
+      .maybeSingle<ShopLocation>();
+    shopKm = shop ? shopDistanceKm(job.latitude, job.longitude, shop) : null;
+  }
+
+  return json({ busy, shop_distance_km: shopKm });
 }
 
 async function handleAccept(
@@ -469,6 +630,19 @@ async function handleAccept(
   // evidence trail. It is a separate capstone module; this function's
   // responsibility ends at `confirmed`.
 
+  // Tell the client (2026-11-17). Until now an accepted booking reached them
+  // only when they next opened the app.
+  const technician = await firstNameOf(db, match.technician_id, "Your technician");
+  const noun = deviceNoun(job.device_type);
+  await notifyUser(db, job.client_id, {
+    title: rerouted ? `${technician} will take it to the shop` : "Booking confirmed",
+    body: rerouted
+      ? `They accepted your ${noun} as a shop repair, so it will be collected ` +
+        "and repaired at the workshop."
+      : `${technician} accepted your ${noun} repair. Open SUGO for the next step.`,
+    data: { type: "accepted", job_id: job.id },
+  });
+
   return json({
     job_id: job.id,
     match_id: match.id,
@@ -514,7 +688,17 @@ async function handleDecline(
 
   const shortlist = remaining ?? [];
 
+  // Tell the client (2026-11-17): the choice is theirs again.
+  const technician = await firstNameOf(db, match.technician_id, "Your technician");
+  const noun = deviceNoun(job.device_type);
+
   if (shortlist.length > 0) {
+    await notifyUser(db, job.client_id, {
+      title: `${technician} can't take this one`,
+      body: `Choose another technician for your ${noun} - your shortlist is ` +
+        "still there.",
+      data: { type: "declined", job_id: job.id },
+    });
     return json({
       job_id: job.id,
       declined_match_id: match.id,
@@ -554,6 +738,15 @@ async function handleDecline(
 
   const result = await runMatching(db, job, exclude);
 
+  await notifyUser(db, job.client_id, {
+    title: `${technician} can't take this one`,
+    body: result.matches.length > 0
+      ? `We found more technicians for your ${noun}. Open SUGO to choose one.`
+      : `No other technician is free for your ${noun} right now. Open SUGO ` +
+        "to try again.",
+    data: { type: "declined", job_id: job.id },
+  });
+
   return json({
     job_id: job.id,
     declined_match_id: match.id,
@@ -562,6 +755,10 @@ async function handleDecline(
     evaluated: result.evaluated,
     matches: result.matches,
     message: result.message,
+    // The re-run applies the job's preferences too (they are on the row), so
+    // it can be the preferences that left nobody. Same flag as
+    // `match-technician`, so the app offers the same way out.
+    no_match_relax_preferences: result.noMatchRelaxPreferences,
   });
 }
 
@@ -572,6 +769,12 @@ async function handleDecline(
  * counters. `diagnosis_correct` and `rerouted_mid_job` are the two signals
  * `scoring/accuracy.ts` reads back into Stage 1, so this is the point where the
  * system learns.
+ *
+ * Since 2026-11-16 the technician is asked only for the first, and in plain
+ * words ("What did you fix?" - the app compares the answer with the problem
+ * the client reported). `rerouted_mid_job` is worked out here instead, from
+ * the match snapshot: see `_shared/reroute.ts`. An older app that still sends
+ * the flag is only listened to when there is no snapshot to compare.
  *
  * `final_rating` is only accepted from the client who posted the job. A
  * technician cannot rate themselves.
@@ -617,11 +820,26 @@ async function handleComplete(
     ? Math.max(0, Math.min(5, body.final_rating))
     : null;
 
+  // Rerouted after matching? The system moved it, so the system knows.
+  const { data: match } = await db
+    .from("job_matches")
+    .select("score_breakdown")
+    .eq("job_id", jobId)
+    .eq("technician_id", job.assigned_technician_id)
+    .limit(1)
+    .maybeSingle<{ score_breakdown: unknown }>();
+  const rerouted = wasRerouted(
+    snapshotServicePath(match?.score_breakdown),
+    job.service_path,
+  ) ?? body.rerouted_mid_job === true;
+
   const outcome = {
     job_id: jobId,
     technician_id: job.assigned_technician_id,
-    diagnosis_correct: body.diagnosis_correct ?? null,
-    rerouted_mid_job: body.rerouted_mid_job ?? false,
+    diagnosis_correct: typeof body.diagnosis_correct === "boolean"
+      ? body.diagnosis_correct
+      : null,
+    rerouted_mid_job: rerouted,
     // Only the paying client's rating counts.
     final_rating: isClient ? rating : null,
   };
@@ -795,6 +1013,15 @@ async function handleNeedsShop(
 
   console.log(`job ${jobId}: rerouted to shop pickup mid-job by ${uid}`);
 
+  // Tell the client (2026-11-17): their home visit is now a shop repair.
+  const technician = await firstNameOf(db, uid, "Your technician");
+  await notifyUser(db, job.client_id, {
+    title: `${technician} is taking it to the shop`,
+    body: `Your ${deviceNoun(job.device_type)} needs the workbench, so they ` +
+      "will collect it and repair it at the shop.",
+    data: { type: "rerouted", job_id: jobId },
+  });
+
   return json({
     job_id: jobId,
     status: job.status,
@@ -851,13 +1078,14 @@ async function handleDeleteJob(
 
   const { data: job, error: jobError } = await db
     .from("jobs")
-    .select("id, client_id, status, assigned_technician_id")
+    .select("id, client_id, status, assigned_technician_id, device_type")
     .eq("id", jobId)
     .maybeSingle<{
       id: string;
       client_id: string;
       status: string;
       assigned_technician_id: string | null;
+      device_type: string | null;
     }>();
 
   if (jobError) return fail("Could not load the job", 500, jobError.message);
@@ -888,6 +1116,18 @@ async function handleDeleteJob(
     return fail("A technician has already accepted this job", 409);
   }
 
+  // Book-and-cancel cooldown (2026-11-17): deleting a post while a technician
+  // is booked and has not answered cancels that booking, so it counts like
+  // "Cancel request". A post nobody was booked on does not count. Read now,
+  // because the offers are deleted next.
+  const { data: pendingOffer } = await db
+    .from("job_matches")
+    .select("technician_id")
+    .eq("job_id", jobId)
+    .eq("status", "offered")
+    .limit(1)
+    .maybeSingle<{ technician_id: string }>();
+
   // `job_matches.job_id` has no ON DELETE CASCADE, so the offers have to go
   // first or the delete below fails on the foreign key.
   const { error: matchError } = await db
@@ -907,7 +1147,35 @@ async function handleDeleteJob(
 
   console.log(`job ${jobId}: deleted by client ${uid} before any acceptance`);
 
-  return json({ job_id: jobId, deleted: true });
+  // Recorded only once the delete has succeeded, so a failed delete is not
+  // counted against the client.
+  const bookingPaused = pendingOffer
+    ? await recordBookingCancellation(
+      db,
+      uid,
+      jobId,
+      pendingOffer.technician_id,
+      "delete",
+    )
+    : null;
+
+  // The technician who was waiting to answer is told it is gone
+  // (2026-11-17).
+  if (pendingOffer) {
+    const client = await firstNameOf(db, uid, "The client");
+    await notifyUser(db, pendingOffer.technician_id, {
+      title: "Request cancelled",
+      body: `${client} deleted their ${deviceNoun(job.device_type)} request. ` +
+        "Nothing for you to do.",
+      data: { type: "request_cancelled", job_id: jobId },
+    });
+  }
+
+  return json({
+    job_id: jobId,
+    deleted: true,
+    booking_paused_until: bookingPaused,
+  });
 }
 
 /**
@@ -936,6 +1204,17 @@ const EDITABLE_JOB_FIELDS = [
   "preferred_schedule",
   "description",
   "photo_urls",
+  // Client preference pre-filter (20261115). The CHECK constraints refuse any
+  // value outside the fixed options, which surfaces below as a 422.
+  "pref_specialization",
+  "pref_max_distance_km",
+  "pref_min_rating",
+  "pref_availability",
+  "pref_available_on",
+  "pref_min_trust",
+  // Shop repair delivery option (20261116000001). distance_km and
+  // delivery_fee are NOT here: only `select` writes them, on the server.
+  "delivery_option",
 ] as const;
 
 /**

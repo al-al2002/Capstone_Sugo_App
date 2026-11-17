@@ -7,7 +7,13 @@
  * { "type": "stage",         "job_id": "uuid", "stage": "collected" }
  * { "type": "return_method", "job_id": "uuid", "method": "client_pickup" }
  * { "type": "collection",    "job_id": "uuid" }
+ * { "type": "withdrawn",     "job_id": "uuid", "technician_id": "uuid" }
+ * { "type": "arrived",       "job_id": "uuid", "stage": "dropping_off" }
  * ```
+ *
+ * `withdrawn` (the client cancelled a request the technician was waiting to
+ * answer) and `arrived` (the client tapped "I've arrived" at the shop) were
+ * added on 2026-11-17 (20261117000008).
  *
  * ## Who calls this
  *
@@ -40,11 +46,19 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { deviceNoun, firstNameOf, notifyUser, preview } from "../_shared/notify.ts";
 
 interface EventRequest {
-  type?: "message" | "stage" | "return_method" | "collection";
+  type?:
+    | "message"
+    | "stage"
+    | "return_method"
+    | "collection"
+    | "withdrawn"
+    | "arrived";
   message_id?: string;
   job_id?: string;
   stage?: string;
   method?: string;
+  /** `withdrawn` only: the technician whose request was cancelled. */
+  technician_id?: string;
 }
 
 interface JobRow {
@@ -211,7 +225,9 @@ Deno.serve(async (req: Request) => {
 
     // --------------------------------------------------------- collection
     // The client set off to collect the unit (`start_collection_trip`,
-    // 20260929000001). The technician is the one waiting, so they are told.
+    // 20260929000001) - or, since 20261117000006, to drop it off. The
+    // technician is the one waiting, so they are told. The event's stage
+    // says which; an event from before it carried one is a collection.
     if (body.type === "collection") {
       if (!body.job_id) return fail("job_id is required", 422);
 
@@ -219,10 +235,14 @@ Deno.serve(async (req: Request) => {
       if (!job) return json({ sent: 0, reason: "job_not_found" });
 
       const client = await firstNameOf(db, job.client_id, "Your client");
+      const noun = deviceNoun(job.device_type);
+      const droppingOff = body.stage === "dropping_off";
       const sent = await notifyUser(db, job.assigned_technician_id, {
         title: `${client} is on the way`,
-        body: `They are coming to collect the ${deviceNoun(job.device_type)}. ` +
-          "Open the job to see where they are.",
+        body: (droppingOff
+          ? `They are bringing the ${noun} to your shop. `
+          : `They are coming to collect the ${noun}. `) +
+          "Open the job to see where they are and when they arrive.",
         data: { type: "collection", job_id: job.id },
       });
       return json({ sent });
@@ -245,6 +265,51 @@ Deno.serve(async (req: Request) => {
           ? `No delivery trip for the ${noun} - they will collect it at your shop.`
           : `Bring the ${noun} back to them once it is fixed.`,
         data: { type: "return_method", job_id: job.id, method: body.method },
+      });
+      return json({ sent });
+    }
+
+    // ---------------------------------------------------------- withdrawn
+    // The client cancelled a request this technician was waiting to answer
+    // (`withdraw_technician_offer`, 20261117000008). Without this it stayed
+    // on their screen until they next opened the app.
+    if (body.type === "withdrawn") {
+      if (!body.job_id || !body.technician_id) {
+        return fail("job_id and technician_id are required", 422);
+      }
+
+      const job = await loadJob(db, body.job_id);
+      if (!job) return json({ sent: 0, reason: "job_not_found" });
+
+      const client = await firstNameOf(db, job.client_id, "The client");
+      const sent = await notifyUser(db, body.technician_id, {
+        title: "Request cancelled",
+        body: `${client} cancelled their ${deviceNoun(job.device_type)} ` +
+          "request. Nothing for you to do.",
+        data: { type: "request_cancelled", job_id: job.id },
+      });
+      return json({ sent });
+    }
+
+    // ------------------------------------------------------------ arrived
+    // The client is at the shop (`end_collection_trip`, 20261117000008):
+    // with the unit on a drop-off, or to collect it after the repair.
+    if (body.type === "arrived") {
+      if (!body.job_id) return fail("job_id is required", 422);
+
+      const job = await loadJob(db, body.job_id);
+      if (!job) return json({ sent: 0, reason: "job_not_found" });
+
+      const client = await firstNameOf(db, job.client_id, "Your client");
+      const noun = deviceNoun(job.device_type);
+      const droppingOff = body.stage === "dropping_off";
+      const sent = await notifyUser(db, job.assigned_technician_id, {
+        title: `${client} has arrived`,
+        body: droppingOff
+          ? `They are at your shop with the ${noun}. Take it, then tap ` +
+            "Unit received."
+          : `They are at your shop to collect the ${noun}.`,
+        data: { type: "client_arrived", job_id: job.id },
       });
       return json({ sent });
     }

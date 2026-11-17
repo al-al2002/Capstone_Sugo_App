@@ -5,8 +5,13 @@
  * POST /functions/v1/match-technician
  * { "job_id": "uuid", "exclude_technician_ids": ["uuid", ...] }
  *
- * -> { job_id, evaluated, matches: [ ...job_matches rows... ], context }
+ * -> { job_id, evaluated, matches: [ ...job_matches rows... ], context,
+ *      no_match_relax_preferences, preference_filter }
  * ```
+ *
+ * The client's technician preferences are NOT in the request. They are
+ * columns on the job (`pref_*`, 20261115), so the decline cascade and every
+ * re-run apply them too.
  *
  * This file does three things and nothing else: authenticate, authorise, then
  * hand off to `scoring/engine.ts`. All the ranking logic lives there so
@@ -71,6 +76,16 @@ Deno.serve(async (req: Request) => {
       matches: result.matches,
       considered: result.considered,
       message: result.message,
+      // Client preference pre-filter (20261115). The flag is the brief's
+      // `no_match_relax_preferences`: the app shows "try relaxing them" with
+      // a chip per preference instead of an empty list. `preference_filter`
+      // carries the counts behind it, including how many technicians each
+      // single relaxation would bring back.
+      no_match_relax_preferences: result.noMatchRelaxPreferences,
+      preference_filter: result.preferenceFilter ?? null,
+      // Nobody within the distance limit, the nearest shown instead
+      // (2026-11-17): { wanted_km, nearest_km }, or null.
+      distance_fallback: result.distanceFallback ?? null,
       context: result.context,
     });
   } catch (error) {

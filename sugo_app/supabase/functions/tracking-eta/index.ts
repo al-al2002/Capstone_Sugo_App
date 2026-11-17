@@ -22,14 +22,15 @@
  *
  * ## The one exception: the client's own trip
  *
- * At `ready_for_collection` it is the CLIENT who travels, to collect the unit
- * (20260929000001), so their phone is the awake one and they may sample. On
- * every other stage the rule above stands.
+ * At `ready_for_collection` (collecting the unit, 20260929000001) and
+ * `dropping_off` (bringing it in, 20261117000006) it is the CLIENT who
+ * travels, so their phone is the awake one and they may sample. On every
+ * other stage the rule above stands.
  */
 import { fail, json, preflight } from "../_shared/cors.ts";
 import { callerId, readJson, serviceClient } from "../_shared/supabase.ts";
 import {
-  CLIENT_TRIP_STAGE,
+  isClientTripStage,
   type LegJobRow,
   sampleLegEta,
 } from "../_shared/eta_sampler.ts";
@@ -72,7 +73,7 @@ Deno.serve(async (req: Request) => {
         .select("stage")
         .eq("job_id", jobId)
         .maybeSingle<{ stage: string }>();
-      if (leg?.stage !== CLIENT_TRIP_STAGE) {
+      if (!isClientTripStage(leg?.stage)) {
         return fail("Only the assigned technician can update the ETA", 403);
       }
     }

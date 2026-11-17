@@ -20,8 +20,9 @@ import {
   SPECIALIZATION_MATCH,
   SUITABILITY_WEIGHTS,
   TIER_SCORE,
-  VERIFICATION_TIER_SCORE,
+  TRUST_BADGE_SCORE,
 } from "./constants.ts";
+import { trustRungOf } from "./preferences.ts";
 import { clamp01 } from "./geo.ts";
 import { combine, round, type FactorInput } from "./weighting.ts";
 import type {
@@ -292,6 +293,7 @@ export function scoreSuitability(
 } {
   const skill = skillTagScore(job, technician);
   const specialization = specializationMatchScore(job, technician, context);
+  const trustRung = trustRungOf(technician, context.deviceCandidates);
 
   const totalJobs = technician.total_jobs ?? 0;
   const isColdStart = technician.is_verified &&
@@ -340,16 +342,23 @@ export function scoreSuitability(
       // that reached this point - it spent weight telling the ranking nothing.
       // The tier says how much SUGO actually checked, which does differ
       // between candidates.
+      //
+      // Since 20261115000002 the value is the Progressive Trust Badge as it
+      // applies to this job (`trustRungOf`), the same rung the client's
+      // "minimum trust badge" preference is checked against. The key is kept
+      // so breakdowns already stored in job_matches still render.
       key: "verification_tier",
-      label: "Verification tier",
-      value: VERIFICATION_TIER_SCORE[technician.verification_tier ?? "basic"] ??
-        VERIFICATION_TIER_SCORE.basic,
+      label: "Trust badge",
+      value: TRUST_BADGE_SCORE[trustRung] ?? TRUST_BADGE_SCORE[1],
       weight: SUITABILITY_WEIGHTS.verification_tier,
-      note: technician.verification_tier === "certified_pro"
-        ? "Certified Pro: ID, assessment and approved credentials on file"
-        : technician.verification_tier === "verified"
-        ? "Verified: ID approved and assessment passed"
-        : "Basic: ID approved",
+      note: trustRung === 3
+        ? "Community Trusted: proven on this device, with a strong track record"
+        : trustRung === 2
+        ? "Skill verified for this device"
+        : technician.badge === "community_trusted" ||
+            technician.badge === "skill_verified"
+        ? "ID verified for this job: not yet skill verified on this device"
+        : "ID verified",
     },
     {
       key: "diagnosis_accuracy",

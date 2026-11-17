@@ -34,7 +34,7 @@
 import { fail, json, preflight } from "../_shared/cors.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 import {
-  CLIENT_TRIP_STAGE,
+  CLIENT_TRIP_STAGES,
   type LegJobRow,
   MIN_SAMPLE_INTERVAL_MS,
   sampleLegEta,
@@ -102,7 +102,8 @@ Deno.serve(async (req: Request) => {
 
     if (error) return fail("Could not list legs", 500, error.message);
 
-    // The client's trips to the workshop (20260929000001), picked up the same
+    // The client's trips to the workshop - collecting (20260929000001) and,
+    // since 20261117000006, dropping off - picked up the same
     // way when their phone goes quiet. A separate query because the test is
     // different: the client's position, and only between "on my way" and
     // "arrived". Folding it into the one above by stage alone would pick up
@@ -111,7 +112,7 @@ Deno.serve(async (req: Request) => {
     const { data: trips, error: tripError } = await db
       .from("job_tracking")
       .select("job_id, eta_sampled_at")
-      .eq("stage", CLIENT_TRIP_STAGE)
+      .in("stage", [...CLIENT_TRIP_STAGES])
       .not("client_trip_started_at", "is", null)
       .is("client_arrived_at", null)
       .not("client_latitude", "is", null)
