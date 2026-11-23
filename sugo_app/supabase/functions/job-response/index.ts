@@ -45,6 +45,7 @@ import {
   recordBookingCancellation,
 } from "../_shared/booking_cooldown.ts";
 import { deviceNoun, firstNameOf, notifyUser } from "../_shared/notify.ts";
+import { declineNotice } from "../_shared/decline_notice.ts";
 import { snapshotServicePath, wasRerouted } from "../_shared/reroute.ts";
 import { isUrgentJob, urgentOfferPush } from "../_shared/urgent.ts";
 import { missingEvidenceMessage } from "../_shared/evidence.ts";
@@ -694,12 +695,11 @@ async function handleDecline(
   const noun = deviceNoun(job.device_type);
 
   if (shortlist.length > 0) {
-    await notifyUser(db, job.client_id, {
-      title: `${technician} can't take this one`,
-      body: `Choose another technician for your ${noun} - your shortlist is ` +
-        "still there.",
-      data: { type: "declined", job_id: job.id },
-    });
+    await notifyUser(
+      db,
+      job.client_id,
+      declineNotice({ jobId: job.id, technician, noun, next: "shortlist" }),
+    );
     return json({
       job_id: job.id,
       declined_match_id: match.id,
@@ -739,14 +739,16 @@ async function handleDecline(
 
   const result = await runMatching(db, job, exclude);
 
-  await notifyUser(db, job.client_id, {
-    title: `${technician} can't take this one`,
-    body: result.matches.length > 0
-      ? `We found more technicians for your ${noun}. Open SUGO to choose one.`
-      : `No other technician is free for your ${noun} right now. Open SUGO ` +
-        "to try again.",
-    data: { type: "declined", job_id: job.id },
-  });
+  await notifyUser(
+    db,
+    job.client_id,
+    declineNotice({
+      jobId: job.id,
+      technician,
+      noun,
+      next: result.matches.length > 0 ? "more" : "none",
+    }),
+  );
 
   return json({
     job_id: job.id,
