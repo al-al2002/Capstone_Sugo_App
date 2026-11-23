@@ -1,3 +1,4 @@
+import '../../onboarding/models/travel_conditions.dart';
 import 'job_enums.dart';
 import 'json_utils.dart';
 import 'problem_catalog.dart';
@@ -162,6 +163,7 @@ class TechnicianProfileDetails {
     this.shopName,
     this.shopLatitude,
     this.shopLongitude,
+    this.howTheyWork,
   });
 
   factory TechnicianProfileDetails.fromJson(Map<String, dynamic> json) {
@@ -197,6 +199,7 @@ class TechnicianProfileDetails {
       shopName: json['shop_name'] as String?,
       shopLatitude: asNullableDouble(json['shop_latitude']),
       shopLongitude: asNullableDouble(json['shop_longitude']),
+      howTheyWork: HowTheyWork.fromJson(json),
     );
   }
 
@@ -229,6 +232,11 @@ class TechnicianProfileDetails {
 
   /// True when we can actually point the client at the workshop.
   bool get hasShopLocation => shopLatitude != null && shopLongitude != null;
+
+  /// The kinds of job they take, and whether they travel in rain or heavy
+  /// traffic (2026-11-23). Null from a server older than migration
+  /// 20261123000002, and the profile then leaves "How they work" out.
+  final HowTheyWork? howTheyWork;
 
   int get reviewCount => technician.reviewCount;
   double get averageRating => technician.rating;
@@ -272,6 +280,42 @@ class TechnicianProfileDetails {
       shopName: shopName,
       shopLatitude: shopLatitude,
       shopLongitude: shopLongitude,
+      howTheyWork: howTheyWork,
     );
   }
+}
+
+/// How a technician works, as their profile shows it (2026-11-23): the kinds
+/// of job they take, and whether they still travel in rain or heavy traffic.
+/// All four are the technician's own answers - the same ones matching uses.
+class HowTheyWork {
+  const HowTheyWork({
+    this.homeService = true,
+    this.shopRepair = true,
+    this.rain,
+    this.traffic,
+  });
+
+  /// Null when the payload predates migration 20261123000002.
+  static HowTheyWork? fromJson(Map<String, dynamic> json) {
+    if (!json.containsKey('offers_home_service') &&
+        !json.containsKey('rain_travel')) {
+      return null;
+    }
+    return HowTheyWork(
+      homeService: json['offers_home_service'] as bool? ?? true,
+      shopRepair: json['offers_shop_repair'] as bool? ?? true,
+      rain: RainTravel.fromWire(json['rain_travel']),
+      traffic: TrafficTravel.fromWire(json['heavy_traffic_travel']),
+    );
+  }
+
+  final bool homeService;
+  final bool shopRepair;
+
+  /// Null: not answered.
+  final RainTravel? rain;
+
+  /// Null: not answered.
+  final TrafficTravel? traffic;
 }

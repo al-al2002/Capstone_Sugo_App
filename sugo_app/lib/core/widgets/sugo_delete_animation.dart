@@ -11,8 +11,16 @@ import '../theme/app_text_styles.dart';
 ///
 /// ## What the person sees
 ///
-/// A black bin: the lid lifts, the request drops in, the lid closes, then a
-/// black tick and "Request deleted". About a second in all.
+/// Their request as a small SUGO task card - white, a blue edge, a cyan dot,
+/// the dashed route line - lifts, tips and drops into a navy-and-white bin
+/// standing on SUGO's soft blue disc. The lid shuts with a little burst of
+/// cyan, blue and orange, the bin settles, and a blue-to-cyan tick (the same
+/// tick the matching checklist uses) ripples in over "Request deleted". About
+/// a second in all.
+///
+/// Redrawn in the brand at the user's request on 2026-11-23 ("make the delete
+/// animation like deleting a task fit on SUGO"). It was black on white since
+/// 2026-09-28, at the client's request then; the timing below is unchanged.
 ///
 /// ## Why it runs *with* the request, not after it
 ///
@@ -22,8 +30,6 @@ import '../theme/app_text_styles.dart';
 /// success early, and a fast one still gets the whole gesture rather than a
 /// flash. If the call fails the dialog closes at once and the error is
 /// rethrown, so the caller's own error handling is unchanged.
-///
-/// Black on white, at the client's request (2026-09-28).
 Future<T> runWithDeleteAnimation<T>(
   BuildContext context,
   Future<T> task, {
@@ -65,7 +71,7 @@ class _DeleteAnimation extends StatefulWidget {
 
 class _DeleteAnimationState extends State<_DeleteAnimation>
     with SingleTickerProviderStateMixin {
-  /// The drop: lid up, request in, lid down, a settle. Assigned in
+  /// The drop: card up, lid up, card in, lid down, burst, settle. Assigned in
   /// [initState], not lazily - see the `late final` trap in
   /// `docs/design-system.md`.
   late final AnimationController _drop;
@@ -77,7 +83,7 @@ class _DeleteAnimationState extends State<_DeleteAnimation>
     super.initState();
     _drop = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1100),
     );
   }
 
@@ -111,12 +117,16 @@ class _DeleteAnimationState extends State<_DeleteAnimation>
 
   @override
   Widget build(BuildContext context) {
+    final bool reduced = AppMotion.reduced(context);
+
     return Center(
       child: Material(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSizes.panelRadius),
+        elevation: 10,
+        shadowColor: AppColors.navy.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AppSizes.sheetRadius),
         child: SizedBox(
-          width: 190,
+          width: 200,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSizes.lg,
@@ -128,11 +138,11 @@ class _DeleteAnimationState extends State<_DeleteAnimation>
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 SizedBox.square(
-                  dimension: 92,
+                  dimension: 100,
                   child: AnimatedSwitcher(
-                    duration: AppMotion.reduced(context)
+                    duration: reduced
                         ? Duration.zero
-                        : const Duration(milliseconds: 260),
+                        : const Duration(milliseconds: 280),
                     transitionBuilder: (Widget child, Animation<double> a) =>
                         ScaleTransition(
                           scale: CurvedAnimation(
@@ -142,18 +152,16 @@ class _DeleteAnimationState extends State<_DeleteAnimation>
                           child: FadeTransition(opacity: a, child: child),
                         ),
                     child: _done
-                        ? const Icon(
-                            Icons.check_circle_rounded,
-                            key: ValueKey<String>('done'),
-                            size: 76,
-                            color: AppColors.textPrimary,
+                        ? _DoneTick(
+                            key: const ValueKey<String>('done'),
+                            reduced: reduced,
                           )
                         : AnimatedBuilder(
                             key: const ValueKey<String>('bin'),
                             animation: _drop,
-                            // Expanded to the 92px square: a CustomPaint with
-                            // no child sizes itself to zero under the
-                            // switcher's loose constraints, and paints nothing.
+                            // Expanded to the square: a CustomPaint with no
+                            // child sizes itself to zero under the switcher's
+                            // loose constraints, and paints nothing.
                             builder: (BuildContext _, Widget? _) =>
                                 SizedBox.expand(
                                   child: CustomPaint(
@@ -170,7 +178,9 @@ class _DeleteAnimationState extends State<_DeleteAnimation>
                     _done ? widget.doneLabel : 'Deleting...',
                     key: ValueKey<bool>(_done),
                     textAlign: TextAlign.center,
-                    style: AppTextStyles.titleSmall,
+                    style: AppTextStyles.titleSmall.copyWith(
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
               ],
@@ -182,35 +192,101 @@ class _DeleteAnimationState extends State<_DeleteAnimation>
   }
 }
 
-/// A bin drawn in black strokes, animated by [t] from 0 to 1.
+/// The finish: SUGO's blue-to-cyan tick, with one ripple off it.
+class _DoneTick extends StatelessWidget {
+  const _DoneTick({super.key, required this.reduced});
+
+  final bool reduced;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget disc = Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[AppColors.secondary, AppColors.cyan],
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.cyan.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Icon(Icons.check_rounded, size: 46, color: Colors.white),
+    );
+
+    return Center(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: reduced ? Duration.zero : const Duration(milliseconds: 650),
+        curve: Curves.easeOutCubic,
+        builder: (BuildContext _, double v, Widget? child) => Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            Transform.scale(
+              scale: 1 + 0.38 * v,
+              child: Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.cyan.withValues(alpha: 0.6 * (1 - v)),
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+            child!,
+          ],
+        ),
+        child: disc,
+      ),
+    );
+  }
+}
+
+/// The task card, the bin and the burst, animated by [t] from 0 to 1.
 ///
-/// | t          | what happens                         |
-/// |------------|--------------------------------------|
-/// | 0.00-0.25  | the lid swings open on its right end |
-/// | 0.15-0.70  | the request drops in, fading as it enters |
-/// | 0.70-0.85  | the lid swings shut                  |
-/// | 0.85-1.00  | the bin gives a small settle         |
+/// | t          | what happens                                        |
+/// |------------|-----------------------------------------------------|
+/// | 0.00-0.16  | the task card lifts and tips back a little          |
+/// | 0.04-0.26  | the lid swings open on its right end                |
+/// | 0.18-0.62  | the card tips forward and drops in, behind the bin's |
+/// |            | front, so it disappears into it                     |
+/// | 0.62-0.78  | the lid swings shut                                 |
+/// | 0.66-0.96  | a burst of cyan, blue and orange off the lid        |
+/// | 0.85-1.00  | the bin gives a small settle                        |
 class _BinPainter extends CustomPainter {
   _BinPainter(this.t);
 
   final double t;
 
-  static const Color _ink = AppColors.textPrimary;
+  static const Color _navy = AppColors.primary;
+  static const Color _blue = AppColors.secondary;
+  static const Color _cyan = AppColors.cyan;
+  static const Color _edge = Color(0xFFC3D2EA);
 
-  double _phase(double start, double end) =>
-      Curves.easeInOut.transform(((t - start) / (end - start)).clamp(0.0, 1.0));
+  double _phase(double start, double end, [Curve curve = Curves.easeInOut]) =>
+      curve.transform(((t - start) / (end - start)).clamp(0.0, 1.0));
 
   @override
   void paint(Canvas canvas, Size size) {
     final double s = size.shortestSide / 100;
     canvas.scale(s);
 
-    final Paint stroke = Paint()
-      ..color = _ink
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
+    // The soft blue disc the bin stands on - SUGO's icon-tile wash.
+    canvas.drawCircle(
+      const Offset(50, 56),
+      44,
+      Paint()..color = AppColors.primarySoft,
+    );
 
     // Settle: a quick squash of the whole bin at the end.
     final double settle = math.sin(_phase(0.85, 1.0) * math.pi) * 0.05;
@@ -220,70 +296,185 @@ class _BinPainter extends CustomPainter {
       ..scale(1 + settle, 1 - settle)
       ..translate(-50, -90);
 
-    // The request, as a small card, dropping in while the lid is up.
-    final double fall = _phase(0.15, 0.70);
-    final double cardOpacity = 1 - _phase(0.55, 0.70);
-    if (fall > 0 && cardOpacity > 0) {
-      final double y = -6 + fall * 62;
-      final Paint card = Paint()
-        ..color = _ink.withValues(alpha: cardOpacity)
-        ..style = PaintingStyle.fill;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(50, y), width: 26, height: 18),
-          const Radius.circular(4),
-        ),
+    // Card first, so the bin's front hides it as it goes in.
+    _card(canvas);
+    _body(canvas);
+    _lid(canvas);
+    canvas.restore();
+
+    _burst(canvas);
+  }
+
+  /// The request, as a small SUGO task card.
+  void _card(Canvas canvas) {
+    final double lift = _phase(0.0, 0.16, Curves.easeOutCubic);
+    final double fall = _phase(0.18, 0.62, Curves.easeInCubic);
+    if (fall >= 1) return;
+
+    final double y = 22 - 8 * lift + 56 * fall;
+    final double angle = -0.14 * lift + 0.5 * fall;
+    final double scale = 1 + 0.06 * lift - 0.22 * fall;
+
+    canvas
+      ..save()
+      ..translate(50, y)
+      ..rotate(angle)
+      ..scale(scale);
+
+    final RRect card = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset.zero, width: 38, height: 26),
+      const Radius.circular(4.5),
+    );
+    canvas
+      ..drawRRect(
+        card.shift(const Offset(0, 2.5)),
+        Paint()
+          ..color = _navy.withValues(alpha: 0.18)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+      )
+      ..drawRRect(card, Paint()..color = Colors.white)
+      ..save()
+      ..clipRRect(card)
+      ..drawRect(const Rect.fromLTWH(-19, -13, 4, 26), Paint()..color = _blue)
+      ..restore()
+      ..drawRRect(
         card,
+        Paint()
+          ..color = _edge
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
       );
-      // Two lines of "text" on the card, cut out in white.
-      final Paint lines = Paint()
-        ..color = Colors.white.withValues(alpha: cardOpacity)
-        ..strokeWidth = 2.4
-        ..strokeCap = StrokeCap.round;
-      canvas
-        ..drawLine(Offset(42, y - 3), Offset(58, y - 3), lines)
-        ..drawLine(Offset(42, y + 3), Offset(53, y + 3), lines);
+
+    // A cyan dot and two lines of "text".
+    canvas.drawCircle(const Offset(-9.5, -6), 2.5, Paint()..color = _cyan);
+    canvas
+      ..drawLine(
+        const Offset(-4.5, -6),
+        const Offset(12, -6),
+        Paint()
+          ..color = _navy
+          ..strokeWidth = 2.6
+          ..strokeCap = StrokeCap.round,
+      )
+      ..drawLine(
+        const Offset(-12, 1),
+        const Offset(7, 1),
+        Paint()
+          ..color = AppColors.textSecondary.withValues(alpha: 0.55)
+          ..strokeWidth = 2.1
+          ..strokeCap = StrokeCap.round,
+      );
+
+    // The route line, in miniature.
+    final Paint dash = Paint()
+      ..color = _blue.withValues(alpha: 0.75)
+      ..strokeWidth = 1.7
+      ..strokeCap = StrokeCap.round;
+    for (double x = -12; x < 11; x += 5) {
+      canvas.drawLine(Offset(x, 7.5), Offset(x + 2.4, 7.5), dash);
     }
 
-    // Body: a tapered bucket with rounded bottom corners.
-    final Path body = Path()
+    canvas.restore();
+  }
+
+  /// A tapered bucket: white, navy outline, blue ribs.
+  void _body(Canvas canvas) {
+    final Path outline = Path()
       ..moveTo(26, 40)
       ..lineTo(31, 84)
       ..quadraticBezierTo(32, 90, 38, 90)
       ..lineTo(62, 90)
       ..quadraticBezierTo(68, 90, 69, 84)
       ..lineTo(74, 40);
-    canvas.drawPath(body, stroke);
+    final Path fill = Path.from(outline)..close();
+
+    canvas
+      ..drawPath(fill, Paint()..color = Colors.white)
+      ..drawPath(
+        outline,
+        Paint()
+          ..color = _navy
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
 
     final Paint ribs = Paint()
-      ..color = _ink
-      ..strokeWidth = 4.5
+      ..color = _blue
+      ..strokeWidth = 3.6
       ..strokeCap = StrokeCap.round;
     canvas
-      ..drawLine(const Offset(42, 52), const Offset(43, 78), ribs)
-      ..drawLine(const Offset(50, 52), const Offset(50, 78), ribs)
-      ..drawLine(const Offset(58, 52), const Offset(57, 78), ribs);
+      ..drawLine(const Offset(41.5, 51), const Offset(42.5, 79), ribs)
+      ..drawLine(const Offset(50, 51), const Offset(50, 79), ribs)
+      ..drawLine(const Offset(58.5, 51), const Offset(57.5, 79), ribs);
+  }
 
-    // Lid: hinged at its right end, swung up and then back down. Clockwise
-    // (positive, with y pointing down) is what lifts the free left end; the
-    // first version turned the other way and swung the lid into the bin.
-    final double open = _phase(0.0, 0.25) * (1 - _phase(0.70, 0.85));
+  /// A solid navy lid, hinged at its right end: up, then back down.
+  /// Clockwise (positive, with y pointing down) lifts the free left end.
+  void _lid(Canvas canvas) {
+    final double open = _phase(0.04, 0.26) * (1 - _phase(0.62, 0.78));
     canvas
       ..save()
-      ..translate(78, 32)
-      ..rotate(0.75 * open)
-      ..translate(-78, -32);
-    final Path lid = Path()
-      ..moveTo(20, 32)
-      ..lineTo(80, 32)
-      ..moveTo(41, 32)
-      ..lineTo(41, 24)
-      ..lineTo(59, 24)
-      ..lineTo(59, 32);
-    canvas
-      ..drawPath(lid, stroke)
-      ..restore()
+      ..translate(78, 33)
+      ..rotate(0.8 * open)
+      ..translate(-78, -33)
+      ..drawRRect(
+        RRect.fromRectAndRadius(
+          const Rect.fromLTRB(20, 29, 80, 37),
+          const Radius.circular(4),
+        ),
+        Paint()..color = _navy,
+      )
+      ..drawPath(
+        Path()
+          ..moveTo(42, 29)
+          ..lineTo(42, 23)
+          ..lineTo(58, 23)
+          ..lineTo(58, 29),
+        Paint()
+          ..color = _navy
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4.5
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      )
+      // A cyan glint along the lid's top edge.
+      ..drawLine(
+        const Offset(26, 31),
+        const Offset(40, 31),
+        Paint()
+          ..color = _cyan.withValues(alpha: 0.85)
+          ..strokeWidth = 1.8
+          ..strokeCap = StrokeCap.round,
+      )
       ..restore();
+  }
+
+  /// A small burst off the lid as it shuts: "gone".
+  void _burst(Canvas canvas) {
+    final double p = _phase(0.66, 0.96, Curves.easeOutCubic);
+    if (p <= 0 || p >= 1) return;
+
+    const List<(double, Color, double)> bits = <(double, Color, double)>[
+      (-2.62, _cyan, 3.0),
+      (-2.15, _blue, 2.4),
+      (-1.75, AppColors.accent, 2.6),
+      (-1.40, _cyan, 2.2),
+      (-0.98, _blue, 2.8),
+      (-0.52, _cyan, 2.4),
+    ];
+    for (final (double angle, Color colour, double radius) in bits) {
+      final double distance = 8 + 24 * p;
+      canvas.drawCircle(
+        Offset(
+          50 + math.cos(angle) * distance,
+          28 + math.sin(angle) * distance,
+        ),
+        radius * (1 - 0.4 * p),
+        Paint()..color = colour.withValues(alpha: 1 - p),
+      );
+    }
   }
 
   @override

@@ -14,7 +14,12 @@ import 'package:flutter/foundation.dart';
 /// frame after a cold start. Nothing is lost in between, and nothing tries to
 /// push a route onto a navigator that is still deciding what it shows.
 class NotificationTap {
-  const NotificationTap({required this.type, this.jobId, this.name});
+  const NotificationTap({
+    required this.type,
+    this.jobId,
+    this.name,
+    this.next,
+  });
 
   factory NotificationTap.fromData(Map<String, dynamic> data) {
     String? text(String key) {
@@ -26,6 +31,7 @@ class NotificationTap {
       type: text('type') ?? 'unknown',
       jobId: text('job_id'),
       name: text('name'),
+      next: text('next'),
     );
   }
 
@@ -39,8 +45,14 @@ class NotificationTap {
   /// The job it is about, when there is one.
   final String? jobId;
 
-  /// The other person's name, sent with messages for the chat's title.
+  /// The other person's name, sent with messages for the chat's title, and
+  /// with `declined` for the pop-up (2026-11-23).
   final String? name;
+
+  /// `declined` only (2026-11-23): what the client can do now - `shortlist`,
+  /// `more` or `none` (see `_shared/decline_notice.ts`). Null from a server
+  /// deployed before it, and the pop-up then uses general wording.
+  final String? next;
 }
 
 class NotificationRouter {

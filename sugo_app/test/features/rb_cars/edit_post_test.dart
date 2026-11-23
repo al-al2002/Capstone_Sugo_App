@@ -223,8 +223,10 @@ void main() {
 
       await tester.tap(find.text('Find technician'));
       await tester.pump();
-      // Past the post, the match and the analysis screen's ~0.7 s finish.
-      for (int i = 0; i < 20; i++) {
+      // Past the letter to the technicians (2.8 s + its fade, since
+      // 2026-11-23), the post, the match and the analysis screen's ~0.7 s
+      // finish.
+      for (int i = 0; i < 52; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(find.text('Choose a technician'), findsOneWidget);

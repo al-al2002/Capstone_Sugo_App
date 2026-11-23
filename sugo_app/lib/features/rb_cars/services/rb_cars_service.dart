@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/supabase_service.dart';
+import '../../../core/utils/network_errors.dart';
 import '../models/job.dart';
 import '../models/job_technician.dart';
 import '../models/job_enums.dart';
@@ -15,10 +16,19 @@ import '../models/technician_profile_details.dart';
 /// Raised when a job cannot be posted or matched. Carries copy that is safe to
 /// show a user, so screens never surface a raw Postgres or Deno message.
 class RbCarsFailure implements Exception {
-  const RbCarsFailure(this.message, {this.detail});
+  const RbCarsFailure(this.message, {this.detail, this.offline = false});
 
   final String message;
   final Object? detail;
+
+  /// The network failed - offline, dropped, too slow - rather than the
+  /// server refusing. Screens offer Retry for these (2026-11-23).
+  final bool offline;
+
+  /// What a client is told when the connection is the problem.
+  static const String offlineMessage =
+      'Your connection is slow or offline. Check your internet, then tap '
+      'Retry.';
 
   @override
   String toString() => 'RbCarsFailure($message)';
@@ -109,8 +119,32 @@ class RbCarsService {
 
       return Job.fromJson(row);
     } on PostgrestException catch (error, stackTrace) {
+      // A retry of a post whose reply was lost on a bad connection
+      // (2026-11-23): the job is already saved, under the id this draft
+      // carries. Read it back rather than fail - and rather than save twice.
+      final String? requestId = draft.requestId;
+      if (error.code == '23505' && requestId != null) {
+        final Map<String, dynamic>? saved = await _client
+            .from('jobs')
+            .select()
+            .eq('id', requestId)
+            .maybeSingle();
+        if (saved != null) return Job.fromJson(saved);
+      }
       _log('postJob', error, stackTrace);
       throw RbCarsFailure(_friendly(error), detail: error);
+    } on RbCarsFailure {
+      rethrow;
+    } catch (error, stackTrace) {
+      _log('postJob', error, stackTrace);
+      if (looksLikeNetworkError(error)) {
+        throw RbCarsFailure(
+          RbCarsFailure.offlineMessage,
+          detail: error,
+          offline: true,
+        );
+      }
+      rethrow;
     }
   }
 
@@ -851,6 +885,7 @@ class RbCarsService {
       throw const RbCarsFailure(
         'Could not reach the matching service. Check your connection and '
         'try again.',
+        offline: true,
       );
     }
   }

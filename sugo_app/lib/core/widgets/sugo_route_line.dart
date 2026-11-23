@@ -69,7 +69,12 @@ class SugoRoutePosition {
 /// real change, so it moves. It never moves on its own, and under "remove
 /// animations" it jumps instead of sliding.
 class SugoRouteLine extends StatelessWidget {
-  const SugoRouteLine({super.key, required this.stops, required this.position});
+  const SugoRouteLine({
+    super.key,
+    required this.stops,
+    required this.position,
+    this.onDark = false,
+  });
 
   /// Stop names, first to last - short words ("Posted", "Matched"). At least
   /// two; checked in [build], because a const constructor cannot read a
@@ -77,6 +82,10 @@ class SugoRouteLine extends StatelessWidget {
   final List<String> stops;
 
   final SugoRoutePosition position;
+
+  /// Drawn on SUGO navy (2026-11-23, the "Choose a technician" header): a
+  /// cyan line and stops, a white marker, white labels.
+  final bool onDark;
 
   /// Diameter of the van marker.
   static const double markerSize = 24;
@@ -143,13 +152,14 @@ class SugoRouteLine extends StatelessWidget {
                               count: stops.length,
                               progress: progress,
                               reached: p.stop,
+                              onDark: onDark,
                             ),
                           ),
                         ),
                         Positioned(
                           left: x - markerSize / 2,
                           top: 0,
-                          child: _Marker(arrived: arrived),
+                          child: _Marker(arrived: arrived, onDark: onDark),
                         ),
                       ],
                     ),
@@ -173,10 +183,15 @@ class SugoRouteLine extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: i == p.stop
                       ? AppTextStyles.micro.copyWith(
-                          color: AppColors.textPrimary,
+                          color: onDark ? Colors.white : AppColors.textPrimary,
                           fontWeight: FontWeight.w800,
                         )
                       : AppTextStyles.micro.copyWith(
+                          color: onDark
+                              ? Colors.white.withValues(
+                                  alpha: i < p.stop ? 0.75 : 0.50,
+                                )
+                              : null,
                           fontWeight: i < p.stop
                               ? FontWeight.w600
                               : FontWeight.w500,
@@ -193,24 +208,33 @@ class SugoRouteLine extends StatelessWidget {
 /// The navy disc: the logo's van while under way, a tick on arrival. The van
 /// faces right, the way the route runs.
 class _Marker extends StatelessWidget {
-  const _Marker({required this.arrived});
+  const _Marker({required this.arrived, this.onDark = false});
 
   final bool arrived;
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: SugoRouteLine.markerSize,
       height: SugoRouteLine.markerSize,
-      decoration: const BoxDecoration(
-        color: AppColors.primary,
+      decoration: BoxDecoration(
+        color: onDark ? Colors.white : AppColors.primary,
         shape: BoxShape.circle,
+        boxShadow: onDark
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: AppColors.cyan.withValues(alpha: 0.55),
+                  blurRadius: 10,
+                ),
+              ]
+            : null,
       ),
       alignment: Alignment.center,
       child: Icon(
         arrived ? Icons.check_rounded : Icons.local_shipping_rounded,
         size: arrived ? 15 : 14,
-        color: Colors.white,
+        color: onDark ? AppColors.primary : Colors.white,
       ),
     );
   }
@@ -221,7 +245,10 @@ class _RoutePainter extends CustomPainter {
     required this.count,
     required this.progress,
     required this.reached,
+    this.onDark = false,
   });
+
+  final bool onDark;
 
   final int count;
 
@@ -245,9 +272,14 @@ class _RoutePainter extends CustomPainter {
     final double end = xAt(count - 1.0);
     final double here = xAt(progress);
 
+    final Color done = onDark ? AppColors.cyan : AppColors.secondary;
+    final Color ahead = onDark
+        ? Colors.white.withValues(alpha: 0.28)
+        : AppColors.border;
+
     // What is still ahead: a dashed hairline.
     final Paint dashed = Paint()
-      ..color = AppColors.border
+      ..color = ahead
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
     for (double x = here; x < end; x += _dash + _gap) {
@@ -264,7 +296,7 @@ class _RoutePainter extends CustomPainter {
         Offset(start, y),
         Offset(here, y),
         Paint()
-          ..color = AppColors.secondary
+          ..color = done
           ..strokeWidth = 2.5
           ..strokeCap = StrokeCap.round,
       );
@@ -274,14 +306,19 @@ class _RoutePainter extends CustomPainter {
     for (int i = 0; i < count; i++) {
       final Offset c = Offset(xAt(i.toDouble()), y);
       if (i <= reached) {
-        canvas.drawCircle(c, _dot / 2, Paint()..color = AppColors.secondary);
+        canvas.drawCircle(c, _dot / 2, Paint()..color = done);
       } else {
-        canvas.drawCircle(c, _dot / 2, Paint()..color = AppColors.surface);
+        // Hollow: on navy the fill is the navy itself, so it reads as a ring.
+        canvas.drawCircle(
+          c,
+          _dot / 2,
+          Paint()..color = onDark ? AppColors.navy : AppColors.surface,
+        );
         canvas.drawCircle(
           c,
           _dot / 2 - 1,
           Paint()
-            ..color = AppColors.border
+            ..color = ahead
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2,
         );
@@ -291,5 +328,8 @@ class _RoutePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RoutePainter old) =>
-      old.progress != progress || old.count != count || old.reached != reached;
+      old.progress != progress ||
+      old.count != count ||
+      old.reached != reached ||
+      old.onDark != onDark;
 }

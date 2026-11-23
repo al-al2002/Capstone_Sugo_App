@@ -28,6 +28,7 @@ class ContextSummary extends StatelessWidget {
     required this.matches,
     this.job,
     this.onLongPress,
+    this.onDark = false,
   });
 
   final List<MatchResult> matches;
@@ -36,6 +37,10 @@ class ContextSummary extends StatelessWidget {
   /// Opens the ranking walkthrough. A long press, so it is there for a demo
   /// without being in a client's way.
   final VoidCallback? onLongPress;
+
+  /// Drawn on SUGO navy - the "Choose a technician" header (2026-11-23):
+  /// frosted chips, cyan for the matching rules.
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
@@ -57,16 +62,21 @@ class ContextSummary extends StatelessWidget {
         children: <Widget>[
           // Sentence case since the Dispatch redesign - see
           // AppTextStyles.overline.
-          const Text(
+          Text(
             'Based on your current situation',
-            style: AppTextStyles.overline,
+            style: onDark
+                ? AppTextStyles.overline.copyWith(
+                    color: Colors.white.withValues(alpha: 0.62),
+                  )
+                : AppTextStyles.overline,
           ),
           const SizedBox(height: AppSizes.sm),
           Wrap(
             spacing: AppSizes.sm,
             runSpacing: AppSizes.sm,
             children: <Widget>[
-              for (final ContextChipData chip in chips) ContextChip(data: chip),
+              for (final ContextChipData chip in chips)
+                ContextChip(data: chip, onDark: onDark),
             ],
           ),
           if (rules.isNotEmpty) ...<Widget>[
@@ -74,12 +84,12 @@ class ContextSummary extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Padding(
-                  padding: EdgeInsets.only(top: 1),
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
                   child: Icon(
                     Icons.tune_rounded,
                     size: 15,
-                    color: AppColors.cyanDark,
+                    color: onDark ? AppColors.cyan : AppColors.cyanDark,
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -88,7 +98,7 @@ class ContextSummary extends StatelessWidget {
                     'Ranking adjusted for: ${rules.join(' · ')}',
                     style: AppTextStyles.micro.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: AppColors.cyanDark,
+                      color: onDark ? AppColors.cyan : AppColors.cyanDark,
                     ),
                   ),
                 ),
@@ -228,30 +238,48 @@ String _capitalise(String text) =>
 
 /// One pill of context. Reusable anywhere a condition needs naming.
 class ContextChip extends StatelessWidget {
-  const ContextChip({super.key, required this.data});
+  const ContextChip({super.key, required this.data, this.onDark = false});
 
   final ContextChipData data;
+
+  /// Frosted, for SUGO navy. The orange of a condition that changed the
+  /// ranking becomes a light amber there, readable on the dark ground.
+  final bool onDark;
+
+  static const Color _amberOnNavy = Color(0xFFFFC56B);
 
   @override
   Widget build(BuildContext context) {
     final bool hot = data.emphasised;
+    final (Color fill, Color edge, Color icon, Color text) = onDark
+        ? (
+            hot
+                ? AppColors.accent.withValues(alpha: 0.18)
+                : Colors.white.withValues(alpha: 0.09),
+            hot
+                ? AppColors.accent.withValues(alpha: 0.45)
+                : Colors.white.withValues(alpha: 0.16),
+            hot ? _amberOnNavy : AppColors.cyan,
+            hot ? _amberOnNavy : Colors.white,
+          )
+        : (
+            hot ? AppColors.accentSofter : AppColors.surface,
+            hot ? AppColors.accentSoft : AppColors.border,
+            hot ? AppColors.accentDark : AppColors.secondary,
+            hot ? AppColors.accentDark : AppColors.textPrimary,
+          );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSizes.md, vertical: 6),
       decoration: BoxDecoration(
-        color: hot ? AppColors.accentSofter : AppColors.surface,
+        color: fill,
         borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-        border: Border.all(
-          color: hot ? AppColors.accentSoft : AppColors.border,
-        ),
+        border: Border.all(color: edge),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
-            data.icon,
-            size: 14,
-            color: hot ? AppColors.accentDark : AppColors.secondary,
-          ),
+          Icon(data.icon, size: 14, color: icon),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -260,7 +288,7 @@ class ContextChip extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: AppTextStyles.micro.copyWith(
                 fontWeight: FontWeight.w700,
-                color: hot ? AppColors.accentDark : AppColors.textPrimary,
+                color: text,
               ),
             ),
           ),

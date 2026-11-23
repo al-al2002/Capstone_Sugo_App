@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/job.dart';
@@ -25,6 +27,9 @@ class MatchProvider extends ChangeNotifier {
 
   final String jobId;
   final RbCarsService _service;
+
+  /// How long each read in [load] may take before it is a connection problem.
+  static const Duration loadTimeout = Duration(seconds: 20);
 
   List<MatchResult> _matches = <MatchResult>[];
   List<ConsideredTechnician> _considered = <ConsideredTechnician>[];
@@ -173,13 +178,17 @@ class MatchProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _job = await _service.jobById(jobId);
-      _matches = await _service.fetchMatches(jobId);
+      // Time-limited (2026-11-23): a read that hangs on a bad connection
+      // would otherwise hold the analysis screen up for ever.
+      _job = await _service.jobById(jobId).timeout(loadTimeout);
+      _matches = await _service.fetchMatches(jobId).timeout(loadTimeout);
       // Reopened from the dashboard, no run on this screen yet: a job with
       // preferences and nobody to show most likely has them to thank. If it
       // does not, the next run says so and this is corrected.
       _preferencesBlocked ??=
           _matches.isEmpty && (_job?.preferences.hasAny ?? false);
+    } on TimeoutException {
+      _error = 'Your connection is slow or offline. Pull down to try again.';
     } on RbCarsFailure catch (failure) {
       _error = failure.message;
     } catch (_) {

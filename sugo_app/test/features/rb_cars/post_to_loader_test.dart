@@ -11,6 +11,7 @@ import 'package:sugo_app/features/rb_cars/models/match_result.dart';
 import 'package:sugo_app/features/rb_cars/providers/job_posting_provider.dart';
 import 'package:sugo_app/features/rb_cars/screens/review_and_post_screen.dart';
 import 'package:sugo_app/features/rb_cars/services/rb_cars_service.dart';
+import 'package:sugo_app/features/rb_cars/widgets/request_send_intro.dart';
 import 'package:sugo_app/features/rb_cars/widgets/technician_matching_loader.dart';
 
 /// "Find technician" must reach the matching animation on the frame it is
@@ -66,18 +67,29 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
+    // Since 2026-11-23 the first animation is the letter to the technicians
+    // (RequestSendIntro); the analysis screen follows it.
     expect(
-      find.byType(TechnicianMatchingLoader),
+      find.byType(RequestSendIntro),
       findsOneWidget,
       reason:
-          'The matching animation should already be running while postJob is '
-          'still in flight, not after it returns.',
+          'An animation should already be running while postJob is still in '
+          'flight, not after it returns.',
     );
     expect(
       h.gate.isCompleted,
       isFalse,
       reason: 'The post is deliberately still open at this point.',
     );
+
+    // The letter plays out (2.8 s) and fades into the analysis screen - with
+    // the post STILL open, so the work really is running underneath both.
+    for (int i = 0; i < 34; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byType(RequestSendIntro), findsNothing);
+    expect(find.byType(TechnicianMatchingLoader), findsOneWidget);
+    expect(h.gate.isCompleted, isFalse);
 
     // The form is gone: this was a pushReplacement, so back does not lead to a
     // second submit of the same draft.
@@ -120,9 +132,115 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('The server said no.'), findsOneWidget);
-    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text("Couldn't finish that"), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
     expect(find.byType(TechnicianMatchingLoader), findsNothing);
+
+    // The letter is cut short rather than finishing over an error.
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(RequestSendIntro), findsNothing);
   });
+
+  // 2026-11-23: a post that hangs on a bad connection used to leave the
+  // client on the analysis screen for ever.
+  testWidgets(
+    'a post that hangs becomes "Connection problem", and Retry brings the '
+    'animation back without posting twice',
+    (WidgetTester tester) async {
+      final _HangingService service = _HangingService();
+      final JobPostingProvider posting = JobPostingProvider(
+        service: service,
+        limits: const PostingTimeLimits(
+          save: Duration(seconds: 5),
+          matching: Duration(seconds: 5),
+        ),
+      );
+      addTearDown(posting.dispose);
+      posting.selectCategory(DeviceCategory.laptop);
+      posting.selectSymptom('laptop_overheating');
+      posting.setLocation(latitude: 7.0731, longitude: 125.6128);
+
+      await pumpReview(tester, posting);
+      await tester.tap(find.text('Find technician'));
+      await tester.pump();
+
+      // Past the 5 s limit: the animation is gone, the pop-up is up.
+      for (int i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Connection problem'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+      expect(
+        find.text("Retrying is safe - your job won't be posted twice."),
+        findsOneWidget,
+      );
+      expect(find.byType(TechnicianMatchingLoader), findsNothing);
+      expect(find.byType(RequestSendIntro), findsNothing);
+      expect(service.postAttempts, 1);
+
+      // Retry: straight back to the analysis screen, not the letter.
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Connection problem'), findsNothing);
+      expect(find.byType(TechnicianMatchingLoader), findsOneWidget);
+      expect(find.byType(RequestSendIntro), findsNothing);
+
+      // The same job id both times, so a first attempt that did reach the
+      // server is found again rather than saved twice.
+      expect(service.postAttempts, 2);
+      expect(service.requestIds.toSet().length, 1);
+      expect(service.requestIds.first, isNotNull);
+
+      // Let the second attempt time out too, so no timer is left running.
+      for (int i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Connection problem'), findsOneWidget);
+    },
+  );
+
+  testWidgets('no internet at all: the pop-up straight away', (
+    WidgetTester tester,
+  ) async {
+    final ({JobPostingProvider posting, Completer<Job> gate}) h = harness();
+    addTearDown(h.posting.dispose);
+
+    await pumpReview(tester, h.posting);
+    await tester.tap(find.text('Find technician'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    h.gate.completeError(
+      const RbCarsFailure(RbCarsFailure.offlineMessage, offline: true),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.text('Connection problem'), findsOneWidget);
+    expect(find.text(RbCarsFailure.offlineMessage), findsOneWidget);
+    expect(find.byType(RequestSendIntro), findsNothing);
+  });
+}
+
+/// A connection that never answers: every post hangs. Records each attempt's
+/// job id, to prove a retry re-uses it.
+class _HangingService implements RbCarsService {
+  int postAttempts = 0;
+  final List<String?> requestIds = <String?>[];
+
+  @override
+  Future<Job> postJob(JobDraft draft) {
+    postAttempts++;
+    requestIds.add(draft.requestId);
+    return Completer<Job>().future;
+  }
+
+  @override
+  Future<List<String>> uploadPhotos(List<XFile> files) async => <String>[];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 const Job _job = Job(

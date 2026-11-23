@@ -223,6 +223,14 @@ class JobDraft {
 
   DeviceType? deviceType;
 
+  /// The new job's id, chosen on the phone before the first save attempt
+  /// and kept for every retry (2026-11-23). If a post reached the server but
+  /// its reply was lost on a bad connection, the retry inserts the same id,
+  /// the database refuses the duplicate, and `RbCarsService.postJob` reads
+  /// the saved job back - so a client tapping Retry never posts twice.
+  /// Only [toInsert] sends it; an edit never changes a job's id.
+  String? requestId;
+
   /// Precise device, from the same vocabulary as
   /// `technician_specializations.device_type` (laptop, desktop, aircon, ...).
   ///
@@ -336,6 +344,9 @@ class JobDraft {
       // database the 20261115 migration has not reached yet.
       if (preferences.hasAny) ...preferences.toColumns(),
       'status': JobStatus.pending.wire,
+      // The id chosen on the phone, when there is one (2026-11-23), so a
+      // retried post finds the job already saved instead of saving it twice.
+      if (requestId != null) 'id': requestId,
     };
   }
 

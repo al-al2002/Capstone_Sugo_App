@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
+import '../../../core/utils/network_errors.dart';
 
 import '../models/device_category.dart';
 import '../models/job.dart';
@@ -23,6 +26,7 @@ class JobPostingProvider extends ChangeNotifier {
     RbCarsService? service,
     CommunityService? communityService,
     this.preselectedTechnicianId,
+    this.limits = const PostingTimeLimits(),
   }) : _service = service ?? RbCarsService(),
        _communityService = communityService ?? CommunityService(),
        editingJob = null;
@@ -34,6 +38,7 @@ class JobPostingProvider extends ChangeNotifier {
     Job job, {
     RbCarsService? service,
     CommunityService? communityService,
+    this.limits = const PostingTimeLimits(),
   }) : _service = service ?? RbCarsService(),
        _communityService = communityService ?? CommunityService(),
        preselectedTechnicianId = null,
@@ -43,6 +48,10 @@ class JobPostingProvider extends ChangeNotifier {
 
   final RbCarsService _service;
   final CommunityService _communityService;
+
+  /// How long each step of [submit] may take before it is given up as a
+  /// connection problem.
+  final PostingTimeLimits limits;
 
   /// The job being edited, or null when posting a new one.
   final Job? editingJob;
@@ -81,12 +90,19 @@ class JobPostingProvider extends ChangeNotifier {
   CommunityPost? _communityPost;
   int _photosFailed = 0;
 
+  bool _connectionProblem = false;
+
   bool get isSubmitting => _isSubmitting;
 
   /// True once the current [submit] has saved the job and moved on to the
   /// matcher. The matching screen's first tick waits for this.
   bool get requestSaved => _requestSaved;
   String? get error => _error;
+
+  /// The last [submit] failed because of the connection - offline, dropped,
+  /// or a step over its time limit - rather than a refusal. The screen then
+  /// shows "Connection problem" with Retry (2026-11-23).
+  bool get connectionProblem => _connectionProblem;
   Job? get postedJob => _postedJob;
   bool get postedToTechnicianCommunity => _communityPostCreated;
   CommunityPost? get communityPost => _communityPost;
@@ -417,20 +433,29 @@ class JobPostingProvider extends ChangeNotifier {
     _isSubmitting = true;
     _requestSaved = false;
     _error = null;
+    _connectionProblem = false;
     notifyListeners();
 
+    // Every step has a time limit (2026-11-23). Without one, a request on a
+    // bad connection could hang for ever and leave the client watching the
+    // analysis screen with nothing happening. Over its limit, a step is a
+    // connection problem: the screen offers Retry, and a retry is safe -
+    // [JobDraft.requestId] stops a lost-reply post from being saved twice.
     try {
       final List<String> uploaded = _photos.isEmpty
           ? const <String>[]
-          : await _service.uploadPhotos(_photos);
+          : await _service.uploadPhotos(_photos).timeout(limits.photos);
       _photosFailed = _photos.length - uploaded.length;
       draft.photoUrls = <String>[..._keptPhotoUrls, ...uploaded];
       final XFile? communityPhoto = _photos.isEmpty ? null : _photos.first;
 
       final Job? existing = _postedJob ?? editingJob;
-      final Job job = existing == null
-          ? await _service.postJob(draft)
-          : await _service.updateJob(existing.id, draft);
+      if (existing == null) draft.requestId ??= newUuidV4();
+      final Job job =
+          await (existing == null
+                  ? _service.postJob(draft)
+                  : _service.updateJob(existing.id, draft))
+              .timeout(limits.save);
       _postedJob = job;
 
       // Saved, and about to be matched. Announced because the matching
@@ -444,16 +469,21 @@ class JobPostingProvider extends ChangeNotifier {
       _keptPhotoUrls = List<String>.of(draft.photoUrls);
       _photos.clear();
 
+      // A new post's question, once - including on a retry after the first
+      // attempt saved the job but lost the question (2026-11-23: that retry
+      // used to skip the question, because the job already existed).
       if (draft.servicePath == ServicePath.itCommunity &&
-          existing == null &&
+          editingJob == null &&
           !_communityPostCreated) {
-        _communityPost = await _communityService.ask(
-          title: 'Help with ${draft.deviceType?.label ?? 'my device'}',
-          body: _communityQuestionBody(),
-          topic: _communityTopic,
-          photo: communityPhoto,
-          sourceJobId: job.id,
-        );
+        _communityPost = await _communityService
+            .ask(
+              title: 'Help with ${draft.deviceType?.label ?? 'my device'}',
+              body: _communityQuestionBody(),
+              topic: _communityTopic,
+              photo: communityPhoto,
+              sourceJobId: job.id,
+            )
+            .timeout(limits.save);
         _communityPostCreated = true;
         _requestSaved = false;
         notifyListeners();
@@ -462,7 +492,9 @@ class JobPostingProvider extends ChangeNotifier {
 
       // Matching runs immediately: the client should land on the review screen
       // with a Top 3 already waiting, not on an empty list.
-      final MatchingRun run = await _service.runMatching(job.id);
+      final MatchingRun run = await _service
+          .runMatching(job.id)
+          .timeout(limits.matching);
 
       // When it found nobody, the engine says which gate emptied the pool -
       // "1 was outside their own service radius" rather than a shrug. Kept
@@ -474,11 +506,19 @@ class JobPostingProvider extends ChangeNotifier {
       _relaxHints = _preferencesBlocked ? run.relaxHints : const <RelaxHint>[];
 
       return job;
+    } on TimeoutException {
+      _connectionProblem = true;
+      _error = RbCarsFailure.offlineMessage;
+      return null;
     } on RbCarsFailure catch (failure) {
+      _connectionProblem = failure.offline;
       _error = failure.message;
       return null;
     } catch (error) {
-      _error = 'Could not post this job. Please try again.';
+      _connectionProblem = looksLikeNetworkError(error);
+      _error = _connectionProblem
+          ? RbCarsFailure.offlineMessage
+          : 'Could not post this job. Please try again.';
       return null;
     } finally {
       _isSubmitting = false;
@@ -510,4 +550,27 @@ class JobPostingProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
   }
+}
+
+/// How long each step of posting may take before it is treated as a
+/// connection problem (2026-11-23). Generous for a phone on mobile data, and
+/// well past the analysis screen's "taking longer than usual" line at 12 s,
+/// so a slow-but-working connection still gets there; a dead one gets
+/// "Connection problem" and Retry instead of an endless wait.
+@immutable
+class PostingTimeLimits {
+  const PostingTimeLimits({
+    this.photos = const Duration(seconds: 45),
+    this.save = const Duration(seconds: 20),
+    this.matching = const Duration(seconds: 30),
+  });
+
+  /// Uploading the new photos, all together.
+  final Duration photos;
+
+  /// Saving the job (insert or edit), or posting the community question.
+  final Duration save;
+
+  /// Running the matcher, which waits on live weather and traffic.
+  final Duration matching;
 }

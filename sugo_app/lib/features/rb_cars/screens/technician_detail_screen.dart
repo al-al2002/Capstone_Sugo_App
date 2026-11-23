@@ -19,6 +19,7 @@ import '../models/technician_profile_details.dart';
 import '../services/rb_cars_service.dart';
 import '../services/technician_directory_service.dart';
 import '../widgets/explainability_chip.dart';
+import '../widgets/how_they_work_card.dart';
 import '../widgets/review_card.dart';
 import '../widgets/score_breakdown_sheet.dart';
 import '../widgets/stat_chip.dart';
@@ -731,6 +732,14 @@ class _Content extends StatelessWidget {
                 ],
               ),
 
+              // How they work (2026-11-23): what they take, and whether they
+              // still come in rain or heavy traffic. Above the tabs, so it is
+              // seen without hunting for it.
+              if (details?.howTheyWork case final HowTheyWork how) ...<Widget>[
+                const SizedBox(height: AppSizes.lg),
+                HowTheyWorkCard(how: how),
+              ],
+
               if (match != null) ...<Widget>[
                 const SizedBox(height: AppSizes.lg),
                 ExplainabilityLine(
@@ -754,7 +763,10 @@ class _Content extends StatelessWidget {
           child: AnimatedBuilder(
             animation: tabs,
             builder: (BuildContext context, Widget? _) => switch (tabs.index) {
-              1 => _AvailabilityTab(technician: technician),
+              1 => _AvailabilityTab(
+                technician: technician,
+                how: details?.howTheyWork,
+              ),
               2 => _ExperienceTab(technician: technician),
               3 => _ReviewsTab(
                 technician: technician,
@@ -928,9 +940,13 @@ class _AboutTab extends StatelessWidget {
 }
 
 class _AvailabilityTab extends StatelessWidget {
-  const _AvailabilityTab({required this.technician});
+  const _AvailabilityTab({required this.technician, this.how});
 
   final Technician technician;
+
+  /// What they actually take. Until 2026-11-23 this tab listed both paths
+  /// for everyone, which was wrong for a technician who takes only one.
+  final HowTheyWork? how;
 
   @override
   Widget build(BuildContext context) {
@@ -956,7 +972,13 @@ class _AvailabilityTab extends StatelessWidget {
           spacing: AppSizes.sm,
           runSpacing: AppSizes.sm,
           children: ServicePath.values
-              .where((ServicePath path) => path != ServicePath.itCommunity)
+              .where(
+                (ServicePath path) => switch (path) {
+                  ServicePath.homeService => how?.homeService ?? true,
+                  ServicePath.pickup => how?.shopRepair ?? true,
+                  ServicePath.itCommunity => false,
+                },
+              )
               .map(
                 (ServicePath path) =>
                     SugoPill.soft(label: path.label, icon: path.icon),

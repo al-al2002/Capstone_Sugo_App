@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
-import '../../../core/theme/app_elevation.dart';
+import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/primary_button.dart';
@@ -12,7 +12,7 @@ import '../../../core/widgets/sugo_delete_animation.dart';
 import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/staggered_entrance.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
-import '../../../core/widgets/sugo_card.dart';
+import '../../../core/widgets/sugo_motion.dart';
 import '../../../core/widgets/sugo_route_line.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
 import '../../bookings/models/booking_route.dart';
@@ -35,6 +35,7 @@ import '../widgets/match_score_card.dart';
 import '../widgets/more_technicians_section.dart';
 import '../widgets/recommendation_reasons_sheet.dart';
 import '../widgets/relax_preferences_panel.dart';
+import '../widgets/request_send_intro.dart';
 import '../widgets/technician_matching_loader.dart';
 import 'matching_walkthrough_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
@@ -109,7 +110,11 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
 
   /// One matching run's clock, shared by the posting loader and the review's
   /// loader so the animation carries straight on when the job is saved.
-  final MatchingSession _session = MatchingSession();
+  MatchingSession _session = MatchingSession();
+
+  /// The last post failed because of the connection (2026-11-23): the
+  /// pop-up says "Connection problem" rather than a generic failure.
+  bool _postOffline = false;
 
   @override
   void initState() {
@@ -131,6 +136,9 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
 
   Future<void> _post() async {
     setState(() {
+      // A retry starts the analysis screen afresh: a new clock, so it does
+      // not open already "taking longer than usual" with the bar at 90%.
+      if (_postError != null) _session = MatchingSession();
       _postError = null;
       _isPosting = true;
     });
@@ -143,7 +151,11 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
     if (job == null) {
       setState(() {
         _postError = draft.error ?? 'Could not post this job.';
+        _postOffline = draft.connectionProblem;
         _isPosting = false;
+        // Retry goes straight back to the analysis screen; the letter has
+        // been sent once already.
+        _sendIntro = false;
       });
       return;
     }
@@ -162,25 +174,84 @@ class _ClientReviewScreenState extends State<ClientReviewScreen> {
     });
   }
 
+  /// The "letter to the technicians" opening (2026-11-23): plays first when
+  /// arriving from Find technician / Save & find technicians, while the save
+  /// runs underneath, then fades into the analysis screen. Not for a
+  /// community post, which has its own screen; cut short by a failed post,
+  /// whose retry matters more than the rest of the letter.
+  late bool _sendIntro =
+      widget.draft != null &&
+      widget.draft!.draft.servicePath != ServicePath.itCommunity;
+
   @override
   Widget build(BuildContext context) {
+    final bool intro = _sendIntro && _postError == null;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 420),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeIn,
+      child: intro
+          ? KeyedSubtree(
+              key: const ValueKey<String>('send-intro'),
+              child: _buildSendIntro(),
+            )
+          : KeyedSubtree(
+              key: const ValueKey<String>('main'),
+              child: _buildMain(context),
+            ),
+    );
+  }
+
+  Widget _buildSendIntro() {
+    final JobPostingProvider posting = widget.draft!;
+    final JobDraft draft = posting.draft;
+    final LaborPrice? labor =
+        draft.deviceType == null || draft.problemSymptom == null
+        ? null
+        : LaborPriceCatalog.forJob(
+            deviceType: draft.deviceType!,
+            symptomCode: draft.problemSymptom!,
+          );
+    final String detail = <String?>[
+      posting.deviceCategory?.label,
+      labor?.fee,
+    ].whereType<String>().join(' · ');
+
+    // Back is refused: the job is still being saved underneath.
+    return PopScope(
+      canPop: false,
+      child: MatchingLoaderScaffold(
+        canGoBack: false,
+        loader: RequestSendIntro(
+          title: labor?.symptom ?? 'Your repair request',
+          detail: detail.isEmpty ? null : detail,
+          editing: posting.isEditing,
+          onDone: () {
+            if (mounted) setState(() => _sendIntro = false);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMain(BuildContext context) {
     final String? jobId = _jobId;
 
     if (jobId == null) {
       // Leaving mid-insert would strand a job nobody is looking at, so the
       // back gesture is refused until the post settles one way or the other.
+      // Offline, too slow, or refused (2026-11-23): the animation goes, and a
+      // pop-up offers Retry - which brings the analysis screen straight back.
       if (_postError != null) {
         return PopScope(
           canPop: !_isPosting,
-          child: Scaffold(
-            appBar: SugoAppBar(
-              title: widget.draft?.draft.servicePath == ServicePath.itCommunity
-                  ? 'Posting to technician community'
-                  : 'Finding your technicians',
-              automaticallyImplyLeading: !_isPosting,
-            ),
-            body: SafeArea(
-              child: _PostFailed(message: _postError!, onRetry: _post),
+          child: MatchingLoaderScaffold(
+            canGoBack: !_isPosting,
+            loader: _PostFailed(
+              message: _postError!,
+              offline: _postOffline,
+              onRetry: _post,
+              onBack: () => Navigator.of(context).maybePop(),
             ),
           ),
         );
@@ -421,41 +492,196 @@ class _TechnicianCommunityPostedView extends StatelessWidget {
   }
 }
 
-/// The job could not be inserted. The draft is still in memory on the provider
-/// below this route, so retrying re-posts it rather than asking the client to
-/// fill the form in again.
+/// The decoration clock for the failure pop-up's backdrop: held still.
+final ValueNotifier<Duration> _stillBackdrop = ValueNotifier<Duration>(
+  const Duration(milliseconds: 1600),
+);
+
+/// The post did not go through: offline, too slow, or refused.
+///
+/// Redesigned 2026-11-23 at the user's request ("if the connection is slow or
+/// the internet is lost, make the animation disappear and pop up a retry
+/// button"): a card pops up over the analysis screen's navy, says what went
+/// wrong, and offers **Retry**, which brings the animation straight back.
+/// The draft is still in memory on the provider below this route, so a retry
+/// re-sends it rather than asking for the form again - and
+/// [JobDraft.requestId] makes sure a post whose reply was lost is never
+/// saved twice.
 class _PostFailed extends StatelessWidget {
-  const _PostFailed({required this.message, required this.onRetry});
+  const _PostFailed({
+    required this.message,
+    required this.offline,
+    required this.onRetry,
+    required this.onBack,
+  });
 
   final String message;
+
+  /// The connection was the problem, not a refusal.
+  final bool offline;
   final VoidCallback onRetry;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return _Centered(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const Icon(Icons.cloud_off_rounded, size: 40, color: AppColors.hint),
-          const SizedBox(height: AppSizes.md),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.subtitle,
+    final bool reduced = AppMotion.reduced(context);
+
+    final Widget card = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
+      child: Material(
+        color: AppColors.surface,
+        elevation: 8,
+        shadowColor: AppColors.navy.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppSizes.sheetRadius + 4),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSizes.xl,
+            AppSizes.xl,
+            AppSizes.xl,
+            AppSizes.lg,
           ),
-          const SizedBox(height: AppSizes.lg),
-          // Blue, matching the posting flow this screen is the end of. It was
-          // orange only because the flow was, and a retry is not an exception
-          // worth spending the accent on.
-          PrimaryButton(label: 'Try again', onPressed: onRetry),
-          const SizedBox(height: AppSizes.sm),
-          TextButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('Back to my job'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Center(
+                child: _ProblemIcon(offline: offline, reduced: reduced),
+              ),
+              const SizedBox(height: AppSizes.lg),
+              Text(
+                offline ? 'Connection problem' : "Couldn't finish that",
+                textAlign: TextAlign.center,
+                style: AppTextStyles.title,
+              ),
+              const SizedBox(height: AppSizes.sm),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              if (offline) ...<Widget>[
+                const SizedBox(height: AppSizes.md),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.md,
+                    vertical: AppSizes.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(AppSizes.tileRadius),
+                  ),
+                  child: const Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.verified_user_rounded,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
+                      SizedBox(width: AppSizes.sm),
+                      Expanded(
+                        child: Text(
+                          "Retrying is safe - your job won't be posted twice.",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSizes.lg),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                label: const Text('Retry'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(AppSizes.buttonHeight),
+                ),
+              ),
+              const SizedBox(height: AppSizes.xs),
+              TextButton(
+                onPressed: onBack,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  minimumSize: const Size.fromHeight(AppSizes.touchTarget),
+                ),
+                child: const Text('Go back'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: MatchingBackdrop(clock: _stillBackdrop)),
+        // Dimmed, like the ground behind any pop-up.
+        Positioned.fill(
+          child: ColoredBox(color: AppColors.navy.withValues(alpha: 0.35)),
+        ),
+        SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSizes.xl),
+              // Pops in: a small spring, the same as SUGO's other pop-ups.
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: reduced
+                    ? Duration.zero
+                    : const Duration(milliseconds: 420),
+                curve: Curves.easeOutBack,
+                builder: (BuildContext _, double v, Widget? child) => Opacity(
+                  opacity: v.clamp(0.0, 1.0),
+                  child: Transform.scale(scale: 0.86 + 0.14 * v, child: child),
+                ),
+                child: card,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// No signal (offline) or a warning (anything else), on a soft disc, with
+/// one shake as it lands.
+class _ProblemIcon extends StatelessWidget {
+  const _ProblemIcon({required this.offline, required this.reduced});
+
+  final bool offline;
+  final bool reduced;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget disc = Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: offline ? AppColors.primarySoft : AppColors.warningSoft,
+        border: Border.all(
+          color: (offline ? AppColors.secondary : AppColors.warning).withValues(
+            alpha: 0.35,
+          ),
+          width: 2,
+        ),
+      ),
+      child: Icon(
+        offline ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
+        size: 38,
+        color: offline ? AppColors.primary : AppColors.warning,
+      ),
+    );
+    return reduced
+        ? disc
+        : SugoWiggle(angle: 0.16, alignment: Alignment.center, child: disc);
   }
 }
 
@@ -695,9 +921,13 @@ class _ClientReviewView extends StatelessWidget {
         if (job != null)
           _JobSummary(
             job: job,
+            matches: matching.matches,
             offerPending: matching.matches.any(
               (MatchResult m) => m.isAwaitingTechnician,
             ),
+            // Long-press the conditions for the ranking walkthrough, for a
+            // demo; debug builds also show a link.
+            onWalkthrough: () => _openWalkthrough(context, matching),
           ),
         // The client's own must-haves, read back where they take effect: the
         // list below is already filtered by them (2026-11-17).
@@ -723,8 +953,40 @@ class _ClientReviewView extends StatelessWidget {
 
         Row(
           children: <Widget>[
+            // How many, as a gradient badge - the number a client wants
+            // first (2026-11-23).
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[AppColors.secondary, AppColors.cyan],
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: AppColors.cyan.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                '${matching.matches.length}',
+                style: const TextStyle(
+                  fontFamily: AppTextStyles.fontFamily,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSizes.md),
             Expanded(
-              // The app bar already says "Recommended technicians"; this line
+              // The app bar already says "Choose a technician"; this line
               // says how many, which is the other thing a client wants to know.
               child: Text(
                 matching.matches.length == 1
@@ -742,25 +1004,6 @@ class _ClientReviewView extends StatelessWidget {
           'technician?” on any card to see the reasons.',
           style: AppTextStyles.subtitle,
         ),
-        const SizedBox(height: AppSizes.lg),
-
-        // The context-aware part, made visible: what the engine saw, and the
-        // matching rules it re-weighted for. Long-press opens the ranking
-        // walkthrough for a demo; debug builds also show a link.
-        ContextSummary(
-          matches: matching.matches,
-          job: job,
-          onLongPress: () => _openWalkthrough(context, matching),
-        ),
-        if (kDebugMode)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _openWalkthrough(context, matching),
-              icon: const Icon(Icons.account_tree_outlined, size: 16),
-              label: const Text('How this was ranked (demo)'),
-            ),
-          ),
         const SizedBox(height: AppSizes.lg),
 
         if (matching.notice != null) ...<Widget>[
@@ -1215,13 +1458,40 @@ class _ConsideredRow extends StatelessWidget {
 /// Since the Dispatch redesign it also carries the booking's route, so the
 /// client sees they are at "Matched" - their turn to choose - and that
 /// "Booked" is the next stop, which is what the Book button does.
+/// The decoration clock for the header's backdrop: held still.
+final ValueNotifier<Duration> _stillHeader = ValueNotifier<Duration>(
+  const Duration(milliseconds: 1600),
+);
+
+/// The header of "Choose a technician": the request, where it is, and what
+/// SUGO saw when it ranked - on SUGO navy.
+///
+/// ## Renovated 2026-11-23
+///
+/// At the user's request ("renovate that UI/UX, make it cool and suitable
+/// for SUGO"). It was a white card with the conditions chips in a separate
+/// block under it. It is now one navy card on the analysis screen's own
+/// twinkling ground (`MatchingBackdrop`), so the results open on the look
+/// the matching screens just played in: the device in a frosted tile, the
+/// route line in white and cyan, frosted pills, and "Based on your current
+/// situation" inside it - long-press it for the ranking walkthrough.
 class _JobSummary extends StatelessWidget {
-  const _JobSummary({required this.job, this.offerPending = false});
+  const _JobSummary({
+    required this.job,
+    required this.matches,
+    this.offerPending = false,
+    this.onWalkthrough,
+  });
 
   final Job job;
+  final List<MatchResult> matches;
 
   /// A technician has been asked and has not answered.
   final bool offerPending;
+
+  /// Opens the ranking walkthrough (a long press on the conditions; debug
+  /// builds also show a link).
+  final VoidCallback? onWalkthrough;
 
   @override
   Widget build(BuildContext context) {
@@ -1235,79 +1505,164 @@ class _JobSummary extends StatelessWidget {
       job.status,
       offerPending: offerPending,
     );
+    final Color soft = Colors.white.withValues(alpha: 0.72);
 
-    return SugoCard(
-      padding: const EdgeInsets.all(AppSizes.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppSizes.sheetRadius + 4),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.28),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Stack(
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Container(
-                width: AppSizes.iconTile,
-                height: AppSizes.iconTile,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppSizes.radius),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Icon(job.deviceType.icon, color: AppColors.primary),
-              ),
-              const SizedBox(width: AppSizes.md),
-              Expanded(
-                child: Column(
+          Positioned.fill(child: MatchingBackdrop(clock: _stillHeader)),
+          Padding(
+            padding: const EdgeInsets.all(AppSizes.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      job.symptomLabel,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.sectionTitle,
+                    Container(
+                      width: AppSizes.iconTile,
+                      height: AppSizes.iconTile,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(AppSizes.radius),
+                        border: Border.all(
+                          color: AppColors.cyan.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Icon(job.deviceType.icon, color: AppColors.cyan),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      <String>[
-                        job.deviceType.label,
-                        if (brand != null && brand.isNotEmpty) brand,
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption,
+                    const SizedBox(width: AppSizes.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            job.symptomLabel,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.sectionTitle.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            <String>[
+                              job.deviceType.label,
+                              if (brand != null && brand.isNotEmpty) brand,
+                            ].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.caption.copyWith(color: soft),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSizes.sm),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(
+                          AppSizes.pillRadius,
+                        ),
+                      ),
+                      child: Text(
+                        job.reference,
+                        style: AppTextStyles.micro.copyWith(
+                          color: soft,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: AppSizes.sm),
-              Text(job.reference, style: AppTextStyles.micro),
-            ],
-          ),
-          if (position != null) ...<Widget>[
-            const SizedBox(height: AppSizes.lg),
-            SugoRouteLine(stops: BookingRoute.stops, position: position),
-          ],
-          const SizedBox(height: AppSizes.lg),
-          Wrap(
-            spacing: AppSizes.sm,
-            runSpacing: AppSizes.sm,
-            children: <Widget>[
-              if (path != null) _MetaPill(icon: path.icon, label: path.label),
-              _MetaPill(icon: Icons.schedule_rounded, label: schedule.label),
-            ],
-          ),
-          const SizedBox(height: AppSizes.md),
-          Row(
-            children: <Widget>[
-              const Icon(Icons.place_rounded, size: 15, color: AppColors.hint),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  job.locationLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.caption,
+                if (position != null) ...<Widget>[
+                  const SizedBox(height: AppSizes.lg),
+                  SugoRouteLine(
+                    stops: BookingRoute.stops,
+                    position: position,
+                    onDark: true,
+                  ),
+                ],
+                const SizedBox(height: AppSizes.lg),
+                Wrap(
+                  spacing: AppSizes.sm,
+                  runSpacing: AppSizes.sm,
+                  children: <Widget>[
+                    if (path != null)
+                      _MetaPill(
+                        icon: path.icon,
+                        label: path.label,
+                        onDark: true,
+                      ),
+                    _MetaPill(
+                      icon: Icons.schedule_rounded,
+                      label: schedule.label,
+                      onDark: true,
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: AppSizes.md),
+                Row(
+                  children: <Widget>[
+                    Icon(Icons.place_rounded, size: 15, color: soft),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        job.locationLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(color: soft),
+                      ),
+                    ),
+                  ],
+                ),
+                if (matches.isNotEmpty) ...<Widget>[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSizes.md),
+                    child: Divider(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ),
+                  // The context-aware part, made visible: what the engine
+                  // saw, and the matching rules it re-weighted for.
+                  ContextSummary(
+                    matches: matches,
+                    job: job,
+                    onLongPress: onWalkthrough,
+                    onDark: true,
+                  ),
+                  if (kDebugMode && onWalkthrough != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: onWalkthrough,
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.cyan,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
+                        icon: const Icon(Icons.account_tree_outlined, size: 16),
+                        label: const Text('How this was ranked (demo)'),
+                      ),
+                    ),
+                ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1533,24 +1888,41 @@ class _PriceLine extends StatelessWidget {
 }
 
 class _MetaPill extends StatelessWidget {
-  const _MetaPill({required this.icon, required this.label});
+  const _MetaPill({
+    required this.icon,
+    required this.label,
+    this.onDark = false,
+  });
 
   final IconData icon;
   final String label;
+
+  /// Frosted, for the navy header.
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: onDark
+            ? Colors.white.withValues(alpha: 0.09)
+            : AppColors.background,
         borderRadius: BorderRadius.circular(AppSizes.pillRadius),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: onDark
+              ? Colors.white.withValues(alpha: 0.16)
+              : AppColors.border,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 14, color: AppColors.primary),
+          Icon(
+            icon,
+            size: 14,
+            color: onDark ? AppColors.cyan : AppColors.primary,
+          ),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -1559,7 +1931,7 @@ class _MetaPill extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: AppTextStyles.micro.copyWith(
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: onDark ? Colors.white : AppColors.textPrimary,
               ),
             ),
           ),
@@ -1621,20 +1993,30 @@ class _EditPostBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-        AppSizes.screenPadding,
-        AppSizes.md,
-        AppSizes.screenPadding,
-        AppSizes.md,
-      ),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.divider)),
-        boxShadow: AppElevation.navBar,
-      ),
-      child: SafeArea(
-        top: false,
+    // A floating tray (2026-11-23): rounded, lifted off the page, rather than
+    // a full-width strip ruled off at the top.
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(
+          AppSizes.screenPadding,
+          0,
+          AppSizes.screenPadding,
+          AppSizes.sm,
+        ),
+        padding: const EdgeInsets.all(AppSizes.sm),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppSizes.sheetRadius),
+          border: Border.all(color: AppColors.border),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: AppColors.navy.withValues(alpha: 0.14),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
         child: Row(
           children: <Widget>[
             Expanded(child: _edit()),

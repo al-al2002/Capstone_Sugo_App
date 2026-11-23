@@ -26,6 +26,7 @@ import '../../community/screens/community_feed_view.dart';
 import '../../help/help_screen.dart';
 import '../../notifications/screens/notification_settings_screen.dart';
 import '../../rb_cars/screens/technician_browse_screen.dart';
+import '../models/client_booking_stats.dart';
 import '../widgets/profile_cover_header.dart';
 import 'profile_setup_screen.dart';
 import 'saved_addresses_screen.dart';
@@ -78,8 +79,10 @@ class _ProfileViewState extends State<ProfileView> {
   Technician? _technician;
   ({int points, int helpfulVotes, int answers})? _reputation;
 
-  /// A client's bookings, for the figures in the header (2026-11-16).
-  ({int total, int completed})? _bookings;
+  /// A client's bookings, for the figures in the header (2026-11-16). Since
+  /// 2026-11-23 only Home Service and Shop Repair jobs count - see
+  /// [ClientBookingStats].
+  ClientBookingStats? _bookings;
 
   @override
   void initState() {
@@ -100,14 +103,7 @@ class _ProfileViewState extends State<ProfileView> {
         (_) => const <Job>[],
       );
       if (!mounted) return;
-      setState(() {
-        _bookings = (
-          total: jobs.length,
-          completed: jobs
-              .where((Job j) => j.status == JobStatus.completed)
-              .length,
-        );
-      });
+      setState(() => _bookings = ClientBookingStats.from(jobs));
       return;
     }
     if (!profile.isTechnician) return;
@@ -355,7 +351,7 @@ class _Hero extends StatelessWidget {
   final SessionProfile? profile;
   final Technician? technician;
   final ({int points, int helpfulVotes, int answers})? reputation;
-  final ({int total, int completed})? bookings;
+  final ClientBookingStats? bookings;
 
   @override
   Widget build(BuildContext context) {
@@ -436,8 +432,8 @@ class _Hero extends StatelessWidget {
   }
 
   List<ProfileStat> _clientStats() {
-    final ({int total, int completed})? b = bookings;
-    final int? active = b == null ? null : b.total - b.completed;
+    final ClientBookingStats? b = bookings;
+    final int? active = b?.active;
     return <ProfileStat>[
       ProfileStat(
         label: 'Bookings',

@@ -51,6 +51,7 @@ import '../../tracking/services/delay_alerts.dart';
 import '../../tracking/services/tracking_service.dart';
 import '../../tracking/widgets/delay_alert_dialog.dart';
 import '../widgets/active_booking_card.dart';
+import '../widgets/declined_alert_dialog.dart';
 import '../widgets/home_header.dart';
 import '../widgets/home_hero_slot.dart';
 import '../widgets/recommended_technicians.dart';
@@ -320,11 +321,10 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
           'Booking confirmed - your technician accepted.',
         );
       case 'declined':
+        // A pop-up, not a snackbar (2026-11-23): the request now waits on
+        // the client, so it holds until read and offers the way forward.
         _loadJobs();
-        UiFeedback.showInfo(
-          context,
-          'Your technician can\'t take this one. Choose another.',
-        );
+        _showDeclined(push);
       case 'rerouted':
         _loadJobs();
         UiFeedback.showInfo(
@@ -353,6 +353,39 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
         'Nobody answered your urgent request yet. Open it to try again.',
       );
     }
+  }
+
+  /// True while the decline pop-up is up, so a second push for the same news
+  /// (FCM can repeat one) does not stack a second pop-up on it.
+  bool _declinedOpen = false;
+
+  /// "Ryan can't take this one" (2026-11-23). Raised from here because this
+  /// screen stays mounted under every other client screen, so it shows over a
+  /// chat or a booking too. The button opens the job where it now stands -
+  /// the shortlist, normally - on top of whatever is showing, the same as
+  /// tapping the push would.
+  Future<void> _showDeclined(NotificationTap push) async {
+    if (_declinedOpen) return;
+    _declinedOpen = true;
+    final bool go = await showDeclinedAlert(
+      context,
+      name: push.name,
+      next: push.next,
+    );
+    _declinedOpen = false;
+
+    final String? jobId = push.jobId;
+    if (!go || jobId == null || !mounted) return;
+    await _openJobById(jobId);
+  }
+
+  /// Fetches a job fresh and opens it where it stands (see [_openJob]).
+  Future<void> _openJobById(String jobId) async {
+    final Job? job = await _service
+        .jobById(jobId)
+        .catchError((Object _) => null);
+    if (job == null || !mounted) return;
+    _openJob(job);
   }
 
   Future<void> _refresh() async {
@@ -477,6 +510,12 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
       case 'completed':
         await _loadJobs();
         await _maybeAskForRating();
+      // "Can't take this one" opens the shortlist, where the next choice is
+      // made, rather than the booking page (2026-11-23).
+      case 'declined':
+        final String? jobId = tap.jobId;
+        if (jobId == null) return;
+        await _openJobById(jobId);
       default:
         final String? jobId = tap.jobId;
         if (jobId == null) return;

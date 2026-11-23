@@ -77,122 +77,155 @@ class MatchScoreCard extends StatelessWidget {
     final Technician? technician = match.technician;
     final bool declined = match.isDeclined;
     final bool away = technician?.isAway ?? false;
+    final bool top = match.isTopPick && !declined;
+
+    final Widget card = SugoCard(
+      margin: top ? null : const EdgeInsets.only(bottom: AppSizes.md),
+      onTap: declined ? null : onTap,
+      // The top pick (2026-11-23): a faint cyan wash fading to white, inside
+      // a glowing blue-to-cyan frame (below) - it reads as the
+      // recommendation before a word is read.
+      gradient: top
+          ? const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[AppColors.cyanSoft, AppColors.surface],
+              stops: <double>[0, 0.45],
+            )
+          : null,
+      elevation: top ? SugoElevation.flat : null,
+      borderColor: top
+          ? null
+          : highlighted
+          // The text orange as a 1.5px edge: the bright one is 2.1:1
+          // against white, too faint to mark anything.
+          ? AppColors.accentDark
+          : null,
+      borderWidth: highlighted ? 1.5 : 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // A Wrap, not a Row with a Spacer: on a 320dp phone at large text
+          // the rank and the vacation label do not fit on one line.
+          Wrap(
+            spacing: AppSizes.sm,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              _RankLine(match: match, declined: declined),
+              // A label, not a reason to hide them: the matcher still ranks
+              // a technician on vacation, and the client should see who
+              // they cannot have and why.
+              if (away)
+                SugoPill.badge(
+                  label: 'On vacation',
+                  icon: Icons.beach_access_rounded,
+                  tint: AppColors.accentSofter,
+                  foreground: AppColors.accentDark,
+                )
+              // Still bookable - the client can wait for them - but they
+              // should know before they choose (2026-09-29).
+              else if (technician?.isBusy ?? false)
+                SugoPill.badge(
+                  label: 'On a job now',
+                  icon: Icons.handyman_rounded,
+                  tint: AppColors.warningSoft,
+                  foreground: AppColors.warning,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.md),
+
+          _Identity(technician: technician),
+          const SizedBox(height: AppSizes.md),
+
+          // The client's preferences as bars (2026-11-17), in the same
+          // form as Match and Acceptance below: one row per preference
+          // they set, filled by how well this technician fits it.
+          if (preferences?.hasAny ?? false) ...<Widget>[
+            _PreferenceBars(
+              bars: preferenceBars(
+                preferences!,
+                distanceKm:
+                    match.breakdown.context.distanceKm ??
+                    technician?.distanceKm,
+                rating: technician?.rating,
+                trustForJob: technician?.trustBadgeForJob,
+                skillPercent: match.breakdown.skillPercent,
+                away: technician?.isAway ?? false,
+                busy: technician?.isBusy ?? false,
+              ),
+              muted: declined,
+            ),
+            const SizedBox(height: AppSizes.md),
+          ],
+
+          _TechnicianFacts(
+            technician: technician,
+            distanceLabel: match.breakdown.context.distanceLabel,
+          ),
+          const SizedBox(height: AppSizes.md),
+
+          _NowRow(match: match, technician: technician),
+          const SizedBox(height: AppSizes.md),
+
+          ScoreIndicator(
+            label: 'Match',
+            percent: match.suitabilityPercent,
+            qualifier: suitabilityQualifier(match.suitabilityPercent),
+            muted: declined,
+          ),
+          const SizedBox(height: AppSizes.sm),
+          ScoreIndicator(
+            label: 'Acceptance',
+            percent: match.acceptancePercent,
+            qualifier: acceptanceQualifier(match.acceptancePercent),
+            muted: declined,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${suitabilityQualifier(match.suitabilityPercent)} · '
+            '${acceptanceQualifier(match.acceptancePercent).toLowerCase()} '
+            'of accepting',
+            style: AppTextStyles.micro.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppColors.cyanDark,
+            ),
+          ),
+
+          _Reasons(reasons: match.breakdown.reasons),
+
+          if (onWhyTap != null && !declined) _WhyLink(onTap: onWhyTap!),
+
+          ..._footer(technician),
+        ],
+      ),
+    );
 
     return Opacity(
       opacity: declined ? 0.55 : 1,
-      child: SugoCard(
-        margin: const EdgeInsets.only(bottom: AppSizes.md),
-        onTap: declined ? null : onTap,
-        // The top pick gets a faint wash as well as its cyan edge, so it
-        // reads as the recommendation before a word is read.
-        background: match.isTopPick && !declined ? AppColors.cyanSoft : null,
-        borderColor: match.isTopPick && !declined
-            ? AppColors.cyan
-            : highlighted
-            // The text orange as a 1.5px edge: the bright one is 2.1:1
-            // against white, too faint to mark anything.
-            ? AppColors.accentDark
-            : null,
-        borderWidth: match.isTopPick || highlighted ? 1.5 : 1,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            // A Wrap, not a Row with a Spacer: on a 320dp phone at large text
-            // the rank and the vacation label do not fit on one line.
-            Wrap(
-              spacing: AppSizes.sm,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[
-                _RankLine(match: match, declined: declined),
-                // A label, not a reason to hide them: the matcher still ranks
-                // a technician on vacation, and the client should see who
-                // they cannot have and why.
-                if (away)
-                  SugoPill.badge(
-                    label: 'On vacation',
-                    icon: Icons.beach_access_rounded,
-                    tint: AppColors.accentSofter,
-                    foreground: AppColors.accentDark,
-                  )
-                // Still bookable - the client can wait for them - but they
-                // should know before they choose (2026-09-29).
-                else if (technician?.isBusy ?? false)
-                  SugoPill.badge(
-                    label: 'On a job now',
-                    icon: Icons.handyman_rounded,
-                    tint: AppColors.warningSoft,
-                    foreground: AppColors.warning,
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppSizes.md),
-
-            _Identity(technician: technician),
-            const SizedBox(height: AppSizes.md),
-
-            // The client's preferences as bars (2026-11-17), in the same
-            // form as Match and Acceptance below: one row per preference
-            // they set, filled by how well this technician fits it.
-            if (preferences?.hasAny ?? false) ...<Widget>[
-              _PreferenceBars(
-                bars: preferenceBars(
-                  preferences!,
-                  distanceKm:
-                      match.breakdown.context.distanceKm ??
-                      technician?.distanceKm,
-                  rating: technician?.rating,
-                  trustForJob: technician?.trustBadgeForJob,
-                  skillPercent: match.breakdown.skillPercent,
-                  away: technician?.isAway ?? false,
-                  busy: technician?.isBusy ?? false,
+      child: top
+          ? Container(
+              margin: const EdgeInsets.only(bottom: AppSizes.md),
+              padding: const EdgeInsets.all(1.8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppSizes.radius + 1.8),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[AppColors.secondary, AppColors.cyan],
                 ),
-                muted: declined,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: AppColors.cyan.withValues(alpha: 0.30),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSizes.md),
-            ],
-
-            _TechnicianFacts(
-              technician: technician,
-              distanceLabel: match.breakdown.context.distanceLabel,
-            ),
-            const SizedBox(height: AppSizes.md),
-
-            _NowRow(match: match, technician: technician),
-            const SizedBox(height: AppSizes.md),
-
-            ScoreIndicator(
-              label: 'Match',
-              percent: match.suitabilityPercent,
-              qualifier: suitabilityQualifier(match.suitabilityPercent),
-              muted: declined,
-            ),
-            const SizedBox(height: AppSizes.sm),
-            ScoreIndicator(
-              label: 'Acceptance',
-              percent: match.acceptancePercent,
-              qualifier: acceptanceQualifier(match.acceptancePercent),
-              muted: declined,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${suitabilityQualifier(match.suitabilityPercent)} · '
-              '${acceptanceQualifier(match.acceptancePercent).toLowerCase()} '
-              'of accepting',
-              style: AppTextStyles.micro.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppColors.cyanDark,
-              ),
-            ),
-
-            _Reasons(reasons: match.breakdown.reasons),
-
-            if (onWhyTap != null && !declined) _WhyLink(onTap: onWhyTap!),
-
-            ..._footer(technician),
-          ],
-        ),
-      ),
+              child: card,
+            )
+          : card,
     );
   }
 
