@@ -11,10 +11,10 @@ import 'explainability_chip.dart';
 ///
 /// Opens from "See how the score was worked out" at the foot of the "Why this
 /// technician?" sheet, and shows every stage factor by factor, with each
-/// factor's own score and the weight it carries - and, on a version 2 row, the
-/// matching rules that re-weighted them and the Stage 3 recommendation. This
-/// is the screen that answers a defence panel's "how did it decide?" - it is
-/// the `score_breakdown` jsonb, rendered.
+/// factor's own score and the weight it carries - and, from version 2 on, the
+/// matching rules that re-weighted them and the final score (Table 10 since
+/// version 3). This is the screen that answers a defence panel's "how did it
+/// decide?" - it is the `score_breakdown` jsonb, rendered.
 class ScoreBreakdownSheet extends StatelessWidget {
   const ScoreBreakdownSheet({super.key, required this.match});
 
@@ -78,9 +78,9 @@ class ScoreBreakdownSheet extends StatelessWidget {
                     ? 'SUGO scored every available technician on two '
                           'stages. Here is the whole calculation for this one.'
                     : 'SUGO checked the conditions, chose its matching '
-                          'rules, then scored every available technician in '
-                          'three stages. Here is the whole calculation for '
-                          'this one.',
+                          'rules, scored skill relevance and acceptance '
+                          'likelihood, then combined them into the final '
+                          'score. Here is the whole calculation for this one.',
                 style: AppTextStyles.subtitle,
               ),
               const SizedBox(height: AppSizes.xl),
@@ -95,20 +95,23 @@ class ScoreBreakdownSheet extends StatelessWidget {
               ],
 
               _StageBlock(
-                title: 'Stage 1 - Suitability',
+                title: 'Stage 1 - Skill relevance',
                 blurb:
-                    'Can they fix this device, for this symptom? Skills, '
-                    'specialisation and their track record on the same repair.',
+                    'Can they fix this device, for this symptom? Their '
+                    'assessed brand and device match, skills, diagnosis '
+                    'record on the same repair, and tier.',
                 weightLabel: _shareLabel(recommendation, 'suitability', 60),
                 stage: breakdown.stage1,
               ),
               const SizedBox(height: AppSizes.lg),
 
               _StageBlock(
-                title: 'Stage 2 - Acceptance',
+                title: 'Stage 2 - Acceptance likelihood',
                 blurb:
-                    'Will they take it and turn up? Budget, current workload, '
-                    'urgency, plus live traffic and weather at your location.',
+                    'Will they take it and turn up? Travel time in live '
+                    'traffic, current workload, whether the fixed price suits '
+                    'their rate, their service area, and whether they said '
+                    'they travel in the current rain and traffic.',
                 weightLabel: _shareLabel(recommendation, 'acceptance', 40),
                 stage: breakdown.stage2,
               ),
@@ -116,11 +119,10 @@ class ScoreBreakdownSheet extends StatelessWidget {
 
               if (recommendation != null) ...<Widget>[
                 _StageBlock(
-                  title: 'Stage 3 - Recommendation',
+                  title: 'Final score',
                   blurb:
-                      'Of the qualified, who fits this client and this moment? '
-                      'Both stages above, plus fit to current conditions, your '
-                      'own history with them, and their track record.',
+                      'Both stages above, plus their client rating, whether '
+                      'they can be booked, and their trust badge.',
                   weightLabel: 'This is the score the list is ranked by',
                   stage: recommendation,
                 ),
@@ -137,9 +139,9 @@ class ScoreBreakdownSheet extends StatelessWidget {
   }
 }
 
-/// "45% of the recommendation score" - read from the stored weights, so it
-/// is always the weight actually applied, rules included. A version 1 row
-/// falls back to the old fixed split it was scored with.
+/// "45% of the final score" - read from the stored weights, so it is always
+/// the weight actually applied, rules included. A version 1 row falls back to
+/// the old fixed split it was scored with.
 String _shareLabel(
   RecommendationStage? recommendation,
   String key,
@@ -148,10 +150,10 @@ String _shareLabel(
   if (recommendation == null) return '$legacyPercent% of the final score';
   for (final ScoreFactor f in recommendation.factors) {
     if (f.key == key) {
-      return '${(f.weight * 100).round()}% of the recommendation score';
+      return '${(f.weight * 100).round()}% of the final score';
     }
   }
-  return 'Part of the recommendation score';
+  return 'Part of the final score';
 }
 
 /// The matching rules that fired, and what each one changed.
@@ -224,26 +226,43 @@ String _multiplier(double m) =>
     m == m.roundToDouble() ? m.toStringAsFixed(0) : m.toStringAsFixed(1);
 
 /// A factor key as a person would say it. Shared with the ranking walkthrough.
+///
+/// The names match the paper's Tables 10 and 11 (version 3, 2026-11-22). The
+/// keys below the gap are from version 2 rows, still read for older jobs.
 String factorDisplayName(String key) => switch (key) {
-  'proximity' => 'Distance',
+  // Table 10 - the final score.
+  'suitability' => 'Skill relevance',
+  'acceptance' => 'Acceptance likelihood',
+  'rating' => 'User rating',
   'availability' => 'Availability',
-  'weather' => 'Weather',
-  'traffic' => 'Traffic',
-  'workload' => 'Workload',
-  'urgency_path' => 'Urgency fit',
-  'budget_fit' => 'Budget fit',
-  'client_trust' => 'Client reliability',
+  'trust_badge' => 'Trust badge',
+  // Table 11 - acceptance likelihood.
+  'travel_burden' => 'Travel burden',
+  'workload' => 'Current workload',
+  'price_fit' => 'Price fit',
+  'coverage_fit' => 'Coverage fit',
+  // Since 2026-11-22 it uses the technician's own answer to "will you
+  // travel in rain / heavy traffic?". Rows saved earlier that day carry the
+  // old key and keep the old name.
+  'conditions_readiness' => 'Weather & traffic readiness',
+  'weather_readiness' => 'Weather readiness',
+  // Stage 1 - skill relevance.
   'specialization' => 'Brand and device match',
   'skill_tag' => 'Skill match',
   'tier' => 'Tier',
-  'verification_tier' => 'Trust badge',
   'diagnosis_accuracy' => 'Diagnosis accuracy',
-  'rating' => 'Client rating',
+
+  // Version 2 keys.
+  'proximity' => 'Distance',
+  'weather' => 'Weather',
+  'traffic' => 'Traffic',
+  'urgency_path' => 'Urgency fit',
+  'budget_fit' => 'Budget fit',
+  'client_trust' => 'Client reliability',
+  'verification_tier' => 'Trust badge',
   'context_fit' => 'Fit to conditions',
   'client_preference' => 'Your history with them',
   'technician_performance' => 'Track record',
-  'acceptance' => 'Acceptance',
-  'suitability' => 'Suitability',
   _ => key.replaceAll('_', ' '),
 };
 
@@ -264,7 +283,7 @@ class _ScoreSummary extends StatelessWidget {
       child: Row(
         children: <Widget>[
           _ScoreCell(
-            label: 'Suitability',
+            label: 'Skill relevance',
             value: match.breakdown.stage1.percent,
             color: AppColors.primary,
           ),
@@ -276,14 +295,12 @@ class _ScoreSummary extends StatelessWidget {
             // orange is 2.1:1 on white.
             color: AppColors.accentDark,
           ),
-          // An arrow rather than "=": on a version 2 row the recommendation
-          // also weighs conditions, history and track record, so it is not
-          // the sum of the two cells beside it.
+          // An arrow rather than "=": the final score also weighs rating,
+          // availability and the trust badge, so it is not the sum of the two
+          // cells beside it.
           const _Times(symbol: '→'),
           _ScoreCell(
-            label: match.breakdown.recommendation == null
-                ? 'Final'
-                : 'Recommendation',
+            label: 'Final',
             value: match.scorePercent,
             color: AppColors.cyanDark,
             emphasised: true,

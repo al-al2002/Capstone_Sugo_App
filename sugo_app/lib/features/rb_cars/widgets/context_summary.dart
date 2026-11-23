@@ -131,9 +131,18 @@ List<ContextChipData> contextChipsFor(List<MatchResult> matches, Job? job) {
   if (weather != null && weather.isNotEmpty) {
     final bool rain =
         signals.contains('rain') || (ctx.weatherSeverity ?? 0) >= 0.5;
+    // Heavy rain or a thunderstorm (severity 0.85+, the engine's
+    // `heavy_rain` signal) gets its own icon: it re-weights the ranking
+    // harder than ordinary rain, and the chip should look like it.
+    final bool heavy =
+        signals.contains('heavy_rain') || (ctx.weatherSeverity ?? 0) >= 0.85;
     chips.add(
       ContextChipData(
-        icon: rain ? Icons.water_drop_rounded : Icons.wb_sunny_outlined,
+        icon: heavy
+            ? Icons.thunderstorm_rounded
+            : rain
+            ? Icons.water_drop_rounded
+            : Icons.wb_sunny_outlined,
         label: _capitalise(weather),
         emphasised: rain,
       ),

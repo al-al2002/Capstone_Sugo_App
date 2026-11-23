@@ -12,6 +12,8 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/ui_feedback.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
+import '../../onboarding/models/travel_conditions.dart';
+import '../../onboarding/widgets/travel_conditions_section.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../rb_cars/widgets/location_picker_map.dart';
 import '../services/profile_setup_service.dart';
@@ -59,6 +61,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   bool _homeService = true;
   bool _shopRepair = true;
 
+  /// Rain and heavy traffic (2026-11-22). Null for a technician who
+  /// registered before the question existed; they can answer here.
+  RainTravel? _rainTravel;
+  TrafficTravel? _trafficTravel;
+
   bool _loadingWorkshop = true;
   bool _saving = false;
 
@@ -91,6 +98,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       _shopLng = workshop?.longitude;
       _homeService = workshop?.homeService ?? true;
       _shopRepair = workshop?.shopRepair ?? true;
+      _rainTravel = workshop?.rainTravel;
+      _trafficTravel = workshop?.trafficTravel;
       _loadingWorkshop = false;
     });
   }
@@ -144,6 +153,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         shopLongitude: skip ? null : _shopLng,
         homeService: skip || !_isTechnician ? null : _homeService,
         shopRepair: skip || !_isTechnician ? null : _shopRepair,
+        rainTravel: skip || !_isTechnician ? null : _rainTravel,
+        trafficTravel: skip || !_isTechnician ? null : _trafficTravel,
         isTechnician: _isTechnician,
         markComplete: widget.isFirstRun,
       );
@@ -304,6 +315,16 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 subtitle: const Text(
                   'The unit comes to your workshop: dropped off or collected.',
                 ),
+              ),
+              const SizedBox(height: AppSizes.lg),
+              TravelConditionsSection(
+                rain: _rainTravel,
+                traffic: _trafficTravel,
+                enabled: !_saving && !_loadingWorkshop,
+                onRainChanged: (RainTravel v) =>
+                    setState(() => _rainTravel = v),
+                onTrafficChanged: (TrafficTravel v) =>
+                    setState(() => _trafficTravel = v),
               ),
               const SizedBox(height: AppSizes.lg),
               const Text(

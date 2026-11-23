@@ -6,8 +6,10 @@ import '../../../core/theme/app_motion.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/sugo_motion.dart';
 import '../models/client_onboarding_models.dart';
+import '../models/travel_conditions.dart';
 import 'location_pin_step.dart';
 import 'onboarding_step_intro.dart';
+import 'travel_conditions_section.dart';
 
 /// "What work do you take?" - the technician's kind of work (2026-11-17).
 ///
@@ -23,6 +25,10 @@ import 'onboarding_step_intro.dart';
 /// Shop Repair needs the shop's location - clients bringing a unit in are
 /// routed there, and the delivery fee is measured from it - so picking it
 /// opens the shop's name and a map right here.
+///
+/// Since 2026-11-22 the step also asks whether they still travel in the rain
+/// and in heavy traffic ([TravelConditionsSection]). Both are required to
+/// continue; matching uses them on rainy or jammed days.
 class WorkTypeStep extends StatefulWidget {
   const WorkTypeStep({
     super.key,
@@ -34,6 +40,10 @@ class WorkTypeStep extends StatefulWidget {
     required this.onShopPlaceChanged,
     required this.shopName,
     required this.onShopNameChanged,
+    required this.rainTravel,
+    required this.trafficTravel,
+    required this.onRainTravelChanged,
+    required this.onTrafficTravelChanged,
     this.autoLocate = true,
   });
 
@@ -41,6 +51,11 @@ class WorkTypeStep extends StatefulWidget {
   final bool shopRepair;
   final ValueChanged<bool> onHomeServiceChanged;
   final ValueChanged<bool> onShopRepairChanged;
+
+  final RainTravel? rainTravel;
+  final TrafficTravel? trafficTravel;
+  final ValueChanged<RainTravel> onRainTravelChanged;
+  final ValueChanged<TrafficTravel> onTrafficTravelChanged;
 
   final GeoPlace? shopPlace;
   final ValueChanged<GeoPlace> onShopPlaceChanged;
@@ -168,6 +183,19 @@ class _WorkTypeStepState extends State<WorkTypeStep> {
             ),
           ),
         ],
+
+        // Rain and traffic (2026-11-22): asked of everyone, since a Shop
+        // Repair technician who collects and returns units travels too.
+        const SizedBox(height: AppSizes.xl),
+        SugoRiseIn(
+          delay: AppMotion.staggerDelay(3),
+          child: TravelConditionsSection(
+            rain: widget.rainTravel,
+            traffic: widget.trafficTravel,
+            onRainChanged: widget.onRainTravelChanged,
+            onTrafficChanged: widget.onTrafficTravelChanged,
+          ),
+        ),
       ],
     );
   }

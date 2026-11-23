@@ -8,7 +8,7 @@
 ///
 /// ```json
 /// {
-///   "version": 2,
+///   "version": 3,
 ///   "stage1": { "score": 0.82, "factors": [ ... ] },
 ///   "stage2": { "score": 0.71, "factors": [ ... ] },
 ///   "recommendation": {
@@ -23,6 +23,11 @@
 ///   "explainability": ["5 similar repairs", "2.1 km away", "Available today"]
 /// }
 /// ```
+///
+/// Version 3 (2026-11-22) matches the paper: `stage1` is Skill relevance,
+/// `stage2` is Table 11 (Acceptance likelihood) and `recommendation` is
+/// Table 10's final score. Only the factor keys inside the stages changed, so
+/// version 2 rows - saved before then - still read the same way.
 ///
 /// Version 1 rows - written before 2026-09-27, or by a matcher that has not
 /// been redeployed - have no `recommendation`. Everything below reads them
@@ -115,7 +120,7 @@ class ScoreStage {
 ///
 /// Written by the engine from a recorded number - see `scoring/reasons.ts` -
 /// never composed on the phone. A caveat is something the client should know
-/// before booking: a vacation, a rate above their budget.
+/// before booking: a vacation, a service area they are outside of.
 class RecommendationReason {
   const RecommendationReason({
     required this.code,
@@ -200,6 +205,7 @@ class RecommendationStage extends ScoreStage {
     this.signals = const <String>[],
     this.rules = const <AppliedRule>[],
     this.reasons = const <RecommendationReason>[],
+    this.previousTechnician = false,
   });
 
   factory RecommendationStage.fromJson(Map<String, dynamic> json) {
@@ -221,11 +227,16 @@ class RecommendationStage extends ScoreStage {
           .map(RecommendationReason.fromJson)
           .where((RecommendationReason r) => r.text.isNotEmpty)
           .toList(growable: false),
+      previousTechnician: json['previous_technician'] == true,
     );
   }
 
-  /// Conditions that held: `urgent`, `rain`, `heavy_traffic`, `on_site`,
-  /// `appliance`, `technology`.
+  /// Moved to the top by Step 5, Previous Provider Priority (2026-11-22):
+  /// the client booked this technician before. The score is unchanged.
+  final bool previousTechnician;
+
+  /// Conditions that held: `urgent`, `rain`, `heavy_rain` (always with
+  /// `rain`), `heavy_traffic`, `on_site`, `appliance`, `technology`.
   final List<String> signals;
   final List<AppliedRule> rules;
   final List<RecommendationReason> reasons;
@@ -244,7 +255,6 @@ class MatchContext {
     this.diagnosisAccuracy,
     this.workload,
     this.isColdStart = false,
-    this.budgetFit,
     this.trafficLabel,
     this.congestion,
     this.weatherLabel,
@@ -252,7 +262,7 @@ class MatchContext {
     this.tempC,
     this.urgency,
     this.servicePath,
-    this.indicativeQuote,
+    this.fixedPricePhp,
   });
 
   factory MatchContext.fromJson(Map<String, dynamic>? json) {
@@ -270,7 +280,6 @@ class MatchContext {
       diagnosisAccuracy: asNullableDouble(json['diagnosis_accuracy']),
       workload: asNullableInt(json['workload']),
       isColdStart: json['is_cold_start'] as bool? ?? false,
-      budgetFit: asNullableDouble(json['budget_fit']),
       trafficLabel: traffic['label'] as String?,
       congestion: asNullableDouble(traffic['congestion']),
       weatherLabel: weather['label'] as String?,
@@ -278,7 +287,7 @@ class MatchContext {
       tempC: asNullableDouble(weather['temp_c']),
       urgency: json['urgency'] as String?,
       servicePath: json['service_path'] as String?,
-      indicativeQuote: asNullableDouble(json['indicative_quote_php']),
+      fixedPricePhp: asNullableInt(json['fixed_price_php']),
     );
   }
 
@@ -288,7 +297,6 @@ class MatchContext {
   final double? diagnosisAccuracy;
   final int? workload;
   final bool isColdStart;
-  final double? budgetFit;
   final String? trafficLabel;
   final double? congestion;
   final String? weatherLabel;
@@ -301,9 +309,10 @@ class MatchContext {
   /// `home_service`, `pickup` or `it_community`.
   final String? servicePath;
 
-  /// The tier rate times a typical job length, in PHP. An estimate the engine
-  /// compared with the budget - not a price anyone agreed to.
-  final double? indicativeQuote;
+  /// The fixed price Price fit compared with the technician's tier minimum:
+  /// the labor fee, plus the urgent fee when the job is needed today. Null on
+  /// rows saved before version 3, and when the job has no single price.
+  final int? fixedPricePhp;
 
   String? get distanceLabel {
     final double? km = distanceKm;

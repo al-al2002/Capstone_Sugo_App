@@ -6,6 +6,7 @@ import '../../../core/services/supabase_service.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../technician/models/assessment.dart';
 import '../models/specialization_catalog.dart';
+import '../models/travel_conditions.dart';
 import '../models/verification_document.dart';
 
 /// One assessment a technician still has to sit, or has already sat.
@@ -510,11 +511,13 @@ class TechnicianRegistrationService {
 
   // ------------------------------------------------------------ work type
 
-  /// The work this technician takes, and their shop (2026-11-17).
+  /// The work this technician takes, their shop, and whether they travel in
+  /// rain and heavy traffic (2026-11-17, travel 2026-11-22).
   ///
-  /// The columns default to both (20261117000007), so "both, with no shop
-  /// pinned" is what an untouched row looks like - the controller reads that
-  /// as "not chosen yet".
+  /// The work columns default to both (20261117000007), so "both, with no
+  /// shop pinned" is what an untouched row looks like - the controller reads
+  /// that as "not chosen yet". The travel columns have no default: null is
+  /// "not answered".
   Future<
     ({
       bool homeService,
@@ -522,6 +525,8 @@ class TechnicianRegistrationService {
       String? shopName,
       double? shopLatitude,
       double? shopLongitude,
+      RainTravel? rainTravel,
+      TrafficTravel? trafficTravel,
     })
   >
   loadWorkType() async {
@@ -530,7 +535,7 @@ class TechnicianRegistrationService {
           .from('technicians')
           .select(
             'offers_home_service, offers_shop_repair, shop_name, '
-            'shop_latitude, shop_longitude',
+            'shop_latitude, shop_longitude, rain_travel, heavy_traffic_travel',
           )
           .eq('id', _uid)
           .maybeSingle();
@@ -540,6 +545,8 @@ class TechnicianRegistrationService {
         shopName: row?['shop_name'] as String?,
         shopLatitude: (row?['shop_latitude'] as num?)?.toDouble(),
         shopLongitude: (row?['shop_longitude'] as num?)?.toDouble(),
+        rainTravel: RainTravel.fromWire(row?['rain_travel']),
+        trafficTravel: TrafficTravel.fromWire(row?['heavy_traffic_travel']),
       );
     } on PostgrestException catch (error) {
       _log('loadWorkType', error);
@@ -549,19 +556,23 @@ class TechnicianRegistrationService {
         shopName: null,
         shopLatitude: null,
         shopLongitude: null,
+        rainTravel: null,
+        trafficTravel: null,
       );
     }
   }
 
   /// Saves the choice. The shop is written only when Shop Repair is chosen;
   /// unticking it later leaves a pinned shop in place, harmlessly, for when
-  /// they tick it again.
+  /// they tick it again. A travel answer left null is left unchanged.
   Future<void> saveWorkType({
     required bool homeService,
     required bool shopRepair,
     String? shopName,
     double? shopLatitude,
     double? shopLongitude,
+    RainTravel? rainTravel,
+    TrafficTravel? trafficTravel,
   }) async {
     await ensureTechnicianRow();
 
@@ -571,6 +582,9 @@ class TechnicianRegistrationService {
           .update(<String, dynamic>{
             'offers_home_service': homeService,
             'offers_shop_repair': shopRepair,
+            if (rainTravel != null) 'rain_travel': rainTravel.wire,
+            if (trafficTravel != null)
+              'heavy_traffic_travel': trafficTravel.wire,
             if (shopRepair &&
                 shopLatitude != null &&
                 shopLongitude != null) ...<String, dynamic>{

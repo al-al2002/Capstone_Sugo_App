@@ -164,6 +164,10 @@ class _TechnicianRegistrationView extends StatelessWidget {
         onShopPlaceChanged: controller.setShopPlace,
         shopName: controller.shopName,
         onShopNameChanged: controller.setShopName,
+        rainTravel: controller.rainTravel,
+        trafficTravel: controller.trafficTravel,
+        onRainTravelChanged: controller.setRainTravel,
+        onTrafficTravelChanged: controller.setTrafficTravel,
       ),
 
       OnboardingStepId.location => LocationPinStep(
@@ -367,12 +371,12 @@ class _AssessmentList extends StatelessWidget {
         ),
         const SizedBox(height: AppSizes.lg),
 
-        // The requirement, said out loud. Users otherwise assume they must
-        // clear every card before the button unlocks and give up early.
+        // The requirement, said out loud: every card must be cleared before
+        // the button unlocks, and how far along they are.
         Container(
           padding: const EdgeInsets.all(AppSizes.md),
           decoration: BoxDecoration(
-            color: controller.hasPassedAnyAssessment
+            color: controller.hasPassedAllAssessments
                 ? AppColors.successSoft
                 : AppColors.warningSoft,
             borderRadius: BorderRadius.circular(AppSizes.tileRadius),
@@ -381,24 +385,29 @@ class _AssessmentList extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Icon(
-                controller.hasPassedAnyAssessment
+                controller.hasPassedAllAssessments
                     ? Icons.check_circle_outline_rounded
                     : Icons.info_outline_rounded,
                 size: 17,
-                color: controller.hasPassedAnyAssessment
+                color: controller.hasPassedAllAssessments
                     ? AppColors.success
                     : AppColors.warning,
               ),
               const SizedBox(width: AppSizes.sm),
               Expanded(
+                // Every skill must be proven since 2026-11-22 - one pass
+                // used to be enough. A failed one can be retaken after 24
+                // hours, or removed from its card below.
                 child: Text(
-                  controller.hasPassedAnyAssessment
-                      ? 'You have qualified in '
+                  controller.hasPassedAllAssessments
+                      ? 'All ${items.length} passed. Every skill you listed '
+                            'is verified, so you can continue.'
+                      : items.length == 1
+                      ? 'Pass this assessment to continue.'
+                      : 'Pass all ${items.length} to continue - '
                             '${controller.passedAssessments.length} of '
-                            '${items.length}. You can continue now and take '
-                            'the rest any time.'
-                      : 'Pass at least one to continue. The others can wait '
-                            'until after you are approved.',
+                            '${items.length} done. Failed one? Retake it after '
+                            '24 hours, or remove that skill.',
                   style: const TextStyle(
                     fontSize: 13,
                     height: 1.35,
@@ -531,9 +540,57 @@ class _AssessmentCard extends StatelessWidget {
               ),
             ),
           ],
+
+          // Failed it, and not the only skill: offer to drop it rather than
+          // wait 24 hours (2026-11-22, when every assessment became
+          // required). Never offered before a first attempt - removing a
+          // skill should be a decision after trying, not a way round it.
+          if (!item.isPassed &&
+              item.hasAttempted &&
+              !controller.isOnlyTrack(item.track)) ...<Widget>[
+            const SizedBox(height: AppSizes.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: ValueKey<String>('remove-track-${item.track.wire}'),
+                onPressed: controller.isBusy ? null : () => _remove(context),
+                icon: const Icon(Icons.remove_circle_outline_rounded, size: 18),
+                label: const Text('Remove this skill'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _remove(BuildContext context) async {
+    final int brands = _coveredLabels().length;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text('Remove ${item.track.label}?'),
+        content: Text(
+          'The $brands ${brands == 1 ? 'brand' : 'brands'} you picked under '
+          'it come off your profile, and you will not be matched for these '
+          'jobs. Skills can only be added during registration.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep it'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await controller.removeTrack(item.track);
   }
 
   /// The declared (device, brand) pairs this track qualifies.
@@ -627,9 +684,9 @@ class _TechnicianReview extends StatelessWidget {
                   '${a.track.label} · ${a.skillLevel?.label ?? 'Qualified'}',
             ),
             if (controller.outstandingAssessments.isNotEmpty)
-              'You can take the rest after approval',
+              'Pass the rest, or remove those skills, to submit',
           ],
-          isComplete: controller.hasPassedAnyAssessment,
+          isComplete: controller.hasPassedAllAssessments,
         ),
 
         _ReviewSection(
@@ -661,8 +718,9 @@ class _TechnicianReview extends StatelessWidget {
                   : (controller.shopName.trim().isEmpty
                         ? 'Shop pinned on the map'
                         : '${controller.shopName.trim()} · pinned on the map'),
+            controller.travelConditionsLabel,
           ],
-          isComplete: controller.hasWorkType,
+          isComplete: controller.canLeaveWorkTypeStep,
         ),
 
         _ReviewSection(

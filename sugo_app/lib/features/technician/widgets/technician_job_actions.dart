@@ -54,6 +54,7 @@ class TechnicianJobActions extends StatelessWidget {
     this.isCompleting = false,
     this.isMovingToShop = false,
     this.distanceKm,
+    this.completeBlockedReason,
   });
 
   final Job job;
@@ -62,6 +63,11 @@ class TechnicianJobActions extends StatelessWidget {
   final VoidCallback onNeedsShop;
   final bool isCompleting;
   final bool isMovingToShop;
+
+  /// Why "Mark as complete" cannot be used yet, e.g. "Add the Before and
+  /// After photos first" (the work record, 2026-11-22). Null when it can.
+  /// The server refuses completion on its own too; this just says so first.
+  final String? completeBlockedReason;
 
   /// How far the client was from this technician when they were matched -
   /// the distance the travel fee was quoted on. Shown under the address when
@@ -110,10 +116,14 @@ class TechnicianJobActions extends StatelessWidget {
                 tone: AppColors.success,
                 toneSoft: AppColors.successSoft,
                 title: 'Mark as complete',
-                subtitle: 'Two quick questions, then it closes',
+                subtitle:
+                    completeBlockedReason ??
+                    'Two quick questions, then it closes',
                 busyLabel: 'Completing…',
                 isBusy: isCompleting,
-                onTap: _busy ? null : onComplete,
+                onTap: _busy || completeBlockedReason != null
+                    ? null
+                    : onComplete,
               ),
               // The escape hatch. A technician can only honestly answer "can
               // this be fixed here?" once they are standing in front of it.

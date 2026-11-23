@@ -3,6 +3,7 @@ import '../../technician/models/assessment.dart';
 import '../models/client_onboarding_models.dart';
 import '../models/registration_status.dart';
 import '../models/specialization_catalog.dart';
+import '../models/travel_conditions.dart';
 import '../models/verification_document.dart';
 import '../services/technician_registration_service.dart';
 import 'registration_flow_controller.dart';
@@ -40,6 +41,11 @@ class TechnicianRegistrationController extends RegistrationFlowController {
 
   /// Saved as a deliberate choice - see [loadRoleState].
   bool _workTypeChosen = false;
+
+  // Will they still travel in rain / heavy traffic (2026-11-22). Null until
+  // answered; nothing is preselected.
+  RainTravel? _rainTravel;
+  TrafficTravel? _trafficTravel;
 
   List<TechnicianSpecialization> get selected =>
       List<TechnicianSpecialization>.unmodifiable(_selected);
@@ -79,15 +85,50 @@ class TechnicianRegistrationController extends RegistrationFlowController {
   List<PendingAssessment> get passedAssessments =>
       _assessments.where((PendingAssessment a) => a.isPassed).toList();
 
-  /// The rule the flow actually gates on: at least one passed assessment.
-  ///
-  /// Not *all* of them. A technician qualified on laptops but still waiting out
-  /// a cooldown on printers is useful to the platform today - the unverified
-  /// rows simply stay out of the matching pool until they are passed. Requiring
-  /// every one would strand a technician behind a 24-hour wait for a
-  /// specialisation they added as an afterthought.
+  /// At least one passed assessment. No longer what the step gates on (see
+  /// [hasPassedAllAssessments]); kept for the wording on the step.
   bool get hasPassedAnyAssessment =>
       _assessments.any((PendingAssessment a) => a.isPassed);
+
+  /// The rule the flow gates on since 2026-11-22: EVERY assessment passed.
+  ///
+  /// The user asked for it ("they answer all the assessment, not only one"),
+  /// and the paper promises competency verification before a technician takes
+  /// jobs - so every skill a technician lists must be proven. The server's
+  /// `submit_registration_for_review()` applies the same rule
+  /// (20261122000003), so an older build cannot submit with less.
+  ///
+  /// The cost the old rule avoided - being stranded behind a 24-hour retake
+  /// cooldown for a skill added as an afterthought - is handled by
+  /// [removeTrack]: a technician who fails one can drop that skill and carry
+  /// on with the ones they passed.
+  bool get hasPassedAllAssessments =>
+      _assessments.isNotEmpty &&
+      _assessments.every((PendingAssessment a) => a.isPassed);
+
+  /// Whether [track] is the only skill group the technician picked, so it
+  /// cannot be removed - there would be nothing left to register with.
+  bool isOnlyTrack(AssessmentTrack track) => _selected.every(
+    (TechnicianSpecialization s) => s.track == track,
+  );
+
+  /// Drops every specialisation in [track] - the way forward for a technician
+  /// who failed its assessment and does not want to wait for the retake.
+  /// Refused for their only track. True when it was removed.
+  Future<bool> removeTrack(AssessmentTrack track) async {
+    if (isOnlyTrack(track)) return false;
+    final List<TechnicianSpecialization> remaining = _selected
+        .where((TechnicianSpecialization s) => s.track != track)
+        .toList();
+    final List<TechnicianSpecialization>? saved = await guard(
+      () => _service.saveSpecializations(remaining),
+    );
+    if (saved == null) return false;
+    _selected = saved;
+    _assessments = await _service.loadAssessments();
+    notifyListeners();
+    return true;
+  }
 
   bool get hasBaseLocation => _basePlace != null;
 
@@ -99,6 +140,21 @@ class TechnicianRegistrationController extends RegistrationFlowController {
   /// At least one kind of work, and the shop's pin when Shop Repair is on.
   bool get hasWorkType =>
       (_homeService || _shopRepair) && (!_shopRepair || _shopPlace != null);
+
+  RainTravel? get rainTravel => _rainTravel;
+  TrafficTravel? get trafficTravel => _trafficTravel;
+
+  /// Both travel questions answered (2026-11-22).
+  bool get hasTravelConditions => _rainTravel != null && _trafficTravel != null;
+
+  /// What the work-type step needs before Continue: the work, and both
+  /// travel answers.
+  bool get canLeaveWorkTypeStep => hasWorkType && hasTravelConditions;
+
+  /// "Even in heavy rain · Goes in heavy traffic", for the recap.
+  String get travelConditionsLabel => hasTravelConditions
+      ? '${_rainTravel!.shortLabel} · ${_trafficTravel!.shortLabel}'
+      : 'Rain and traffic not answered';
 
   /// "Home Service and Shop Repair", for the recap.
   String get workTypeLabel => switch ((_homeService, _shopRepair)) {
@@ -125,16 +181,25 @@ class TechnicianRegistrationController extends RegistrationFlowController {
       String? shopName,
       double? shopLatitude,
       double? shopLongitude,
+      RainTravel? rainTravel,
+      TrafficTravel? trafficTravel,
     })
     work = await _service.loadWorkType();
     final bool hasShop =
         work.shopLatitude != null && work.shopLongitude != null;
+    // The travel answers have no default, so either one being set means the
+    // step was saved here before.
+    final bool answeredTravel =
+        work.rainTravel != null || work.trafficTravel != null;
     // The columns default to both, so "both with no shop" is an untouched
     // row, not a choice: show it unchosen. Anything else was saved here.
-    _workTypeChosen = !(work.homeService && work.shopRepair && !hasShop);
+    _workTypeChosen =
+        answeredTravel || !(work.homeService && work.shopRepair && !hasShop);
     _homeService = _workTypeChosen && work.homeService;
     _shopRepair = _workTypeChosen && work.shopRepair;
     _shopName = work.shopName ?? '';
+    _rainTravel = work.rainTravel;
+    _trafficTravel = work.trafficTravel;
     if (hasShop) {
       _shopPlace = GeoPlace(
         latitude: work.shopLatitude!,
@@ -162,9 +227,9 @@ class TechnicianRegistrationController extends RegistrationFlowController {
       OnboardingStepId.account,
       if (hasSubmittedIdentity) OnboardingStepId.identity,
       if (_selected.isNotEmpty) OnboardingStepId.specialization,
-      if (hasPassedAnyAssessment) OnboardingStepId.assessment,
+      if (hasPassedAllAssessments) OnboardingStepId.assessment,
       if (hasNbiClearance) OnboardingStepId.documents,
-      if (_workTypeChosen && hasWorkType) OnboardingStepId.workType,
+      if (_workTypeChosen && canLeaveWorkTypeStep) OnboardingStepId.workType,
       if (hasBaseLocation) OnboardingStepId.location,
     };
   }
@@ -174,9 +239,9 @@ class TechnicianRegistrationController extends RegistrationFlowController {
     OnboardingStepId.account => true,
     OnboardingStepId.identity => canLeaveIdentityStep,
     OnboardingStepId.specialization => _selected.isNotEmpty,
-    OnboardingStepId.assessment => hasPassedAnyAssessment,
+    OnboardingStepId.assessment => hasPassedAllAssessments,
     OnboardingStepId.documents => hasNbiClearance,
-    OnboardingStepId.workType => hasWorkType,
+    OnboardingStepId.workType => canLeaveWorkTypeStep,
     OnboardingStepId.location => hasBaseLocation,
     OnboardingStepId.review => true,
     OnboardingStepId.email => true, // Not in the technician flow.
@@ -198,7 +263,7 @@ class TechnicianRegistrationController extends RegistrationFlowController {
         return true;
 
       case OnboardingStepId.workType:
-        if (!hasWorkType) return false;
+        if (!canLeaveWorkTypeStep) return false;
         final bool? saved = await guard<bool>(() async {
           await _service.saveWorkType(
             homeService: _homeService,
@@ -206,6 +271,8 @@ class TechnicianRegistrationController extends RegistrationFlowController {
             shopName: _shopName,
             shopLatitude: _shopPlace?.latitude,
             shopLongitude: _shopPlace?.longitude,
+            rainTravel: _rainTravel,
+            trafficTravel: _trafficTravel,
           );
           return true;
         });
@@ -313,6 +380,18 @@ class TechnicianRegistrationController extends RegistrationFlowController {
 
   void setShopName(String value) {
     _shopName = value;
+  }
+
+  void setRainTravel(RainTravel value) {
+    _rainTravel = value;
+    clearError();
+    notifyListeners();
+  }
+
+  void setTrafficTravel(TrafficTravel value) {
+    _trafficTravel = value;
+    clearError();
+    notifyListeners();
   }
 
   // --------------------------------------------------------------- location

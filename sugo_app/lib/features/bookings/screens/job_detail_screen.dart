@@ -24,6 +24,10 @@ import '../../disputes/models/job_dispute.dart';
 import '../../disputes/services/dispute_service.dart';
 import '../../disputes/widgets/dispute_section.dart';
 import '../../disputes/widgets/report_problem_sheet.dart';
+import '../../evidence/models/job_evidence.dart';
+import '../../evidence/services/job_evidence_service.dart';
+import '../../evidence/widgets/evidence_capture_sheet.dart';
+import '../../evidence/widgets/work_record_section.dart';
 import '../../rb_cars/models/device_category.dart';
 import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
@@ -92,6 +96,7 @@ class JobDetailScreen extends StatefulWidget {
     @visibleForTesting this.disputes,
     @visibleForTesting this.chat,
     @visibleForTesting this.directory,
+    @visibleForTesting this.evidence,
   });
 
   /// Tests only (2026-11-17): fakes for the services the screen talks to, so
@@ -100,6 +105,9 @@ class JobDetailScreen extends StatefulWidget {
   final TrackingService? tracking;
   final DisputeService? disputes;
   final ChatService? chat;
+
+  /// The work record (2026-11-22).
+  final JobEvidenceService? evidence;
 
   /// The drop-off card's read of the technician's shop.
   final TechnicianDirectoryService? directory;
@@ -162,6 +170,40 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   /// Problems reported on this booking, by either side. Newest first.
   List<JobDispute> _disputes = const <JobDispute>[];
+
+  late final JobEvidenceService _evidenceService =
+      widget.evidence ?? JobEvidenceService();
+
+  /// The work record: checkpoint photos the technician took (2026-11-22).
+  List<JobEvidence> _evidence = const <JobEvidence>[];
+
+  /// Required steps still missing, for the technician on the job. Null until
+  /// checked, or when the check failed - the server checks again anyway.
+  List<EvidenceMilestone>? _missingEvidence;
+
+  /// A visit (home or shop) that a technician has taken: the jobs that keep a
+  /// work record. A Technician Community question has none.
+  bool get _hasWorkRecord =>
+      TrackingJourney.tracks(_job.servicePath) &&
+      _job.assignedTechnicianId != null &&
+      (_job.status == JobStatus.confirmed ||
+          _job.status == JobStatus.inProgress ||
+          _job.status == JobStatus.completed);
+
+  String _evidenceLabel(EvidenceMilestone m) =>
+      m.labelFor(_job.servicePath, selfDropOff: _job.isSelfDropOff);
+
+  /// "Add the Before and After photos first", while the work record lacks a
+  /// required step. Null when the technician may complete.
+  String? get _completeBlockedReason {
+    final List<EvidenceMilestone>? missing = _missingEvidence;
+    if (!_isWorking || missing == null || missing.isEmpty) return null;
+    final List<String> names = missing.map(_evidenceLabel).toList();
+    final String list = names.length == 1
+        ? names.single
+        : '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+    return 'Add the $list photo${names.length == 1 ? '' : 's'} first';
+  }
 
   /// Once a technician has taken the job - the same rule
   /// `open_job_dispute()` checks, so the button is never offered for a report
@@ -241,6 +283,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   /// client is rated straight after, while the job is fresh.
   Future<void> _complete() async {
     if (_completing || _movingToShop) return;
+    // The work record first (2026-11-22). The server refuses too; saying so
+    // here saves answering the questions for nothing.
+    final String? blocked = _completeBlockedReason;
+    if (blocked != null) {
+      UiFeedback.showError(context, '$blocked, in the work record below.');
+      return;
+    }
     final CompletionAnswers? answers = await CompleteJobSheet.show(
       context,
       _job,
@@ -390,6 +439,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         final List<JobDispute> disputes = await _disputeService.forJob(_job.id);
         if (mounted) setState(() => _disputes = disputes);
       }
+
+      await _loadEvidence();
     } on RbCarsFailure catch (failure) {
       if (!mounted) return;
       setState(() => _error = failure.message);
@@ -397,6 +448,42 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       if (!mounted) return;
       setState(() => _error = 'Could not refresh this booking.');
     }
+  }
+
+  /// The work record, and - for the technician on the job - what is still
+  /// required. Never fatal: both reads fall back quietly.
+  Future<void> _loadEvidence() async {
+    if (!_hasWorkRecord) return;
+    final List<JobEvidence> evidence = await _evidenceService.forJob(_job.id);
+    final List<EvidenceMilestone>? missing = _isWorking
+        ? await _evidenceService.missing(_job.id)
+        : null;
+    if (!mounted) return;
+    setState(() {
+      _evidence = evidence;
+      _missingEvidence = missing;
+    });
+  }
+
+  /// Opens the camera sheet for one step, then reloads the record.
+  Future<void> _addEvidence(EvidenceMilestone milestone) async {
+    final bool? saved = await EvidenceCaptureSheet.show(
+      context,
+      label: _evidenceLabel(milestone),
+      blurb: milestone.blurbFor(
+        _job.servicePath,
+        selfDropOff: _job.isSelfDropOff,
+      ),
+      onSave: (photos, note) => _evidenceService.add(
+        jobId: _job.id,
+        milestone: milestone,
+        photos: photos,
+        note: note,
+      ),
+    );
+    if (saved != true || !mounted) return;
+    UiFeedback.showSuccess(context, 'Saved to the work record.');
+    await _loadEvidence();
   }
 
   // ------------------------------------------------------------- actions
@@ -759,8 +846,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         isCompleting: _completing,
                         isMovingToShop: _movingToShop,
                         distanceKm: _homeDistanceKm,
+                        completeBlockedReason: _completeBlockedReason,
                       ),
                       const SizedBox(height: AppSizes.md),
+                      // Right under the actions: the photos are part of
+                      // doing the job, and "Mark as complete" waits on them.
+                      if (_hasWorkRecord) ...<Widget>[
+                        _workRecord(canAdd: true),
+                        const SizedBox(height: AppSizes.md),
+                      ],
                     ],
                     if (_party != null && _counterpartName != null) ...<Widget>[
                       _counterpartCard(),
@@ -773,6 +867,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     _timelineCard(tracking),
                     const SizedBox(height: AppSizes.md),
                     ..._trackingSection(tracking),
+                    // The client's view of the work record, and the
+                    // technician's once the job is closed. A finished job
+                    // with no photos (posted before the record existed)
+                    // shows nothing rather than an empty card.
+                    if (!_isWorking &&
+                        _hasWorkRecord &&
+                        (_evidence.isNotEmpty ||
+                            _job.status != JobStatus.completed)) ...<Widget>[
+                      _workRecord(canAdd: false),
+                      const SizedBox(height: AppSizes.md),
+                    ],
                     _priceCard(),
                     const SizedBox(height: AppSizes.md),
                     _detailsCard(),
@@ -797,6 +902,19 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       ),
     );
   }
+
+  Widget _workRecord({required bool canAdd}) => WorkRecordSection(
+    evidence: _evidence,
+    servicePath: _job.servicePath,
+    selfDropOff: _job.isSelfDropOff,
+    missing: _missingEvidence,
+    canAdd: canAdd,
+    onAdd: canAdd ? _addEvidence : null,
+    jobLatitude: _job.latitude,
+    jobLongitude: _job.longitude,
+    forClient: _isClient,
+    photoUrl: _evidenceService.photoUrl,
+  );
 
   /// [children], each rising in after the one before it when [animate].
   /// Spacers are dealt in too; they are invisible, so it costs nothing and

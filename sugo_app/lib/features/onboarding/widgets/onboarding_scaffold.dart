@@ -189,7 +189,7 @@ class OnboardingScaffold extends StatelessWidget {
       OnboardingStepId.specialization =>
         'Select at least one device and brand.',
       OnboardingStepId.assessment =>
-        'Pass at least one assessment to continue.',
+        'Pass every assessment, or remove the skills you have not passed.',
       OnboardingStepId.documents =>
         'Upload an NBI or police clearance to continue.',
       OnboardingStepId.email => 'Enter the code we emailed you to continue.',

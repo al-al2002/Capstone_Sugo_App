@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/supabase_service.dart';
+import '../../onboarding/models/travel_conditions.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 
 /// Reads and writes what the one-time profile setup collects.
@@ -34,8 +35,8 @@ class ProfileSetupService {
     return id;
   }
 
-  /// The technician's current workshop and the work they take, to prefill
-  /// the form. Null for a client.
+  /// The technician's current workshop, the work they take, and whether they
+  /// travel in rain and heavy traffic, to prefill the form. Null for a client.
   Future<
     ({
       String? name,
@@ -43,6 +44,8 @@ class ProfileSetupService {
       double? longitude,
       bool homeService,
       bool shopRepair,
+      RainTravel? rainTravel,
+      TrafficTravel? trafficTravel,
     })?
   >
   workshop() async {
@@ -51,7 +54,7 @@ class ProfileSetupService {
           .from('technicians')
           .select(
             'shop_name, shop_latitude, shop_longitude, offers_home_service, '
-            'offers_shop_repair',
+            'offers_shop_repair, rain_travel, heavy_traffic_travel',
           )
           .eq('id', _uid)
           .maybeSingle();
@@ -62,6 +65,8 @@ class ProfileSetupService {
         longitude: (row['shop_longitude'] as num?)?.toDouble(),
         homeService: row['offers_home_service'] as bool? ?? true,
         shopRepair: row['offers_shop_repair'] as bool? ?? true,
+        rainTravel: RainTravel.fromWire(row['rain_travel']),
+        trafficTravel: TrafficTravel.fromWire(row['heavy_traffic_travel']),
       );
     } catch (error) {
       _log('workshop', error);
@@ -116,6 +121,8 @@ class ProfileSetupService {
     double? shopLongitude,
     bool? homeService,
     bool? shopRepair,
+    RainTravel? rainTravel,
+    TrafficTravel? trafficTravel,
     required bool isTechnician,
     required bool markComplete,
   }) async {
@@ -145,6 +152,9 @@ class ProfileSetupService {
           // The work they take (2026-11-17). Matching reads these.
           if (homeService != null) 'offers_home_service': homeService,
           if (shopRepair != null) 'offers_shop_repair': shopRepair,
+          // Rain and heavy traffic (2026-11-22). Matching reads these too.
+          if (rainTravel != null) 'rain_travel': rainTravel.wire,
+          if (trafficTravel != null) 'heavy_traffic_travel': trafficTravel.wire,
         };
         if (shop.isNotEmpty) {
           await _client.from('technicians').update(shop).eq('id', uid);

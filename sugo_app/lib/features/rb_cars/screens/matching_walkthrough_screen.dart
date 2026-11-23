@@ -5,6 +5,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/sugo_app_bar.dart';
 import '../models/job.dart';
+import '../models/job_price.dart';
 import '../models/match_result.dart';
 import '../models/score_breakdown.dart';
 import '../widgets/score_breakdown_sheet.dart';
@@ -14,7 +15,8 @@ import '../widgets/score_breakdown_sheet.dart';
 /// ## Who it is for
 ///
 /// A defence panel, an admin, a developer. It prints the brief's pipeline in
-/// order - request, context, selected rules, Stage 1, Stage 2, recommendation,
+/// order - request, context, selected rules, Stage 1 (Skill relevance),
+/// Stage 2 (Acceptance likelihood, Table 11), the final score (Table 10),
 /// Top 3 - with the numbers the engine actually stored. Nothing here is
 /// recomputed on the phone; it is a reading of `job_matches.score_breakdown`
 /// and of the matching response.
@@ -97,7 +99,14 @@ class MatchingWalkthroughScreen extends StatelessWidget {
             child: _Pairs(<(String, String)>[
               if (job != null) ('Repair', job!.title),
               if (job?.brand != null) ('Brand', job!.brand!),
-              if (job != null) ('Budget', job!.budgetLabel),
+              // The fixed price Price fit scored (labor + any urgent fee),
+              // not the old budget range: clients no longer state a budget.
+              if (job != null)
+                (
+                  'Price',
+                  JobPrice.forJob(job!).laborWithUrgent ??
+                      'Price to be confirmed',
+                ),
               ('Urgency', _urgency(top?.context.urgency ?? job?.urgency.wire)),
               if (top?.context.servicePath != null)
                 ('Service', top!.context.servicePath!.replaceAll('_', ' ')),
@@ -181,17 +190,17 @@ class MatchingWalkthroughScreen extends StatelessWidget {
 
           _Step(
             number: 4,
-            title: 'Stage 1 - Suitability (can they do it?)',
+            title: 'Stage 1 - Skill relevance (can they do it?)',
             child: _Scores(rows: rows, pick: (_Row r) => r.suitability),
           ),
           _Step(
             number: 5,
-            title: 'Stage 2 - Acceptance (are they likely to take it?)',
+            title: 'Stage 2 - Acceptance likelihood (will they take it?)',
             child: _Scores(rows: rows, pick: (_Row r) => r.acceptance),
           ),
           _Step(
             number: 6,
-            title: 'Recommendation engine',
+            title: 'Final score (all five criteria)',
             child: _Scores(rows: rows, pick: (_Row r) => r.recommendation),
           ),
           _Step(
@@ -202,7 +211,10 @@ class MatchingWalkthroughScreen extends StatelessWidget {
                 for (final MatchResult m in matches)
                   _ScoreLine(
                     name:
-                        '${m.rankLabel} - ${m.technician?.displayName ?? 'Technician'}',
+                        '${m.rankLabel} - ${m.technician?.displayName ?? 'Technician'}'
+                        // Step 5 moved them up; say so, since the number
+                        // beside them may be lower than the next one's.
+                        '${m.breakdown.recommendation?.previousTechnician ?? false ? ' (booked before)' : ''}',
                     value: m.finalScore,
                     highlight: m.isTopPick,
                   ),

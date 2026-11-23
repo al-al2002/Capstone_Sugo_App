@@ -7,6 +7,7 @@ import 'package:sugo_app/features/rb_cars/screens/matching_walkthrough_screen.da
 import 'package:sugo_app/features/rb_cars/widgets/context_summary.dart';
 import 'package:sugo_app/features/rb_cars/widgets/match_score_card.dart';
 import 'package:sugo_app/features/rb_cars/widgets/recommendation_reasons_sheet.dart';
+import 'package:sugo_app/features/rb_cars/widgets/score_breakdown_sheet.dart';
 
 /// The recommendation layer as the client sees it: the version 2 contract,
 /// the version 1 fallback, the context chips, the card, the "Why" sheet and
@@ -175,6 +176,25 @@ void main() {
       );
     });
 
+    test('a version 3 row reads the fixed price and the Table 10/11 names', () {
+      final ScoreBreakdown b = ScoreBreakdown.fromJson(<String, dynamic>{
+        'version': 3,
+        'stage2': <String, dynamic>{
+          'score': 0.8,
+          'factors': <dynamic>[factor('price_fit', 0.5, 0.2)],
+        },
+        'context': <String, dynamic>{'fixed_price_php': 720},
+      });
+      expect(b.version, 3);
+      expect(b.context.fixedPricePhp, 720);
+      expect(factorDisplayName(b.stage2.factors.single.key), 'Price fit');
+      expect(factorDisplayName('suitability'), 'Skill relevance');
+      expect(factorDisplayName('acceptance'), 'Acceptance likelihood');
+      expect(factorDisplayName('travel_burden'), 'Travel burden');
+      // A version 2 key still has a name, for older jobs.
+      expect(factorDisplayName('budget_fit'), 'Budget fit');
+    });
+
     test('rank labels are neutral - nobody is called the best', () {
       expect(v2(rank: 1).rankLabel, 'Recommended');
       expect(v2(rank: 2).rankLabel, 'Alternative');
@@ -200,6 +220,42 @@ void main() {
         expect(byLabel['2.1–4.6 km'], isFalse);
       },
     );
+
+    test('heavy rain gets the storm icon; ordinary rain the drop', () {
+      MatchResult withWeather(String label, double severity, List<String> s) =>
+          MatchResult.fromJson(<String, dynamic>{
+            'id': 'm',
+            'job_id': 'j',
+            'technician_id': 't',
+            'rank': 1,
+            'status': 'shortlisted',
+            'score_breakdown': <String, dynamic>{
+              'version': 3,
+              'recommendation': <String, dynamic>{'score': 0.8, 'signals': s},
+              'context': <String, dynamic>{
+                'weather': <String, dynamic>{
+                  'label': label,
+                  'severity': severity,
+                },
+              },
+            },
+          });
+
+      final ContextChipData storm = contextChipsFor(<MatchResult>[
+        withWeather('heavy intensity rain', 0.85, <String>[
+          'rain',
+          'heavy_rain',
+        ]),
+      ], null).first;
+      expect(storm.icon, Icons.thunderstorm_rounded);
+      expect(storm.emphasised, isTrue);
+
+      final ContextChipData shower = contextChipsFor(<MatchResult>[
+        withWeather('moderate rain', 0.55, <String>['rain']),
+      ], null).first;
+      expect(shower.icon, Icons.water_drop_rounded);
+      expect(shower.emphasised, isTrue);
+    });
 
     test('a missing weather reading draws no weather chip, not a guess', () {
       final MatchResult noWeather = MatchResult.fromJson(<String, dynamic>{

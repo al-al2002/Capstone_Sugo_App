@@ -4,6 +4,7 @@ import 'package:sugo_app/core/theme/app_theme.dart';
 import 'package:sugo_app/features/onboarding/controllers/technician_registration_controller.dart';
 import 'package:sugo_app/features/onboarding/models/client_onboarding_models.dart';
 import 'package:sugo_app/features/onboarding/models/registration_status.dart';
+import 'package:sugo_app/features/onboarding/models/travel_conditions.dart';
 import 'package:sugo_app/features/onboarding/services/geocoding_service.dart';
 import 'package:sugo_app/features/rb_cars/services/rb_cars_service.dart';
 import 'package:sugo_app/features/onboarding/services/identity_verification_service.dart';
@@ -80,6 +81,36 @@ void main() {
       expect(c.hasWorkType, isTrue);
       expect(c.workTypeLabel, 'Home Service and Shop Repair');
     });
+
+    test('Continue also needs both travel answers (rain and traffic)', () {
+      final TechnicianRegistrationController c = controller()
+        ..setHomeService(true);
+      addTearDown(c.dispose);
+      expect(c.hasWorkType, isTrue);
+      expect(c.canLeaveWorkTypeStep, isFalse, reason: 'nothing answered');
+      expect(c.travelConditionsLabel, 'Rain and traffic not answered');
+
+      c.setRainTravel(RainTravel.any);
+      expect(c.canLeaveWorkTypeStep, isFalse, reason: 'traffic unanswered');
+
+      c.setTrafficTravel(TrafficTravel.avoids);
+      expect(c.canLeaveWorkTypeStep, isTrue);
+      expect(
+        c.travelConditionsLabel,
+        'Even in heavy rain · Avoids heavy traffic',
+      );
+    });
+
+    test('the answers map to the database values the matcher reads', () {
+      expect(RainTravel.any.wire, 'any');
+      expect(RainTravel.notHeavy.wire, 'not_heavy');
+      expect(RainTravel.never.wire, 'never');
+      expect(RainTravel.fromWire('not_heavy'), RainTravel.notHeavy);
+      expect(RainTravel.fromWire(null), isNull, reason: 'not answered');
+      expect(TrafficTravel.fromWire(true), TrafficTravel.goes);
+      expect(TrafficTravel.fromWire(false), TrafficTravel.avoids);
+      expect(TrafficTravel.fromWire(null), isNull, reason: 'not answered');
+    });
   });
 
   group('the step', () {
@@ -91,6 +122,10 @@ void main() {
       double scale = 1,
       ValueChanged<bool>? onHome,
       ValueChanged<bool>? onShop,
+      RainTravel? rain,
+      TrafficTravel? traffic,
+      ValueChanged<RainTravel>? onRain,
+      ValueChanged<TrafficTravel>? onTraffic,
     }) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = size;
@@ -116,6 +151,10 @@ void main() {
                   onShopPlaceChanged: (_) {},
                   shopName: '',
                   onShopNameChanged: (_) {},
+                  rainTravel: rain,
+                  trafficTravel: traffic,
+                  onRainTravelChanged: onRain ?? (_) {},
+                  onTrafficTravelChanged: onTraffic ?? (_) {},
                   autoLocate: false,
                 ),
               ),
@@ -177,6 +216,33 @@ void main() {
       expect(find.text('Pin your shop'), findsOneWidget);
       expect(find.text('Search for an address or landmark'), findsOneWidget);
       expect(find.text('Use my current location'), findsOneWidget);
+    });
+
+    testWidgets('asks about rain and heavy traffic, nothing preselected', (
+      WidgetTester tester,
+    ) async {
+      RainTravel? rain;
+      TrafficTravel? traffic;
+      await show(
+        tester,
+        home: true,
+        onRain: (RainTravel v) => rain = v,
+        onTraffic: (TrafficTravel v) => traffic = v,
+      );
+      expect(find.text('Travelling to clients'), findsOneWidget);
+      expect(
+        find.text('Will you still go to a client when it is raining?'),
+        findsOneWidget,
+      );
+      expect(find.text('Yes, even in heavy rain or a storm'), findsOneWidget);
+      expect(find.text('Yes, but not in heavy rain or a storm'), findsOneWidget);
+      expect(find.text('No, I do not travel in the rain'), findsOneWidget);
+      expect(find.text('Will you still go when traffic is heavy?'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey<String>('rain-not_heavy')));
+      await tester.tap(find.byKey(const ValueKey<String>('traffic-true')));
+      expect(rain, RainTravel.notHeavy);
+      expect(traffic, TrafficTravel.goes);
     });
 
     testWidgets('fits a small phone at large text, map open', (
