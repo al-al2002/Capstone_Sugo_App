@@ -7,8 +7,12 @@
  * about them gets a short list, which is the honest answer.
  *
  * Positives come first, strongest evidence first. Caveats follow - the
- * vacation, the distance past their own radius, the price above budget - so a
- * recommendation never hides the one thing that would change the client's mind.
+ * vacation, the distance past their own radius - so a recommendation never
+ * hides the one thing that would change the client's mind.
+ *
+ * There are no price reasons since 2026-11-22. The client no longer states a
+ * budget, and the fixed price is the same whoever takes the job, so "fits
+ * your budget" has nothing to compare against.
  *
  * Pure: no Deno APIs, no network.
  */
@@ -22,7 +26,7 @@ import type {
   StageResult,
   TechnicianRow,
 } from "./types.ts";
-import { formatAwayUntil } from "./acceptance.ts";
+import { formatAwayUntil } from "./recommendation.ts";
 
 /** Within this, "near you" is worth saying. */
 const NEAR_KM = 5;
@@ -57,10 +61,6 @@ function distanceText(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
 
-function peso(amount: number): string {
-  return `₱${Math.round(amount).toLocaleString("en-US")}`;
-}
-
 export function buildReasons(input: {
   job: JobRow;
   technician: TechnicianRow;
@@ -72,7 +72,6 @@ export function buildReasons(input: {
   etaMinutes: number | null;
   workload: number;
   coldStart: boolean;
-  quote: number;
   history: ClientTechnicianHistory | undefined;
   responseRate: number;
   answeredOffers: number;
@@ -168,8 +167,17 @@ export function buildReasons(input: {
     });
   }
 
+  // Their own answers, worked out first so a "short trip in the rain" or
+  // "beats the traffic" is never claimed next to "said they do not travel in
+  // it" - a short trip they have said they will not make is no reason to
+  // pick them.
+  const heavyRainNow = held.has("heavy_rain");
+  const refusesRain = technician.rain_travel === "never" ||
+    (technician.rain_travel === "not_heavy" && heavyRainNow);
+  const avoidsTraffic = technician.heavy_traffic_travel === false;
+
   if (
-    held.has("heavy_traffic") && held.has("on_site") &&
+    held.has("heavy_traffic") && held.has("on_site") && !avoidsTraffic &&
     input.etaMinutes !== null && input.etaMinutes <= QUICK_ETA_MINUTES
   ) {
     positives.push({
@@ -180,14 +188,64 @@ export function buildReasons(input: {
   }
 
   if (
-    held.has("rain") && held.has("on_site") &&
+    held.has("rain") && held.has("on_site") && !refusesRain &&
     input.distanceKm !== null && input.distanceKm <= NEAR_KM
   ) {
     positives.push({
       code: "short_trip_rain",
-      text: "A short trip for them in the current rain",
+      text: held.has("heavy_rain")
+        ? "A short trip for them in the heavy rain"
+        : "A short trip for them in the current rain",
       kind: "positive",
     });
+  }
+
+  // What the technician said at registration about travelling in rain and
+  // heavy traffic (20261122000001). Said only on a home visit while that
+  // condition actually holds - "travels in the rain" on a sunny day is noise
+  // - and only when they answered: an unanswered technician gets no claim
+  // either way.
+  if (held.has("on_site") && held.has("rain") && technician.rain_travel) {
+    const heavy = held.has("heavy_rain");
+    const goes = technician.rain_travel === "any" ||
+      (technician.rain_travel === "not_heavy" && !heavy);
+    if (goes) {
+      positives.push({
+        code: "travels_in_rain",
+        text: heavy
+          ? "Said they still come in heavy rain"
+          : "Said they still come in the rain",
+        kind: "positive",
+      });
+    } else {
+      caveats.push({
+        code: "no_rain_travel",
+        text: heavy
+          ? "Said they do not travel in heavy rain - they may decline today"
+          : "Said they do not travel in the rain - they may decline today",
+        kind: "caveat",
+      });
+    }
+  }
+
+  if (
+    held.has("on_site") && held.has("heavy_traffic") &&
+    (technician.heavy_traffic_travel === true ||
+      technician.heavy_traffic_travel === false)
+  ) {
+    if (technician.heavy_traffic_travel) {
+      positives.push({
+        code: "travels_in_traffic",
+        text: "Said they still come in heavy traffic",
+        kind: "positive",
+      });
+    } else {
+      caveats.push({
+        code: "avoids_traffic",
+        text: "Said they avoid heavy traffic - they may decline today",
+        kind: "caveat",
+      });
+    }
   }
 
   if (technician.away_until) {
@@ -219,24 +277,6 @@ export function buildReasons(input: {
       text: `Outside their usual ${radius.toFixed(0)} km service area`,
       kind: "caveat",
     });
-  }
-
-  // ------------------------------------------------------------ price
-  const budget = job.budget_max;
-  if (budget !== null && budget > 0) {
-    if (input.quote <= budget) {
-      positives.push({
-        code: "budget_fit",
-        text: `Typical rate fits your ${peso(budget)} budget`,
-        kind: "positive",
-      });
-    } else {
-      caveats.push({
-        code: "over_budget",
-        text: `Typical rate (about ${peso(input.quote)}) is above your ${peso(budget)} budget`,
-        kind: "caveat",
-      });
-    }
   }
 
   // ------------------------------------------------------ reliability

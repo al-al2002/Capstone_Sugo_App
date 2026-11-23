@@ -9,7 +9,9 @@
     "test:tracking-conditions": "node tracking_conditions.mjs ../../../supabase/migrations",
     "test:drop-off-trip": "node drop_off_trip.mjs ../../../supabase/migrations",
     "test:work-types": "node work_types.mjs ../../../supabase/migrations",
-    "test:push-events": "node push_events.mjs ../../../supabase/migrations"
+    "test:push-events": "node push_events.mjs ../../../supabase/migrations",
+    "test:job-evidence": "node job_evidence.mjs ../../../supabase/migrations",
+    "test:all-assessments": "node all_assessments.mjs ../../../supabase/migrations"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.2.17"

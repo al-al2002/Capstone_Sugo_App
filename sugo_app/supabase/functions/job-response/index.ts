@@ -47,12 +47,13 @@ import {
 import { deviceNoun, firstNameOf, notifyUser } from "../_shared/notify.ts";
 import { snapshotServicePath, wasRerouted } from "../_shared/reroute.ts";
 import { isUrgentJob, urgentOfferPush } from "../_shared/urgent.ts";
+import { missingEvidenceMessage } from "../_shared/evidence.ts";
 import {
   deliveryFee,
   type ShopLocation,
   shopDistanceKm,
 } from "../_shared/delivery_fee.ts";
-import { formatAwayUntil } from "../match-technician/scoring/acceptance.ts";
+import { formatAwayUntil } from "../match-technician/scoring/recommendation.ts";
 import { runMatching } from "../match-technician/scoring/engine.ts";
 import type { JobRow } from "../match-technician/scoring/types.ts";
 
@@ -625,10 +626,10 @@ async function handleAccept(
     }
   }
 
-  // TODO(tracking): hand off to the tracking / evidence-timeline feature here.
-  // That flow owns `in_progress`, the arrival timestamps and the photo
-  // evidence trail. It is a separate capstone module; this function's
-  // responsibility ends at `confirmed`.
+  // From here the trip lives in `job_tracking`, and the photo evidence trail
+  // in `job_evidence` - the work record (20261122000002), which
+  // `handleComplete` below requires before the technician can close the job.
+  // This function's responsibility for the booking itself ends at `confirmed`.
 
   // Tell the client (2026-11-17). Until now an accepted booking reached them
   // only when they next opened the app.
@@ -814,6 +815,33 @@ async function handleComplete(
 
   if (existing) {
     return fail("An outcome has already been recorded for this job", 409);
+  }
+
+  // In-task documentation (20261122000002): the technician cannot close a
+  // job until its work record has the required checkpoints - the unit as
+  // found, and repaired. Checked here, on the server, so no app build can
+  // skip it. The client is not held to it: closing is then their own call.
+  // A job posted before the requirement is exempt (the SQL decides that).
+  if (isAssigned) {
+    const { data: missing, error: evidenceError } = await db.rpc(
+      "job_evidence_missing",
+      { p_job_id: jobId },
+    );
+    if (evidenceError) {
+      // Fail open: a missing function (migration not applied yet) must not
+      // stop every job on the platform from closing.
+      console.warn("could not check the work record:", evidenceError.message);
+    } else if (Array.isArray(missing) && missing.length > 0) {
+      return fail(
+        missingEvidenceMessage(
+          missing as string[],
+          job.service_path,
+          (job as { delivery_option?: string | null }).delivery_option ?? null,
+        ),
+        409,
+        { code: "evidence_missing", missing },
+      );
+    }
   }
 
   const rating = typeof body.final_rating === "number"

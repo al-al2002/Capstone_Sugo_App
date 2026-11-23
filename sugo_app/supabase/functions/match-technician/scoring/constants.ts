@@ -7,58 +7,50 @@
  *
  * All factor scores are normalised to 0..1 before weighting, so a stage score
  * is a weighted mean and is itself always 0..1.
+ *
+ * ## How the weights map to the paper (2026-11-22)
+ *
+ *   FINAL_WEIGHTS       = Table 10, Normalized Criterion Scores
+ *   ACCEPTANCE_WEIGHTS  = Table 11, Acceptance Likelihood Signals
+ *   SUITABILITY_WEIGHTS = what Table 10's "Skill relevance" is made of
+ *
+ * The final score is Table 10's weighted sum, `sum(W_j x C_ij)`, over five
+ * criteria. Two of them are themselves weighted sums: Skill relevance (Stage
+ * 1) and Acceptance likelihood (Stage 2, Table 11).
  */
 
 // ---------------------------------------------------------------------------
-// Stage 1 - Suitability: can this technician do this job well?
+// Stage 1 - Skill relevance: can this technician do this job well?
 // ---------------------------------------------------------------------------
 
-/** Must sum to 1.0. Checked at module load by `assertWeightsSumToOne`. */
+/**
+ * Table 10's "Skill relevance", broken down. Must sum to 1.0. Checked at
+ * module load by `assertWeightsSumToOne`.
+ *
+ * Until 2026-11-22 this stage also held the trust badge (0.14) and the client
+ * rating (0.12). Both are criteria of their own in Table 10, so they moved up
+ * to `FINAL_WEIGHTS`; keeping them here as well would count them twice. What
+ * is left is purely "can they fix this", and the four weights keep roughly
+ * their old proportions.
+ */
 export const SUITABILITY_WEIGHTS = {
-  /** Does a skill tag match the specific symptom? The most direct evidence. */
-  skill_tag: 0.22,
   /**
-   * The brand + device ladder. Now the heaviest single factor.
+   * The brand + device ladder. The heaviest factor in the stage.
    *
-   * It was 0.25 when it only asked "do they list this device type?". It is now
-   * an assessed, brand-level claim - a technician who passed an assessment
-   * covering this exact device and declared this exact brand is much stronger
-   * evidence than a self-typed skill tag, so it outranks `skill_tag`.
+   * An assessed, brand-level claim - a technician who passed an assessment
+   * covering this exact device and declared this exact brand - is much
+   * stronger evidence than a self-typed skill tag, so it outranks `skill_tag`.
    */
-  specialization: 0.32,
-  /** Standard / pro / elite - a proxy for depth of experience. */
-  tier: 0.10,
-  /**
-   * The Trust Badge criterion (key kept as `verification_tier` so stored
-   * breakdowns still render). Read from the Progressive Trust Badge since
-   * 20261115000002; the weight itself did not change. The secondary sort key
-   * after the specialisation match.
-   *
-   * This REPLACED a boolean `verified` factor. Identity approval is now a hard
-   * gate in Stage 1, so every candidate scored 1 on that boolean and it
-   * carried no information at all - it spent 0.15 of the weight budget telling
-   * the ranking nothing. The tier distinguishes candidates that the boolean
-   * could not.
-   */
-  verification_tier: 0.14,
+  specialization: 0.45,
+  /** Does a skill tag match the specific symptom? Direct, but self-declared. */
+  skill_tag: 0.30,
   /** Historical diagnosis accuracy on this exact device+symptom combo. */
-  diagnosis_accuracy: 0.10,
+  diagnosis_accuracy: 0.15,
   /**
-   * What previous clients actually said about the work.
-   *
-   * Added because it was missing entirely: `technicians.rating` was printed on
-   * every card and carried no weight in the ranking at all, so a 4.9 and a 3.1
-   * were ordered identically. Client feedback is the only factor here measured
-   * after the job rather than before it, which makes it the one piece of
-   * evidence the technician cannot self-declare.
-   *
-   * The budget for it came from `tier` and `verification_tier`, which are both
-   * proxies for the same thing - how good is this person - that rating
-   * measures directly.
-   *
-   * Smoothed against a prior before it is used; see [RATING_PRIOR_WEIGHT].
+   * Standard / pro / elite - a proxy for depth of experience. The lightest,
+   * because tier also drives Price fit in Stage 2.
    */
-  rating: 0.12,
+  tier: 0.10,
 } as const;
 
 /**
@@ -92,13 +84,11 @@ export const SPECIALIZATION_MATCH = {
 } as const;
 
 /**
- * The Trust Badge criterion's score, by rung (see `trustRungOf`).
+ * Table 10's "Trust badge" criterion, by rung (see `trustRungOf`).
  *
- * Since 20261115000002 this reads the Progressive Trust Badge instead of
- * `verification_tier`, so scoring and the client filter share one source of
- * truth. The weight is unchanged and so are the three values - ID verified,
- * Skill verified and Community Trusted take the places of basic, verified
- * and certified_pro (0.55 / 0.80 / 1.00).
+ * Reads the Progressive Trust Badge, so scoring and the client filter share
+ * one source of truth: ID verified, Skill verified and Community Trusted
+ * (0.55 / 0.80 / 1.00).
  *
  * Rung 1 is not zero: identity was approved by a human, the hard requirement.
  * Rung 0 (identity approved, email never confirmed) scores the same as rung
@@ -106,35 +96,6 @@ export const SPECIALIZATION_MATCH = {
  * not a reason to bury them below it.
  */
 export const TRUST_BADGE_SCORE: readonly number[] = [0.55, 0.55, 0.80, 1.00];
-
-/**
- * Stage 2 client-trust factor.
- *
- * Models how willing a technician is to commit to this client. A no-show costs
- * a technician a round trip across the city and an empty slot, so a client with
- * no history is a slightly worse bet than one with a record of turning up.
- *
- * SOFT, NEVER A BLOCK, and the floor is deliberately high. Every client starts
- * at `new`, so a harsh penalty here would make the platform unusable for
- * exactly the people it needs to attract - a cold-start trap on the client
- * side, mirroring the one `COLD_START_BOOST` solves for technicians. 0.70 is
- * a nudge between otherwise-equal candidates, not a barrier.
- */
-export const CLIENT_TRUST_SCORE: Record<string, number> = {
-  new: 0.70,
-  verified: 0.90,
-  trusted: 1.00,
-};
-
-/**
- * Extra penalty per recorded no-show, subtracted from the trust score.
- *
- * Capped by `MAX_NO_SHOW_PENALTY` so a client can never become unmatchable:
- * the platform's remedy for a repeat no-show is an account action, not a
- * silent inability to book anyone.
- */
-export const NO_SHOW_PENALTY = 0.08;
-export const MAX_NO_SHOW_PENALTY = 0.30;
 
 /** Tier maps to a 0..1 score. Elite is the ceiling, standard is mid. */
 export const TIER_SCORE: Record<string, number> = {
@@ -216,68 +177,81 @@ export const REROUTE_PENALTY = 0.30;
 export const SAME_DEVICE_ONLY_WEIGHT = 0.4;
 
 // ---------------------------------------------------------------------------
-// Stage 2 - Acceptance: will this technician actually take and complete it?
+// Stage 2 - Acceptance likelihood: will this technician take it, and turn up?
 // ---------------------------------------------------------------------------
 
-/** Must sum to 1.0. */
+/**
+ * Table 11, Acceptance Likelihood Signals. Must sum to 1.0.
+ *
+ * Every signal here differs from one technician to the next on the same job.
+ * That is the rule the table was rebuilt on (2026-11-22): the old stage also
+ * scored traffic, weather, urgency x path and client reliability as values
+ * measured once per job, so every candidate got the same number and none of
+ * them could change who ranked first. Traffic and weather now act through
+ * each technician's own travel time; urgency acts through the matching rules.
+ *
+ * Availability (on vacation or not) is not here: it is its own criterion in
+ * Table 10 (`FINAL_WEIGHTS.availability`), and counting it in both places
+ * would score it twice.
+ */
 export const ACCEPTANCE_WEIGHTS = {
   /**
-   * Can they be booked today? False only while they are on vacation.
-   *
-   * This was the online/offline switch until 2026-09-22, when the switch was
-   * removed from the app and time off took its place (see
-   * `availabilityScore`). The weight is unchanged.
-   *
-   * It is a score rather than a gate for the same reason an unverified
-   * specialisation claim is: a technician who is the only expert on the
-   * client's exact machine is worth showing with an "On vacation" label, so
-   * the client understands why they cannot have them, rather than hiding them
-   * so the Top 3 comes back empty.
-   *
-   * The heaviest factor in the stage. A technician on vacation loses all of
-   * it - enough to sink them below any rival who can take the job, which is
-   * right, since `job-response` will not let them be booked.
+   * Traffic-adjusted travel time to the task location: distance from their
+   * base at the live TomTom speed. The heaviest signal - the clearest sign of
+   * whether someone will actually come, and the one that varies most.
    */
-  availability: 0.18,
-  /** Does the client's budget cover this technician's tier rate? */
-  budget_fit: 0.15,
-  /** How booked are they right now? Also what spreads work around. */
-  workload: 0.15,
-  /** Home service when the client needs it today beats a shop pickup. */
-  urgency_path: 0.11,
-  /** Live congestion between technician and client, from TomTom. */
-  traffic: 0.10,
+  travel_burden: 0.30,
+  /** How many active bookings they already hold. Also what spreads work. */
+  workload: 0.25,
   /**
-   * Straight-line distance from their base, independent of current traffic.
-   *
-   * Raised from 0.08 when the service-radius hard gate became a penalty. While
-   * anyone beyond their own radius was being deleted from the pool, distance
-   * barely needed a weight - the gate had already done the work, and had also
-   * been emptying the Top 3 entirely. Now that a distant technician stays in
-   * the running, this is what keeps them *out of the top three* when a nearer
-   * one is available, rather than out of the list.
+   * Whether the task's fixed price meets the technician's rate. Replaced
+   * Budget fit when SUGO moved to fixed prices: the client no longer states a
+   * budget, so the question became whether this price is worth this
+   * technician's time. See `PRICE_FIT_MIN_PHP`.
    */
-  proximity: 0.18,
-  /** Live conditions at the job site, from OpenWeatherMap. */
-  weather: 0.06,
+  price_fit: 0.20,
+  /** Whether the task falls within the service area they declared. */
+  coverage_fit: 0.15,
   /**
-   * How reliable the client is, from `client_verification_status`.
-   *
-   * The smallest weight in the stage, on purpose. It models a real cost to the
-   * technician - a no-show is a wasted round trip - but it must never be the
-   * reason a new client cannot get matched.
+   * Weather & traffic readiness (was "Weather readiness" until 2026-11-22):
+   * will they actually travel in the current rain and traffic? Decided by
+   * the technician's own registration answers when it is raining or the
+   * traffic is heavy (see `TRAVEL_WILLINGNESS`), estimated from the weather
+   * and their trip otherwise. Light, because on a clear, quiet day it is 1.0
+   * for everyone; the rain and traffic rules raise it exactly when it
+   * matters.
    */
-  client_trust: 0.07,
+  conditions_readiness: 0.10,
 } as const;
+
+/**
+ * What the technician said at registration (20261122000001), as a 0..1
+ * readiness for each condition. 1 = they said they go; 0 = they said they
+ * do not. Used only while that condition holds at the job; a technician who
+ * has not answered (null) is estimated from the weather and their trip, as
+ * before the question existed.
+ *
+ * `technicians.rain_travel`:
+ *   any        yes, even in heavy rain or a storm
+ *   not_heavy  yes in rain, not in heavy rain or a storm
+ *   never      not in the rain
+ */
+export const RAIN_TRAVEL_READINESS: Record<
+  string,
+  { rain: number; heavyRain: number }
+> = {
+  any: { rain: 1, heavyRain: 1 },
+  not_heavy: { rain: 1, heavyRain: 0 },
+  never: { rain: 0, heavyRain: 0 },
+};
 
 /**
  * How exposed each service path is to travel conditions.
  *
  * A home service is fully exposed: the technician rides through the rain and
  * the traffic to reach the client. A pickup is partly exposed - one trip, at a
- * time of their choosing. An IT community job is remote, so weather and
- * traffic are nearly irrelevant. Multiplying the raw penalty by this factor is
- * what stops a rainy afternoon from flattening every score equally.
+ * time of their choosing. An IT community job is remote, so travel barely
+ * matters. Travel burden and weather readiness are both scaled by this.
  */
 export const TRAVEL_EXPOSURE: Record<string, number> = {
   home_service: 1.00,
@@ -285,119 +259,97 @@ export const TRAVEL_EXPOSURE: Record<string, number> = {
   it_community: 0.10,
 };
 
-/**
- * Urgency x path fit.
- *
- * The brief: boost home service over pickup when urgency is high. When the
- * client can wait, path choice barely predicts acceptance, so the scores sit
- * close together and other factors decide.
- */
-export const URGENCY_PATH_SCORE: Record<string, Record<string, number>> = {
-  need_today: {
-    home_service: 1.00,
-    pickup: 0.55,
-    it_community: 0.40,
-  },
-  can_wait: {
-    home_service: 0.85,
-    pickup: 0.85,
-    it_community: 0.75,
-  },
-};
-
 /** Workload at or above this is treated as fully booked (score 0). */
 export const MAX_WORKLOAD = 5;
 
-/** Beyond this radius a technician is dropped from the pool entirely. */
+/**
+ * Beyond this radius a technician is dropped from the pool entirely, and the
+ * point at which Coverage fit reaches 0 for someone past their own radius.
+ */
 export const HARD_RADIUS_KM = 50;
 
-/** Distance at which the proximity factor reaches 0. Inside it, linear. */
-export const SOFT_RADIUS_KM = 25;
+/**
+ * Travel time, in minutes, at which Travel burden reaches 0. Also the trip
+ * length that counts as "the whole trip" when Weather & traffic readiness is
+ * estimated for a technician who has not answered.
+ */
+export const TRAVEL_BURDEN_MAX_MINUTES = 60;
 
-/** Indicative hourly rate per tier, in PHP. Mirrors `Technician._tierRates`. */
-export const TIER_HOURLY_RATE: Record<string, number> = {
-  standard: 350,
-  pro: 550,
+/**
+ * The smallest fixed price each tier usually takes, in PHP (2026-11-22).
+ *
+ * Price fit is 1.0 at or above it. The fixed prices run from ₱300 to ₱3,500,
+ * most of them ₱500-₱600, so:
+ *
+ * - standard (₱300) - every job in the catalogue meets it;
+ * - pro (₱500)      - meets most jobs, dips on the ₱300-₱450 quick fixes;
+ * - elite (₱800)    - only the bigger jobs meet it in full.
+ *
+ * That is the acceptance question this signal asks: an elite technician
+ * offered ₱500 for a slow laptop is less likely to take it than a standard
+ * one. Placeholder figures until real ones are agreed; one edit here.
+ */
+export const PRICE_FIT_MIN_PHP: Record<string, number> = {
+  standard: 300,
+  pro: 500,
   elite: 800,
 };
 
-/** Billable hours in a typical repair, used to turn a rate into a job cost. */
-export const TYPICAL_JOB_HOURS = 3;
-
-/** Score used when the client gave no budget - neutral, neither help nor harm. */
-export const NEUTRAL_BUDGET_FIT = 0.70;
+/**
+ * Below the minimum, Price fit falls linearly and reaches 0 at this share of
+ * it: at 0.5, a price half the tier's minimum scores 0.
+ */
+export const PRICE_FIT_ZERO_RATIO = 0.5;
 
 /**
- * How far over budget a quote can run before budget fit hits 0. At 2.0 a quote
- * of exactly twice the client's ceiling scores 0, and everything between the
- * ceiling and that point degrades linearly.
+ * Price fit when the symptom has no single fixed price ("I am not sure", or a
+ * per-camera fee). Neutral - neither helps nor harms.
  */
-export const BUDGET_OVERRUN_TOLERANCE = 2.0;
+export const NEUTRAL_PRICE_FIT = 0.70;
 
 // ---------------------------------------------------------------------------
-// Stage 3 - Recommendation: which qualified technicians fit THIS client, now?
+// Final score - Table 10, Normalized Criterion Scores
 // ---------------------------------------------------------------------------
 
 /**
- * The recommendation score, and the ranking, is a weighted mean of these.
- * Must sum to 1.0.
+ * Table 10. The final score, and the ranking, is `sum(W_j x C_ij)` over these
+ * five criteria. Must sum to 1.0.
  *
- * It replaced `FINAL_WEIGHTS` (suitability 0.60, acceptance 0.40) on
- * 2026-09-27, when the brief split *matching* ("who is qualified and
- * compatible?") from *recommendation* ("who is most relevant to this client in
- * this situation?"). The two stage scores are still its two biggest inputs.
+ * Rebuilt on 2026-11-22 to match the paper. Before that the final layer was
+ * suitability 0.45, acceptance 0.20, context fit 0.15, client history 0.10
+ * and track record 0.10, with rating and the trust badge buried inside Stage
+ * 1. Two things changed beyond the regrouping:
  *
- * Suitability stays the heaviest, by a wide margin, for the reason the old
- * weights gave: a technician who is close, free and cheap but cannot fix the
- * device is a worse outcome than a slightly slower one who can. With no client
- * history (`client_preference` dropped, weight redistributed) it carries half
- * the score.
+ * - Table 10's "Location proximity" became "Acceptance likelihood". Location
+ *   is scored inside Table 11 (Travel burden, Coverage fit); keeping it here
+ *   as well would count distance twice. The old "context fit" re-scored
+ *   service area, travel time and readiness - the same double count - so it
+ *   went into Stage 2 too.
+ * - Client history and track record left the score. Neither is in the paper.
+ *   Both are still shown to the client as reasons ("You rated them 5 stars
+ *   last time", "Usually accepts the jobs they are offered").
+ *
+ * Skill relevance stays the heaviest: a technician who is close, free and
+ * cheap but cannot fix the device is a worse outcome than a slightly slower
+ * one who can.
  */
-export const RECOMMENDATION_WEIGHTS = {
-  /** Stage 1, whole. Can they do this repair well? */
+export const FINAL_WEIGHTS = {
+  /** Skill relevance - Stage 1, whole. Can they do this repair well? */
   suitability: 0.45,
-  /** Stage 2, whole. Are they likely to accept it? */
-  acceptance: 0.20,
-  /**
-   * Do they fit the conditions right now - urgency, rain, traffic, their own
-   * service area? Overlaps Stage 2 on purpose: the matching rules raise this
-   * weight exactly when conditions are unusual, which is when fit to them
-   * should decide more.
-   */
-  context_fit: 0.15,
-  /**
-   * This client's own history with this technician. Null for a client with no
-   * past bookings, and then dropped - a new user has no preferences, and we do
-   * not invent any.
-   */
-  client_preference: 0.10,
-  /** Track record beyond Stage 1: do they answer offers, how much have they done? */
-  technician_performance: 0.10,
+  /** Acceptance likelihood - Stage 2 (Table 11), whole. */
+  acceptance: 0.40,
+  /** User rating - what past clients said, smoothed. */
+  rating: 0.05,
+  /** Availability - 0 while on vacation; `job-response` refuses the booking. */
+  availability: 0.05,
+  /** Trust badge - the Progressive Trust Badge rung for this job's device. */
+  trust_badge: 0.05,
 } as const;
-
-/**
- * Client preference, from this client's past jobs and the stars they gave.
- *
- * "Not yet" is the middle, not zero: never having booked someone is not a mark
- * against them. A poor past rating is the only value near the floor - the
- * client has told us directly they did not want this person again.
- */
-export const CLIENT_PREFERENCE_SCORE = {
-  /** They rated this technician WELL_RATED_STARS or more before. */
-  rated_well: 1.00,
-  /** They had a job with this technician before and did not rate it. */
-  worked_before: 0.75,
-  /** The client has history, just none with this technician. */
-  not_yet: 0.50,
-  /** They rated this technician POORLY_RATED_STARS or fewer before. */
-  rated_poorly: 0.10,
-} as const;
-
-export const WELL_RATED_STARS = 4;
-export const POORLY_RATED_STARS = 2;
 
 /**
  * Response behaviour: how often a technician accepts the offers they are sent.
+ * No longer scored (not in Table 10); used only to earn the "Usually accepts
+ * the jobs they are offered" reason.
  *
  * Smoothed toward a prior exactly like diagnosis accuracy, and for the same
  * reason - one decline from a newcomer is not a 0% response rate. With a
@@ -406,19 +358,6 @@ export const POORLY_RATED_STARS = 2;
  */
 export const RESPONSE_PRIOR = 0.75;
 export const RESPONSE_PRIOR_WEIGHT = 3;
-
-/**
- * Experience, on a log scale that reaches 1.0 at this many completed jobs.
- * Logarithmic because 2 jobs versus 20 is a real difference and 200 versus 220
- * is noise - the same shape `recommended_technicians` uses.
- */
-export const EXPERIENCE_SATURATION_JOBS = 50;
-
-/** Travel time at which the context-fit travel component reaches 0. */
-export const ETA_FIT_MINUTES = 60;
-
-/** Outside their declared service area: context fit for that component. */
-export const OUTSIDE_SERVICE_AREA_FIT = 0.30;
 
 // ---------------------------------------------------------------------------
 // Context signals - the conditions the matching rules are written against
@@ -435,6 +374,15 @@ export const HEAVY_TRAFFIC_CONGESTION = 0.6;
 export const RAIN_SEVERITY = 0.5;
 
 /**
+ * Weather severity at or above this is "heavy rain" for the rules
+ * (2026-11-22): OpenWeatherMap's heavy and extreme rain (0.85) and
+ * thunderstorms (1.00). Ordinary rain (0.55) stays below it, so a downpour
+ * re-weights the ranking harder than a shower does. A heavy-rain job also
+ * holds `rain`, so both rain rules fire and their multipliers compose.
+ */
+export const HEAVY_RAIN_SEVERITY = 0.85;
+
+/**
  * No factor's weight can be multiplied by more than this, however many rules
  * fire. Without a cap, three rules that each boost proximity would compound
  * into a ranking that is about distance and nothing else.
@@ -443,6 +391,20 @@ export const MAX_RULE_MULTIPLIER = 2.0;
 
 /** How many offers we write to `job_matches`. The check constraint allows 1-3. */
 export const TOP_N = 3;
+
+/**
+ * Step 5 of the paper, Previous Provider Priority (built 2026-11-22). A
+ * technician the client has completed a job with before is moved to the top
+ * of the list when they still rate this high overall...
+ */
+export const PREVIOUS_TECHNICIAN_MIN_RATING = 4.5;
+
+/**
+ * ...and the client's own last rating of them, if they left one, is at least
+ * this. Someone the client rated 3 stars or below is never pushed back at
+ * them, whatever their average.
+ */
+export const PREVIOUS_TECHNICIAN_MIN_CLIENT_STARS = 4;
 
 /**
  * Two technicians whose final scores differ by less than this are treated as
@@ -509,4 +471,4 @@ function assertWeightsSumToOne(
 
 assertWeightsSumToOne("SUITABILITY_WEIGHTS", SUITABILITY_WEIGHTS);
 assertWeightsSumToOne("ACCEPTANCE_WEIGHTS", ACCEPTANCE_WEIGHTS);
-assertWeightsSumToOne("RECOMMENDATION_WEIGHTS", RECOMMENDATION_WEIGHTS);
+assertWeightsSumToOne("FINAL_WEIGHTS", FINAL_WEIGHTS);

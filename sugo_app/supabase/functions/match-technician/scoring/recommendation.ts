@@ -1,177 +1,171 @@
 /**
- * Stage 3 - Recommendation.
+ * The final score - Table 10, Normalized Criterion Scores.
  *
- * Matching (Stages 1 and 2) answers "who is qualified and compatible?".
- * Recommendation answers a different question: "of those, who is most
- * relevant to THIS client, in THIS situation?". The two stage scores are its
- * biggest inputs, and three things neither stage can see are added:
+ *   Final_i = sum over j of (W_j x C_ij)
  *
- * | Factor                   | Asks                                            |
- * |--------------------------|-------------------------------------------------|
- * | `context_fit`            | Do they fit today's conditions?                 |
- * | `client_preference`      | What does this client's own history say?        |
- * | `technician_performance` | Do they answer offers? How much have they done? |
+ * | Criterion             | W_j  | C_ij comes from                              |
+ * |-----------------------|------|----------------------------------------------|
+ * | Skill relevance       | 0.45 | Stage 1 (`suitability.ts`), whole            |
+ * | Acceptance likelihood | 0.40 | Stage 2 (`acceptance.ts`, Table 11), whole   |
+ * | User rating           | 0.05 | `ratingScore`, smoothed toward a prior       |
+ * | Availability          | 0.05 | `availabilityScore`, 0 while on vacation     |
+ * | Trust badge           | 0.05 | `trustBadgeScore`, the badge rung for the job |
  *
- * The result is the recommendation score. It is what the Top 3 is ranked by,
- * and it is stored as `job_matches.final_score`.
+ * Every C_ij is already on 0..1 - the "normalized" in the table's title - so
+ * the final score is a weighted mean on 0..1 too. It is what the Top 3 is
+ * ranked by, and it is stored as `job_matches.final_score`. The breakdown
+ * keeps the key `recommendation` for it so installed app builds still read it.
  *
- * ## Cold start, both sides
- *
- * A client with no past bookings has no preferences, so `client_preference`
- * is null and `combine` drops it and shares its weight out - nobody is ranked
- * on a preference the client never showed. A technician with no offers yet
- * sits at `RESPONSE_PRIOR`, not at zero.
+ * The paper's worked example (Provider A 0.879, Provider B 0.8185) is pinned
+ * in `recommendation.test.ts`, so the code cannot drift from the table.
  *
  * Pure: no Deno APIs, no network.
  */
 import {
-  CLIENT_PREFERENCE_SCORE,
-  ETA_FIT_MINUTES,
-  EXPERIENCE_SATURATION_JOBS,
-  MAX_WORKLOAD,
-  OUTSIDE_SERVICE_AREA_FIT,
-  POORLY_RATED_STARS,
-  RECOMMENDATION_WEIGHTS,
+  FINAL_WEIGHTS,
+  RATING_MAX,
+  RATING_MIN,
+  RATING_PRIOR_MEAN,
+  RATING_PRIOR_WEIGHT,
   RESPONSE_PRIOR,
   RESPONSE_PRIOR_WEIGHT,
-  SOFT_RADIUS_KM,
-  WELL_RATED_STARS,
+  TRUST_BADGE_SCORE,
 } from "./constants.ts";
 import { clamp01 } from "./geo.ts";
+import { trustRungOf } from "./preferences.ts";
 import { reweight } from "./rules.ts";
 import { combine, type FactorInput, round } from "./weighting.ts";
 import type {
-  ClientHistory,
-  ContextSignal,
   StageResult,
+  TechnicianRow,
   TrackRecord,
   WeightMultipliers,
 } from "./types.ts";
 
 /**
- * How well a technician fits the conditions right now.
+ * User rating: what previous clients said, smoothed so a thin history cannot
+ * dominate.
  *
- * A mean of whichever components apply - each only when its situation holds:
+ * `technicians.rating` is a plain average, and an average over one job is
+ * nearly noise: a single five-star review would otherwise outrank a technician
+ * holding 4.7 across fifty. The rating is pulled toward
+ * [RATING_PRIOR_MEAN] by [RATING_PRIOR_WEIGHT] notional jobs, so it takes a
+ * real history to move away from the prior in either direction.
  *
- * * **service area** - inside the radius they declared, always when known.
- * * **travel time** - minutes at current traffic speed, for on-site visits.
- * * **ready now** - free and not on vacation, when the client needs it today.
- * * **short trip in the rain** - distance again, when it is raining on an
- *   on-site visit. Counted on purpose: rain is when a long ride hurts most.
- *
- * Null when none applies (a remote job that can wait, with no location),
- * which drops the factor rather than scoring anyone zero.
+ * A technician with no ratings at all scores the prior exactly. That is on
+ * purpose: they have not been judged badly, they have not been judged, and the
+ * cold-start rule exists so an empty history does not lock somebody out.
  */
-export function contextFitScore(input: {
-  signals: ContextSignal[];
-  distanceKm: number | null;
-  serviceRadiusKm: number | null;
-  etaMinutes: number | null;
-  onVacation: boolean;
-  workload: number;
-}): { value: number | null; note: string } {
-  const held = new Set(input.signals);
-  const parts: number[] = [];
-  const notes: string[] = [];
+export function ratingScore(
+  technician: TechnicianRow,
+): { value: number; note: string } {
+  const average = technician.rating ?? 0;
+  const jobs = technician.total_jobs ?? 0;
 
-  const radius = input.serviceRadiusKm ?? 0;
-  if (input.distanceKm !== null && radius > 0) {
-    const inside = input.distanceKm <= radius;
-    parts.push(inside ? 1 : OUTSIDE_SERVICE_AREA_FIT);
-    notes.push(inside ? "inside their service area" : "outside their service area");
-  }
+  // A zero here means "never rated", not "rated zero" - the column defaults to
+  // 0 and the scale starts at 1. Feeding it in as a real score would punish
+  // every new technician for work they have not done yet.
+  const rated = average > 0 ? jobs : 0;
 
-  if (held.has("on_site") && input.etaMinutes !== null) {
-    const minutes = Math.min(input.etaMinutes, ETA_FIT_MINUTES);
-    parts.push(clamp01(1 - minutes / ETA_FIT_MINUTES));
-    notes.push(`about ${Math.max(1, Math.round(input.etaMinutes))} min away`);
-  }
+  const smoothed = (average * rated + RATING_PRIOR_MEAN * RATING_PRIOR_WEIGHT) /
+    (rated + RATING_PRIOR_WEIGHT);
 
-  if (held.has("urgent")) {
-    const ready = input.onVacation
-      ? 0
-      : clamp01(1 - Math.min(input.workload, MAX_WORKLOAD) / MAX_WORKLOAD);
-    parts.push(ready);
-    notes.push(
-      input.onVacation
-        ? "on vacation, so not free today"
-        : input.workload === 0
-        ? "free today"
-        : `${input.workload} job${input.workload === 1 ? "" : "s"} already today`,
-    );
-  }
+  const value = clamp01(
+    (smoothed - RATING_MIN) / (RATING_MAX - RATING_MIN),
+  );
 
-  if (held.has("rain") && held.has("on_site") && input.distanceKm !== null) {
-    parts.push(
-      clamp01(1 - Math.min(input.distanceKm, SOFT_RADIUS_KM) / SOFT_RADIUS_KM),
-    );
-    notes.push("short ride in the rain matters");
-  }
+  const note = rated === 0
+    ? "No client ratings yet"
+    : `${average.toFixed(1)} from ${rated} job${rated === 1 ? "" : "s"}`;
 
-  if (parts.length === 0) {
-    return { value: null, note: "No condition-specific fit to measure" };
-  }
-
-  const value = parts.reduce((sum, p) => sum + p, 0) / parts.length;
-  const note = notes.join(", ");
-  return { value, note: note.charAt(0).toUpperCase() + note.slice(1) };
-}
-
-/** What this client's own bookings say about this technician. */
-export function clientPreferenceScore(
-  history: ClientHistory,
-  technicianId: string,
-): { value: number | null; note: string } {
-  if (history.pastJobs === 0) {
-    return {
-      value: null,
-      note: "First booking - no preferences to learn from yet",
-    };
-  }
-
-  const record = history.byTechnician.get(technicianId);
-  if (!record || record.jobs === 0) {
-    return {
-      value: CLIENT_PREFERENCE_SCORE.not_yet,
-      note: "You have not booked them before",
-    };
-  }
-
-  if (record.stars !== null && record.stars >= WELL_RATED_STARS) {
-    return {
-      value: CLIENT_PREFERENCE_SCORE.rated_well,
-      note: `You rated them ${record.stars} stars before`,
-    };
-  }
-
-  if (record.stars !== null && record.stars <= POORLY_RATED_STARS) {
-    return {
-      value: CLIENT_PREFERENCE_SCORE.rated_poorly,
-      note: `You rated them ${record.stars} star${record.stars === 1 ? "" : "s"} before`,
-    };
-  }
-
-  return {
-    value: CLIENT_PREFERENCE_SCORE.worked_before,
-    note: `${record.jobs} earlier job${record.jobs === 1 ? "" : "s"} with you`,
-  };
+  return { value, note };
 }
 
 /**
- * Response behaviour and experience, averaged.
+ * `2026-09-27` -> `Sep 27`.
  *
- * Rating is deliberately NOT here: it is already a Stage 1 factor, and
- * counting it twice would let one number decide a ranking that is meant to
- * weigh several.
- *
- * Cancellations are not here either. `jobs` records that a job was cancelled
- * but not who cancelled it, and holding a client's change of plans against
- * the technician would be unfair. Stated as a limitation in docs/rb-cars.md.
+ * The value is a calendar date with no time, so it is parsed and printed in
+ * UTC: formatting it in any other zone can shift it a day either way.
  */
-export function performanceScore(
+export function formatAwayUntil(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Availability: can the technician take this job, going by their own
+ * calendar?
+ *
+ * Decided by time off alone since 2026-09-22, when the online/offline switch
+ * was removed from the app. The switch asked technicians to remember to flip
+ * it many times a day, and one left off by accident kept a qualified person
+ * at the bottom of every ranking with no one noticing. Vacation days are
+ * planned once, end on their own, and are what a client actually needs to
+ * know: whether this person can be booked.
+ *
+ * `technicians.is_available` still exists - the table is frozen - but nothing
+ * reads it any more, so a value left over from the old switch cannot affect
+ * a ranking.
+ *
+ * Binary on purpose. There is no honest middle value between "can be booked"
+ * and "cannot". A score rather than a gate: a technician who is the only
+ * expert on the client's exact machine is worth showing with an "On vacation"
+ * label, so the client understands why they cannot have them, rather than
+ * hiding them so the Top 3 comes back empty. `job-response` refuses the
+ * booking.
+ */
+export function availabilityScore(
+  technician: TechnicianRow,
+): { value: number; note: string } {
+  if (technician.away_until) {
+    return {
+      value: 0,
+      note: `On vacation until ${formatAwayUntil(technician.away_until)}, so cannot be booked`,
+    };
+  }
+
+  return { value: 1, note: "Taking jobs - no time off booked" };
+}
+
+/**
+ * Trust badge: the Progressive Trust Badge rung as it applies to this job's
+ * device (`trustRungOf`) - the same rung the client's "minimum trust badge"
+ * preference is checked against.
+ */
+export function trustBadgeScore(
+  technician: TechnicianRow,
+  deviceCandidates: string[],
+): { value: number; note: string } {
+  const rung = trustRungOf(technician, deviceCandidates);
+
+  const note = rung === 3
+    ? "Community Trusted: proven on this device, with a strong track record"
+    : rung === 2
+    ? "Skill verified for this device"
+    : technician.badge === "community_trusted" ||
+        technician.badge === "skill_verified"
+    ? "ID verified for this job: not yet skill verified on this device"
+    : "ID verified";
+
+  return { value: TRUST_BADGE_SCORE[rung] ?? TRUST_BADGE_SCORE[1], note };
+}
+
+/**
+ * How often a technician accepts the offers they are sent, smoothed toward
+ * `RESPONSE_PRIOR`.
+ *
+ * Not a criterion in Table 10, so it adds nothing to the score. It is kept
+ * only to earn the "Usually accepts the jobs they are offered" reason, which
+ * is a fact worth telling the client.
+ */
+export function responseRecord(
   record: TrackRecord | undefined,
-  totalJobs: number,
-): { value: number; note: string; responseRate: number; answered: number } {
+): { responseRate: number; answered: number } {
   const accepted = record?.accepted ?? 0;
   const declined = record?.declined ?? 0;
   const answered = accepted + declined;
@@ -179,69 +173,56 @@ export function performanceScore(
   const responseRate = (accepted + RESPONSE_PRIOR_WEIGHT * RESPONSE_PRIOR) /
     (answered + RESPONSE_PRIOR_WEIGHT);
 
-  const experience = clamp01(
-    Math.log(1 + Math.max(totalJobs, 0)) /
-      Math.log(1 + EXPERIENCE_SATURATION_JOBS),
-  );
-
-  const note = answered === 0
-    ? `No offers answered yet; ${totalJobs} job${totalJobs === 1 ? "" : "s"} done`
-    : `Accepted ${accepted} of ${answered} offers; ${totalJobs} job${
-      totalJobs === 1 ? "" : "s"
-    } done`;
-
-  return {
-    value: (responseRate + experience) / 2,
-    note,
-    responseRate: round(responseRate),
-    answered,
-  };
+  return { responseRate: round(responseRate), answered };
 }
 
-/** Runs Stage 3 for one technician. Rules are applied here, as for 1 and 2. */
+/**
+ * The final score for one technician - Table 10. Matching rules apply here,
+ * as they do to Stages 1 and 2.
+ */
 export function scoreRecommendation(input: {
   suitability: StageResult;
   acceptance: StageResult;
-  contextFit: { value: number | null; note: string };
-  clientPreference: { value: number | null; note: string };
-  performance: { value: number; note: string };
+  rating: { value: number; note: string };
+  availability: { value: number; note: string };
+  trustBadge: { value: number; note: string };
   multipliers: WeightMultipliers;
 }): StageResult {
   const factors: FactorInput[] = [
     {
       key: "suitability",
-      label: "Can do the job (Stage 1)",
+      label: "Skill relevance",
       value: input.suitability.score,
-      weight: RECOMMENDATION_WEIGHTS.suitability,
-      note: `Suitability ${Math.round(input.suitability.score * 100)}%`,
+      weight: FINAL_WEIGHTS.suitability,
+      note: `Stage 1 score ${Math.round(input.suitability.score * 100)}%`,
     },
     {
       key: "acceptance",
-      label: "Likely to accept (Stage 2)",
+      label: "Acceptance likelihood",
       value: input.acceptance.score,
-      weight: RECOMMENDATION_WEIGHTS.acceptance,
-      note: `Acceptance likelihood ${Math.round(input.acceptance.score * 100)}%`,
+      weight: FINAL_WEIGHTS.acceptance,
+      note: `Stage 2 score ${Math.round(input.acceptance.score * 100)}%`,
     },
     {
-      key: "context_fit",
-      label: "Fits current conditions",
-      value: input.contextFit.value,
-      weight: RECOMMENDATION_WEIGHTS.context_fit,
-      note: input.contextFit.note,
+      key: "rating",
+      label: "User rating",
+      value: input.rating.value,
+      weight: FINAL_WEIGHTS.rating,
+      note: input.rating.note,
     },
     {
-      key: "client_preference",
-      label: "Your history with them",
-      value: input.clientPreference.value,
-      weight: RECOMMENDATION_WEIGHTS.client_preference,
-      note: input.clientPreference.note,
+      key: "availability",
+      label: "Availability",
+      value: input.availability.value,
+      weight: FINAL_WEIGHTS.availability,
+      note: input.availability.note,
     },
     {
-      key: "technician_performance",
-      label: "Track record",
-      value: input.performance.value,
-      weight: RECOMMENDATION_WEIGHTS.technician_performance,
-      note: input.performance.note,
+      key: "trust_badge",
+      label: "Trust badge",
+      value: input.trustBadge.value,
+      weight: FINAL_WEIGHTS.trust_badge,
+      note: input.trustBadge.note,
     },
   ];
 

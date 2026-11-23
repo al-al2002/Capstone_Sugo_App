@@ -12,8 +12,8 @@
  *   2. Client preference pre-filter (THIS) - removes whoever fails a
  *      requirement the client set
  *   3. Context detection + weighted scoring (Stage 1, rules re-weight it)
- *   4. Acceptance likelihood (Stage 2)
- *   5. Recommendation (Stage 3) and the Top 3
+ *   4. Acceptance likelihood (Stage 2, Table 11)
+ *   5. Final score (Table 10) and the Top 3
  *
  * ## The rules this module keeps
  *

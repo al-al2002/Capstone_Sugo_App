@@ -10,7 +10,8 @@
  * ## How it works
  *
  * 1. `deriveSignals` turns the job and the live context into a set of yes/no
- *    facts - urgent, rain, heavy traffic, on-site visit, appliance, technology.
+ *    facts - urgent, rain, heavy rain, heavy traffic, on-site visit,
+ *    appliance, technology.
  * 2. `selectRules` fires every rule in `MATCHING_RULES` whose conditions all
  *    hold, and composes their multipliers (capped at `MAX_RULE_MULTIPLIER`).
  * 3. `reweight` applies those multipliers to a stage's factors and
@@ -27,13 +28,21 @@
  *
  * A signal whose data source is down is simply absent. TomTom unreachable
  * means no `heavy_traffic`, so the traffic rule does not fire and the base
- * weights stand - the distance factor still carries the ranking. Nothing here
- * ever throws for a missing input.
+ * weights stand - travel burden still carries the ranking, at a typical city
+ * speed. Nothing here ever throws for a missing input.
+ *
+ * ## Since 2026-11-22
+ *
+ * The rules name the Table 10 and Table 11 keys. Availability is a Table 10
+ * criterion now, so the rules that boost it act on the final score
+ * (`recommendation`) rather than on Stage 2. Urgency is no longer a Stage 2
+ * signal of its own; the "Needed today" rule is how it shapes the ranking.
  *
  * Pure: no Deno APIs and no network, so `recommendation.test.ts` runs it
  * under plain Node.
  */
 import {
+  HEAVY_RAIN_SEVERITY,
   HEAVY_TRAFFIC_CONGESTION,
   MAX_RULE_MULTIPLIER,
   RAIN_SEVERITY,
@@ -73,20 +82,52 @@ export const MATCHING_RULES: MatchingRule[] = [
       "specialist across the city.",
     when: ["urgent", "rain", "on_site"],
     adjust: {
-      acceptance: { proximity: 1.6, availability: 1.4, weather: 1.5 },
-      recommendation: { context_fit: 1.5, acceptance: 1.2 },
+      acceptance: { travel_burden: 1.6, conditions_readiness: 1.5 },
+      recommendation: { acceptance: 1.3, availability: 1.4 },
+    },
+  },
+  {
+    // Added 2026-11-22. Before this, rain only moved the ranking when the job
+    // was also urgent; a can-wait home visit in a downpour was ranked as on a
+    // dry day apart from the light weather-readiness signal.
+    id: "rain_visit",
+    label: "Rain on the way",
+    rationale:
+      "Someone has to ride to the client through the rain. A shorter trip " +
+      "means less time on wet roads and less chance of a late arrival.",
+    when: ["rain", "on_site"],
+    adjust: {
+      acceptance: { travel_burden: 1.3, conditions_readiness: 1.5 },
+    },
+  },
+  {
+    // Fires ON TOP of "Rain on the way" (a heavy-rain job holds both signals),
+    // so its multipliers are the extra a downpour adds over ordinary rain:
+    // travel burden 1.3 x 1.3 = 1.69, weather readiness 1.5 x 1.3 = 1.95.
+    id: "heavy_rain_visit",
+    label: "Heavy rain or thunderstorm",
+    rationale:
+      "In a downpour or a storm a long ride is slow and unsafe, and the " +
+      "technician most likely to arrive is the one closest to the client.",
+    when: ["heavy_rain", "on_site"],
+    adjust: {
+      acceptance: { travel_burden: 1.3, conditions_readiness: 1.3 },
+      recommendation: { acceptance: 1.2 },
     },
   },
   {
     id: "heavy_traffic_visit",
     label: "Heavy traffic on the way",
     rationale:
-      "Congestion multiplies every kilometre. Travel time and distance decide " +
-      "more of who can realistically arrive.",
+      "Congestion multiplies every kilometre. Travel time, and whether the " +
+      "technician said they still go in heavy traffic, decide more of who " +
+      "can realistically arrive.",
     when: ["heavy_traffic", "on_site"],
     adjust: {
-      acceptance: { proximity: 1.5, traffic: 1.5, availability: 1.2 },
-      recommendation: { context_fit: 1.3 },
+      // Readiness added 2026-11-22: the technician's own "do you still go in
+      // heavy traffic?" answer counts more while the traffic is heavy.
+      acceptance: { travel_burden: 1.5, conditions_readiness: 1.5 },
+      recommendation: { acceptance: 1.2, availability: 1.2 },
     },
   },
   {
@@ -97,7 +138,8 @@ export const MATCHING_RULES: MatchingRule[] = [
       "already buried in jobs is more useful than one who will get to it later.",
     when: ["urgent"],
     adjust: {
-      acceptance: { availability: 1.3, workload: 1.4, urgency_path: 1.2 },
+      acceptance: { workload: 1.4 },
+      recommendation: { availability: 1.3 },
     },
   },
   {
@@ -122,8 +164,9 @@ export const MATCHING_RULES: MatchingRule[] = [
 /**
  * `on_site` means a technician comes to the client's door. A shop pickup is
  * one trip at a time the technician picks, and an IT-community job is remote;
- * Stage 2's travel exposure already scales weather and traffic for both, so
- * the travel rules are kept for the case where the trip is the job.
+ * Stage 2's travel exposure already scales travel burden and weather
+ * readiness for both, so the travel rules are kept for the case where the
+ * trip is the job.
  */
 const ON_SITE_PATHS: ServicePath[] = ["home_service"];
 
@@ -148,6 +191,8 @@ export function deriveSignals(
     weather.severity >= RAIN_SEVERITY
   ) {
     signals.push("rain");
+    // Heavy rain is a stronger kind of rain, never instead of it.
+    if (weather.severity >= HEAVY_RAIN_SEVERITY) signals.push("heavy_rain");
   }
 
   if (

@@ -172,6 +172,15 @@ export interface TechnicianRow {
   offers_home_service?: boolean;
   offers_shop_repair?: boolean;
 
+  /**
+   * Will they travel in the rain (20261122000001)? `any` = even in heavy rain
+   * or a storm, `not_heavy` = not in heavy rain, `never` = not in rain. Null
+   * = not answered; Weather & traffic readiness is then estimated.
+   */
+  rain_travel?: "any" | "not_heavy" | "never" | null;
+  /** Will they still travel in heavy traffic? Null = not answered. */
+  heavy_traffic_travel?: boolean | null;
+
   created_at: string | null;
 
   /**
@@ -241,6 +250,8 @@ export interface WeatherContext {
 export type ContextSignal =
   | "urgent"
   | "rain"
+  /** Heavy rain or a thunderstorm. Always held together with `rain`. */
+  | "heavy_rain"
   | "heavy_traffic"
   | "on_site"
   | "appliance"
@@ -292,10 +303,11 @@ export interface ClientTechnicianHistory {
 }
 
 /**
- * What this client's own history says, for Stage 3.
+ * What this client's own history says about each technician.
  *
- * `pastJobs` of 0 is the cold-start case: the client-preference factor is then
- * null and dropped, so nobody is ranked on preferences the client never showed.
+ * Not scored since 2026-11-22 (it is not a Table 10 criterion). It earns the
+ * "You rated them 5 stars last time" and "Has worked on a job for you before"
+ * reasons. `pastJobs` of 0 is a first-time client.
  */
 export interface ClientHistory {
   pastJobs: number;
@@ -324,9 +336,11 @@ export interface JobContext {
   travelExposure: number;
 
   /**
-   * Who is asking. Feeds the Stage 2 client-trust factor: a technician is
-   * measurably less willing to cross the city for a client with a no-show
-   * history. Soft only - a new client must still be bookable.
+   * Who is asking. Recorded in the breakdown's context; no longer scored.
+   *
+   * It was a Stage 2 factor until 2026-11-22, but it is the same for every
+   * candidate on a job, so it never changed who ranked first. Table 11 keeps
+   * only signals that differ between technicians.
    */
   clientTrust: ClientTrust;
 
@@ -340,7 +354,7 @@ export interface JobContext {
   /** The conditions that held and the rules they selected. */
   rules: RuleSelection;
 
-  /** This client's past bookings, for the Stage 3 preference factor. */
+  /** This client's past bookings, for the client-facing reasons. */
   clientHistory: ClientHistory;
 }
 
@@ -389,25 +403,35 @@ export interface ConsideredCandidate {
   available: boolean;
   suitability: number;
   acceptance: number;
-  /** Stage 3. The same number as `final_score`, named for what it is. */
+  /** Table 10's final score. The same number as `final_score`. */
   recommendation: number;
   final_score: number;
   explainability: string[];
 }
 
-/** Stage 3 as stored: its own factors plus the rules and reasons behind it. */
+/**
+ * The final score as stored (Table 10): its five criteria plus the rules and
+ * reasons behind it. Kept under the key `recommendation`.
+ */
 export interface RecommendationBlock extends StageResult {
   signals: ContextSignal[];
   rules: AppliedRule[];
   reasons: RecommendationReason[];
+  /**
+   * True on the one technician Step 5 (Previous Provider Priority) moved to
+   * the top because the client booked them before. Their score is unchanged.
+   */
+  previous_technician?: boolean;
 }
 
 /**
  * The jsonb document written to `job_matches.score_breakdown`.
  *
- * Version 2 (2026-09-27) added `recommendation`. Everything version 1 had is
- * still written, unchanged in meaning, so installed app builds keep working;
- * `final_score` is now the recommendation score.
+ * Version 2 (2026-09-27) added `recommendation`. Version 3 (2026-11-22)
+ * rebuilt the scores to match the paper: `stage1` is Skill relevance,
+ * `stage2` is Table 11, and `recommendation` is Table 10's final score. The
+ * shape is unchanged, so installed app builds keep working; only the factor
+ * keys inside each stage differ.
  */
 export interface ScoreBreakdown {
   version: number;

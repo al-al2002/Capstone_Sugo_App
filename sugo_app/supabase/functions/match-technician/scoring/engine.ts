@@ -17,7 +17,13 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { HARD_RADIUS_KM, TOP_N } from "./constants.ts";
 import { distanceBetween } from "./geo.ts";
 import { buildAccuracyIndex, type OutcomeRow } from "./accuracy.ts";
-import { exposureFor, rankAll, scoreCandidate, toConsidered } from "./rank.ts";
+import {
+  applyPreviousTechnicianPriority,
+  exposureFor,
+  rankAll,
+  scoreCandidate,
+  toConsidered,
+} from "./rank.ts";
 import { deriveSignals, selectRules } from "./rules.ts";
 import {
   type AvailabilityFacts,
@@ -357,8 +363,9 @@ export async function runMatching(
   // ------------------------------------------ Stage 1 hard gate: the ceiling
   //
   // Being outside a technician's own declared radius is not an exclusion. It
-  // is scored - heavily - by `proximityScore`, which is given the radius and
-  // decays toward zero past it. Deleting these candidates was handing clients
+  // is scored by `coverageFitScore` (Table 11's Coverage fit), which is given
+  // the radius and decays toward zero past it, and by Travel burden, which
+  // grows with every extra kilometre. Deleting these candidates was handing clients
   // an empty Top 3 whenever every nearby technician happened to be a little
   // further out than they had declared, which is worse than showing them
   // ranked last with "past their 10 km service area" printed on the card.
@@ -366,7 +373,8 @@ export async function runMatching(
   // The absolute ceiling stays a hard cut. Even a technician who typed 100 km
   // is not a sensible call-out across a province, and no amount of rating
   // makes a 60 km trip a repair the client can use. An unknown distance is
-  // kept, as it always was, and scored at the proximity prior.
+  // kept, as it always was: its travel and coverage signals are null, and
+  // their weight goes to the signals that can be measured.
   const withinCeiling = pool.filter((technician) => {
     const distanceKm = distances.get(technician.id) ?? null;
     return distanceKm === null || distanceKm <= HARD_RADIUS_KM;
@@ -559,7 +567,12 @@ export async function runMatching(
 
   // Rank the whole pool once. The first three become offers; the rest exist
   // only in the response, because `job_matches.rank` cannot hold a fourth.
-  const ranked = rankAll(scored);
+  // Step 5, Previous Provider Priority: a technician this client booked and
+  // was happy with goes first, if they are in today's pool at all.
+  const ranked = applyPreviousTechnicianPriority(
+    rankAll(scored),
+    context.clientHistory,
+  );
   const top = ranked.slice(0, TOP_N);
   const offeredIds = new Set(top.map((candidate) => candidate.technician.id));
 

@@ -7,35 +7,40 @@
  *
  * Per candidate, in the brief's order:
  *
- *   Stage 1 suitability  ->  re-weighted by the job's matching rules
- *   Stage 2 acceptance   ->  re-weighted by the job's matching rules
- *   Stage 3 recommendation (context fit, client preference, track record)
+ *   Stage 1 skill relevance       ->  re-weighted by the job's matching rules
+ *   Stage 2 acceptance likelihood ->  re-weighted by the job's matching rules
+ *   Final score, Table 10 (skill, acceptance, rating, availability, badge)
  *   reasons for the client, from the numbers above
  */
 import {
+  FINAL_WEIGHTS,
   MIN_VIABLE_SCORE,
-  RECOMMENDATION_WEIGHTS,
+  PREVIOUS_TECHNICIAN_MIN_CLIENT_STARS,
+  PREVIOUS_TECHNICIAN_MIN_RATING,
   SCORE_TIE_EPSILON,
   TRAVEL_EXPOSURE,
 } from "./constants.ts";
-import { travelMinutes } from "./geo.ts";
 import { round } from "./weighting.ts";
 import { scoreSuitability } from "./suitability.ts";
-import { formatAwayUntil, scoreAcceptance } from "./acceptance.ts";
+import { scoreAcceptance } from "./acceptance.ts";
 import { defaultAccuracy } from "./accuracy.ts";
 import { reweight } from "./rules.ts";
 import {
-  clientPreferenceScore,
-  contextFitScore,
-  performanceScore,
+  availabilityScore,
+  formatAwayUntil,
+  ratingScore,
+  responseRecord,
   scoreRecommendation,
+  trustBadgeScore,
 } from "./recommendation.ts";
 import { buildReasons } from "./reasons.ts";
 import { trustBadgeForJob, trustRungOf } from "./preferences.ts";
 import type {
   AccuracyStats,
+  ClientHistory,
   ConsideredCandidate,
   JobContext,
+  RecommendationReason,
   JobRow,
   JobSnapshot,
   ScoredCandidate,
@@ -223,34 +228,21 @@ export function scoreCandidate(
 
   const scored2 = scoreAcceptance(job, technician, context, distanceKm);
   const acceptance = reweight(scored2.stage, multipliers.acceptance);
-  const { quote, workload } = scored2;
+  const { pricePhp, workload, etaMinutes } = scored2;
 
-  // ------------------------------------------------------------ Stage 3
-  const etaMinutes = travelMinutes(distanceKm, context.traffic.currentSpeed);
-  const history = context.clientHistory.byTechnician.get(technician.id);
-  const performance = performanceScore(
-    trackRecords.get(technician.id),
-    technician.total_jobs ?? 0,
-  );
-
+  // ------------------------------------------------- Final score, Table 10
   const recommendationStage = scoreRecommendation({
     suitability,
     acceptance,
-    contextFit: contextFitScore({
-      signals: context.rules.signals,
-      distanceKm,
-      serviceRadiusKm: technician.service_radius_km,
-      etaMinutes,
-      onVacation: Boolean(technician.away_until),
-      workload,
-    }),
-    clientPreference: clientPreferenceScore(
-      context.clientHistory,
-      technician.id,
-    ),
-    performance,
+    rating: ratingScore(technician),
+    availability: availabilityScore(technician),
+    trustBadge: trustBadgeScore(technician, context.deviceCandidates),
     multipliers: multipliers.recommendation,
   });
+
+  // Facts for the reasons only - neither is a Table 10 criterion.
+  const history = context.clientHistory.byTechnician.get(technician.id);
+  const response = responseRecord(trackRecords.get(technician.id));
 
   const reasons = buildReasons({
     job,
@@ -263,13 +255,12 @@ export function scoreCandidate(
     etaMinutes,
     workload,
     coldStart: coldStartApplied,
-    quote,
     history,
-    responseRate: performance.responseRate,
-    answeredOffers: performance.answered,
+    responseRate: response.responseRate,
+    answeredOffers: response.answered,
   });
 
-  // The recommendation score IS the final score: it is what ranks the list.
+  // Table 10's weighted sum IS the final score: it is what ranks the list.
   const finalScore = recommendationStage.score;
 
   const recommendation = {
@@ -299,7 +290,9 @@ export function scoreCandidate(
     distanceKm,
     accuracy,
     breakdown: {
-      version: 2,
+      // 3 since 2026-11-22: Stage 1 is Skill relevance, Stage 2 is Table 11,
+      // and `recommendation` is Table 10's final score.
+      version: 3,
       stage1: suitability,
       stage2: acceptance,
       recommendation,
@@ -313,7 +306,9 @@ export function scoreCandidate(
         reroute_rate: accuracy.rerouteRate,
         workload,
         is_cold_start: coldStartApplied,
-        indicative_quote_php: quote,
+        // The fixed price Price fit compared: labor plus any urgent fee.
+        // Replaced `indicative_quote_php` (tier rate x 3 hours) on 2026-11-22.
+        fixed_price_php: pricePhp,
         service_path: context.servicePath,
         urgency: job.urgency,
         // Distance and ETA are now measured from the technician's registered
@@ -329,9 +324,9 @@ export function scoreCandidate(
         client_no_show_count: context.clientTrust.noShowCount,
         traffic: context.traffic,
         weather: context.weather,
-        // The recommendation layer's base weights. Before version 2 this held
-        // the old two-stage split (suitability 0.60, acceptance 0.40).
-        weights: RECOMMENDATION_WEIGHTS,
+        // Table 10's base weights. Version 2 held the five-part
+        // recommendation layer; version 1 the two-stage split (0.60 / 0.40).
+        weights: FINAL_WEIGHTS,
       },
       explainability,
       technician: snapshot(technician, matchedSpecializations, context.deviceCandidates),
@@ -389,6 +384,66 @@ export function rankAll(
   });
 
   return sorted;
+}
+
+/**
+ * Step 5 of the paper - Previous Provider Priority (built 2026-11-22).
+ *
+ * A client who has had a job done by a technician before, and was happy with
+ * it, usually wants them again. So after ranking, one technician is moved to
+ * the top of the list when ALL of these hold:
+ *
+ * - the client has a **completed** job with them (`clientHistory`);
+ * - they are **in this job's pool at all** - every gate passed, every client
+ *   preference met - because the move happens on the ranked list, not before
+ *   the gates;
+ * - their overall rating is at least `PREVIOUS_TECHNICIAN_MIN_RATING` (4.5);
+ * - the client's own last rating of them, if any, is at least
+ *   `PREVIOUS_TECHNICIAN_MIN_CLIENT_STARS` (4);
+ * - they are **not on vacation** - a technician who cannot be booked is never
+ *   put first.
+ *
+ * When several qualify, the best-ranked of them moves up. Their score is NOT
+ * changed: the number on the card stays the honest weighted sum, and the
+ * reason says why they are first anyway. The paper wrote this for "recurring
+ * tasks"; SUGO has no recurring tasks, so a repeat booking is the case.
+ */
+export function applyPreviousTechnicianPriority(
+  ranked: ScoredCandidate[],
+  history: ClientHistory,
+): ScoredCandidate[] {
+  if (history.pastJobs === 0) return ranked;
+
+  const index = ranked.findIndex((candidate) => {
+    const record = history.byTechnician.get(candidate.technician.id);
+    if (!record || record.completed < 1) return false;
+    if (record.stars !== null && record.stars < PREVIOUS_TECHNICIAN_MIN_CLIENT_STARS) {
+      return false;
+    }
+    if ((candidate.technician.rating ?? 0) < PREVIOUS_TECHNICIAN_MIN_RATING) return false;
+    return !candidate.technician.away_until;
+  });
+
+  if (index < 0) return ranked;
+
+  const chosen = ranked[index];
+  const reason: RecommendationReason = {
+    code: "previous_technician",
+    text: "You booked them before, so they are shown first",
+    kind: "positive",
+  };
+  const recommendation = {
+    ...chosen.recommendation,
+    reasons: [reason, ...chosen.recommendation.reasons],
+    previous_technician: true,
+  };
+  const promoted: ScoredCandidate = {
+    ...chosen,
+    recommendation,
+    breakdown: { ...chosen.breakdown, recommendation },
+  };
+
+  return [promoted, ...ranked.slice(0, index), ...ranked.slice(index + 1)];
 }
 
 /**

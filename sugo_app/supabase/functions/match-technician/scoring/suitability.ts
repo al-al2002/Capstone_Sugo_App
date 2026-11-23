@@ -1,28 +1,33 @@
 /**
- * Stage 1 - Suitability.
+ * Stage 1 - Skill relevance (Table 10's first criterion).
  *
  * "Can this technician fix this device, for this symptom, well?"
+ *
+ * | Factor                 | Weight |
+ * |------------------------|--------|
+ * | Brand and device match | 0.45   |
+ * | Skill match            | 0.30   |
+ * | Diagnosis accuracy     | 0.15   |
+ * | Tier                   | 0.10   |
  *
  * Nothing in this stage depends on the outside world: no traffic, no weather,
  * no distance. It is a pure function of the job, the technician's record and
  * the feedback history. That separation is deliberate - it means Stage 1 is
  * reproducible and testable, and any two runs on the same data give the same
  * answer. Stage 2 owns everything that changes minute to minute.
+ *
+ * The trust badge and the client rating were scored here until 2026-11-22.
+ * They are criteria of their own in Table 10 now, scored in
+ * `recommendation.ts`.
  */
 import {
   ACCURACY_PRIOR,
   COLD_START_BOOST,
   COLD_START_MAX_JOBS,
-  RATING_MAX,
-  RATING_MIN,
-  RATING_PRIOR_MEAN,
-  RATING_PRIOR_WEIGHT,
   SPECIALIZATION_MATCH,
   SUITABILITY_WEIGHTS,
   TIER_SCORE,
-  TRUST_BADGE_SCORE,
 } from "./constants.ts";
-import { trustRungOf } from "./preferences.ts";
 import { clamp01 } from "./geo.ts";
 import { combine, round, type FactorInput } from "./weighting.ts";
 import type {
@@ -238,49 +243,11 @@ export function specializationMatchScore(
 }
 
 /**
- * Runs Stage 1 for one technician.
+ * Runs Stage 1 (Skill relevance) for one technician.
  *
  * Returns the stage result plus the cold-start boost applied, so the caller can
  * surface "newly verified technician" in the explainability line.
  */
-/**
- * What previous clients said, smoothed so a thin history cannot dominate.
- *
- * `technicians.rating` is a plain average, and an average over one job is
- * nearly noise: a single five-star review would otherwise outrank a technician
- * holding 4.7 across fifty. The rating is pulled toward
- * [RATING_PRIOR_MEAN] by [RATING_PRIOR_WEIGHT] notional jobs, so it takes a
- * real history to move away from the prior in either direction.
- *
- * A technician with no ratings at all scores the prior exactly. That is on
- * purpose: they have not been judged badly, they have not been judged, and the
- * cold-start rule exists so an empty history does not lock somebody out.
- */
-export function ratingScore(
-  technician: TechnicianRow,
-): { value: number; note: string } {
-  const average = technician.rating ?? 0;
-  const jobs = technician.total_jobs ?? 0;
-
-  // A zero here means "never rated", not "rated zero" - the column defaults to
-  // 0 and the scale starts at 1. Feeding it in as a real score would punish
-  // every new technician for work they have not done yet.
-  const rated = average > 0 ? jobs : 0;
-
-  const smoothed = (average * rated + RATING_PRIOR_MEAN * RATING_PRIOR_WEIGHT) /
-    (rated + RATING_PRIOR_WEIGHT);
-
-  const value = clamp01(
-    (smoothed - RATING_MIN) / (RATING_MAX - RATING_MIN),
-  );
-
-  const note = rated === 0
-    ? "No client ratings yet"
-    : `${average.toFixed(1)} from ${rated} job${rated === 1 ? "" : "s"}`;
-
-  return { value, note };
-}
-
 export function scoreSuitability(
   job: JobRow,
   technician: TechnicianRow,
@@ -293,7 +260,6 @@ export function scoreSuitability(
 } {
   const skill = skillTagScore(job, technician);
   const specialization = specializationMatchScore(job, technician, context);
-  const trustRung = trustRungOf(technician, context.deviceCandidates);
 
   const totalJobs = technician.total_jobs ?? 0;
   const isColdStart = technician.is_verified &&
@@ -306,8 +272,6 @@ export function scoreSuitability(
     : isColdStart
     ? "No history yet, scored at the neutral prior"
     : `No ${job.device_type} history for this symptom`;
-
-  const rating = ratingScore(technician);
 
   const inputs: FactorInput[] = [
     {
@@ -335,32 +299,6 @@ export function scoreSuitability(
       note: `${technician.tier} tier technician`,
     },
     {
-      // Secondary sort key after the specialisation match.
-      //
-      // This replaced a boolean `verified` factor. Identity approval is now a
-      // hard gate in the engine, so that boolean was 1 for every candidate
-      // that reached this point - it spent weight telling the ranking nothing.
-      // The tier says how much SUGO actually checked, which does differ
-      // between candidates.
-      //
-      // Since 20261115000002 the value is the Progressive Trust Badge as it
-      // applies to this job (`trustRungOf`), the same rung the client's
-      // "minimum trust badge" preference is checked against. The key is kept
-      // so breakdowns already stored in job_matches still render.
-      key: "verification_tier",
-      label: "Trust badge",
-      value: TRUST_BADGE_SCORE[trustRung] ?? TRUST_BADGE_SCORE[1],
-      weight: SUITABILITY_WEIGHTS.verification_tier,
-      note: trustRung === 3
-        ? "Community Trusted: proven on this device, with a strong track record"
-        : trustRung === 2
-        ? "Skill verified for this device"
-        : technician.badge === "community_trusted" ||
-            technician.badge === "skill_verified"
-        ? "ID verified for this job: not yet skill verified on this device"
-        : "ID verified",
-    },
-    {
       key: "diagnosis_accuracy",
       label: "Diagnosis accuracy",
       // Never null: with no evidence this is ACCURACY_PRIOR, so a newcomer is
@@ -368,13 +306,6 @@ export function scoreSuitability(
       value: accuracy.signal,
       weight: SUITABILITY_WEIGHTS.diagnosis_accuracy,
       note: accuracyNote,
-    },
-    {
-      key: "rating",
-      label: "Client rating",
-      value: rating.value,
-      weight: SUITABILITY_WEIGHTS.rating,
-      note: rating.note,
     },
   ];
 
