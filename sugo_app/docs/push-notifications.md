@@ -20,7 +20,7 @@ in-app message and refresh.
 | --- | --- | --- | --- |
 | Technician accepts | "Booking confirmed - Ryan accepted your laptop repair" | the job | `job-response` accept (NEW) |
 | Technician accepts it as a shop repair | "Ryan will take it to the shop" | the job | `job-response` reroute (NEW) |
-| Technician declines | "Ryan can't take this one - choose another" | the job | `job-response` decline (NEW) |
+| Technician declines | "Ryan can't take this one - choose another" | Choose a technician | `job-response` decline (NEW); pop-up when open (2026-11-23) |
 | Home visit switched to the shop | "Ryan is taking it to the shop" | the job | `job-response` needs-shop (NEW) |
 | Technician sets off / on the way | "On the way to you" | live map | stage trigger |
 | Technician almost there (3 min) | "Ryan is almost there - about 2 min away" | live map | ETA sampler (NEW) |
@@ -66,6 +66,32 @@ in-app message and refresh.
 - **The app** - tap routing for the new types (`arriving` opens the live map;
   `client_arriving` / `client_arrived` open the pickup screen;
   `request_cancelled` refreshes Home) and in-app messages when SUGO is open.
+
+## The decline pop-up (2026-11-23)
+
+At the user's request, a decline is now a pop-up when SUGO is open, not a
+four-second snackbar: the request is waiting on the client again, so it holds
+until read and offers the way forward.
+
+- **`_shared/decline_notice.ts`** builds the decline push (same tray wording as
+  before) and adds two data fields: `name` (the technician's first name) and
+  `next` - `shortlist` (others from the match are still there), `more` (the
+  shortlist ran out and a fresh match found more) or `none` (nobody else is
+  free). Tested by `decline_notice.test.ts` (12 checks).
+- **`DeclinedAlertDialog`** (`features/client/widgets`) - "Ryan can't take
+  this one", a chip and a sentence for `next`, then **Choose another
+  technician** (or **Open my request** when nobody is free) and **Later**.
+  Raised by the client dashboard, which stays mounted under every client
+  screen, so it shows over a chat or a booking too. An older server without
+  `name`/`next` gets "Your technician can't take this one" and general words.
+- **Tapping the tray push** (SUGO closed) now opens Choose a technician for
+  the job (by its status) instead of the booking page.
+
+Deploy: `job-response` (for `name`/`next`), then the app. Tests:
+`test/features/client/declined_alert_dialog_test.dart` (6).
+
+**Deployed 2026-11-23**: `job-response` is live with `name`/`next`; it
+answers its own "Sign in required". Not yet seen on a real phone.
 
 ## One limit to know
 
