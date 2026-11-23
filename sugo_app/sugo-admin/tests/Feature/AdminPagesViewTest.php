@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Support\TravelConditions;
+use App\Support\WorkType;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -177,12 +179,73 @@ class AdminPagesViewTest extends TestCase
 
     public function test_the_work_type_label_reads_the_two_flags(): void
     {
-        $this->assertSame('Home Service and Shop Repair', \App\Support\WorkType::label(['offers_home_service' => true, 'offers_shop_repair' => true]));
-        $this->assertSame('Home Service', \App\Support\WorkType::label(['offers_home_service' => true, 'offers_shop_repair' => false]));
-        $this->assertSame('Shop Repair', \App\Support\WorkType::label(['offers_home_service' => false, 'offers_shop_repair' => true]));
+        $this->assertSame('Home Service and Shop Repair', WorkType::label(['offers_home_service' => true, 'offers_shop_repair' => true]));
+        $this->assertSame('Home Service', WorkType::label(['offers_home_service' => true, 'offers_shop_repair' => false]));
+        $this->assertSame('Shop Repair', WorkType::label(['offers_home_service' => false, 'offers_shop_repair' => true]));
         // Missing flags read as the database default.
-        $this->assertSame('Home Service and Shop Repair', \App\Support\WorkType::label([]));
-        $this->assertSame('Not set', \App\Support\WorkType::label(null));
+        $this->assertSame('Home Service and Shop Repair', WorkType::label([]));
+        $this->assertSame('Not set', WorkType::label(null));
+    }
+
+    /**
+     * Rain / heavy-traffic answers (2026-11-22): shown on the account page,
+     * with "Not answered" for a technician registered before the question.
+     */
+    public function test_a_technician_account_shows_rain_and_traffic_answers(): void
+    {
+        $account = [
+            'user_id' => 't1', 'full_name' => 'Ryan Cruz', 'email' => 'ryan@sugo.app',
+            'registration_status' => 'active', 'phone' => null,
+            'created_at' => '2026-11-22T08:00:00Z', 'registration_step' => null,
+            'technician_verified' => true, 'verification_tier' => 'basic',
+            'service_radius_km' => 10,
+        ];
+        $render = fn (?array $work): string => view('accounts.show', [
+            'account' => $account,
+            'role' => 'technician',
+            'verifications' => [],
+            'specializations' => [],
+            'documents' => [],
+            'addresses' => [],
+            'work' => $work,
+        ])->render();
+
+        $html = $render([
+            'offers_home_service' => true, 'offers_shop_repair' => false,
+            'rain_travel' => 'never', 'heavy_traffic_travel' => true,
+        ]);
+        $this->assertStringContainsString('In the rain', $html);
+        $this->assertStringContainsString('Not in the rain', $html);
+        $this->assertStringContainsString('Goes in heavy traffic', $html);
+
+        // Registered before the question: both read "Not answered".
+        $html = $render(['offers_home_service' => true, 'offers_shop_repair' => true]);
+        $this->assertSame(2, substr_count($html, 'Not answered'));
+
+        // No technician row yet: the rows are not shown at all.
+        $html = $render(null);
+        $this->assertStringNotContainsString('In the rain', $html);
+    }
+
+    public function test_the_travel_condition_labels_read_the_two_columns(): void
+    {
+        $rain = fn (?string $v): string => TravelConditions::rain(['rain_travel' => $v]);
+        $this->assertSame('Even in heavy rain', $rain('any'));
+        $this->assertSame('In rain, not heavy rain', $rain('not_heavy'));
+        $this->assertSame('Not in the rain', $rain('never'));
+        $this->assertSame('Not answered', $rain(null));
+        $this->assertSame('Not answered', TravelConditions::rain(null));
+
+        $traffic = fn (?bool $v): string => TravelConditions::traffic(['heavy_traffic_travel' => $v]);
+        $this->assertSame('Goes in heavy traffic', $traffic(true));
+        $this->assertSame('Avoids heavy traffic', $traffic(false));
+        // Null is "not answered", never mistaken for "avoids".
+        $this->assertSame('Not answered', $traffic(null));
+
+        $this->assertSame(
+            ['rain' => 'text-warn', 'traffic' => 'text-ok'],
+            TravelConditions::tones(['rain_travel' => 'never', 'heavy_traffic_travel' => true]),
+        );
     }
 
     public function test_the_login_draws_the_road_and_carries_the_motion_kit(): void

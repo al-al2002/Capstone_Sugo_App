@@ -91,6 +91,45 @@
                                 @endforeach
                             </div>
                         @endif
+
+                        {{-- The work record (20261122000002): what the technician
+                             photographed during the job, with server time and GPS.
+                             Records cannot be edited, so they weigh as evidence. --}}
+                        <div class="mt-4 rounded-xl border border-line p-3">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Work record</p>
+                            @forelse ($dispute['work_record'] as $step)
+                                <div class="mt-3 {{ $loop->first ? '' : 'border-t border-line pt-3' }}">
+                                    <p class="text-xs font-bold text-ink">
+                                        {{ $step['label'] }}
+                                        <span class="font-normal text-ink-muted">
+                                            &middot; {{ \Carbon\Carbon::parse($step['captured_at'])->format('d M, H:i') }}
+                                            &middot;
+                                            @if (isset($step['latitude'], $step['longitude']))
+                                                <a href="https://www.google.com/maps?q={{ $step['latitude'] }},{{ $step['longitude'] }}"
+                                                    target="_blank" rel="noopener" class="underline">GPS location</a>
+                                            @else
+                                                No location recorded
+                                            @endif
+                                        </span>
+                                    </p>
+                                    @if (! empty($step['note']))
+                                        <p class="mt-1 text-xs text-ink">{{ $step['note'] }}</p>
+                                    @endif
+                                    @if (! empty($step['photo_urls']))
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            @foreach ($step['photo_urls'] as $url)
+                                                <a href="{{ $url }}" target="_blank" rel="noopener">
+                                                    <img src="{{ $url }}" alt="{{ $step['label'] }} photo from the work record"
+                                                        class="h-20 w-20 rounded-lg border border-line object-cover transition duration-300 hover:scale-105 hover:shadow-lg">
+                                                </a>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                </div>
+                            @empty
+                                <p class="mt-1 text-xs text-ink-muted">No work-record photos on this booking.</p>
+                            @endforelse
+                        </div>
                     </div>
 
                     <dl class="space-y-2 rounded-xl bg-canvas p-3 text-[11px]">

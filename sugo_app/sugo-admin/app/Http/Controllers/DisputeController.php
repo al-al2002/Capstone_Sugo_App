@@ -31,6 +31,24 @@ class DisputeController extends Controller
 
     private const PHOTO_BUCKET = 'dispute-photos';
 
+    /** The work record's private photo bucket (migration 20261122000002). */
+    private const EVIDENCE_BUCKET = 'job-evidence';
+
+    /**
+     * The work record's steps, as the admin reads them. The app names the
+     * first step for how the job travelled (Before / Collected / Unit
+     * received); here one name covers all three.
+     *
+     * @var array<string, string>
+     */
+    public const MILESTONES = [
+        'intake' => 'As found (before)',
+        'diagnosis' => 'Diagnosis',
+        'progress' => 'Progress',
+        'after' => 'Repaired (after)',
+        'handover' => 'Handover',
+    ];
+
     public function __construct(private readonly Supabase $supabase) {}
 
     public function index(Request $request): View
@@ -47,11 +65,17 @@ class DisputeController extends Controller
             default => [],
         };
 
+        $rows = $this->supabase->select('admin_disputes', $query);
+
+        // Every listed booking's work record in one read, not one per report.
+        $workRecords = $this->workRecords(array_column($rows, 'job_id'));
+
         $disputes = array_map(
             fn (array $dispute): array => $dispute + [
                 'photo_urls' => $this->signedPhotos($dispute['photo_paths'] ?? []),
+                'work_record' => $workRecords[$dispute['job_id']] ?? [],
             ],
-            $this->supabase->select('admin_disputes', $query),
+            $rows,
         );
 
         $counts = [
@@ -129,16 +153,53 @@ class DisputeController extends Controller
      * @param  array<int, string>  $paths
      * @return array<int, string>
      */
-    private function signedPhotos(array $paths): array
+    private function signedPhotos(array $paths, string $bucket = self::PHOTO_BUCKET): array
     {
         $urls = [];
         foreach ($paths as $path) {
-            $url = $this->supabase->signedUrl($path, null, self::PHOTO_BUCKET);
+            $url = $this->supabase->signedUrl($path, null, $bucket);
             if ($url !== null) {
                 $urls[] = $url;
             }
         }
 
         return $urls;
+    }
+
+    /**
+     * The work record of each booking: the checkpoint photos its technician
+     * took during the job, oldest first, keyed by job id. Evidence the admin
+     * weighs beside the report. A failed read (for example before migration
+     * 20261122000002 is applied) shows no record rather than failing the page.
+     *
+     * @param  array<int, string>  $jobIds
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function workRecords(array $jobIds): array
+    {
+        $jobIds = array_values(array_unique(array_filter($jobIds)));
+        if ($jobIds === []) {
+            return [];
+        }
+
+        try {
+            $rows = $this->supabase->select('job_evidence', [
+                'select' => 'job_id,milestone,photo_paths,note,latitude,longitude,captured_at',
+                'job_id' => 'in.('.implode(',', $jobIds).')',
+                'order' => 'captured_at.asc',
+            ]);
+        } catch (RuntimeException) {
+            return [];
+        }
+
+        $records = [];
+        foreach ($rows as $row) {
+            $records[$row['job_id']][] = $row + [
+                'label' => self::MILESTONES[$row['milestone']] ?? $row['milestone'],
+                'photo_urls' => $this->signedPhotos($row['photo_paths'] ?? [], self::EVIDENCE_BUCKET),
+            ];
+        }
+
+        return $records;
     }
 }

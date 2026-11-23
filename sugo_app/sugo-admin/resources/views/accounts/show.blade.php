@@ -85,6 +85,19 @@
                             </dd>
                         </div>
                     @endif
+                    {{-- Will they travel in rain / heavy traffic (2026-11-22).
+                         Matching reads it in Weather & traffic readiness. --}}
+                    @if (($work ?? null) !== null)
+                        @php($tones = \App\Support\TravelConditions::tones($work))
+                        <div class="flex items-center justify-between gap-4">
+                            <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">In the rain</dt>
+                            <dd class="text-xs font-semibold {{ $tones['rain'] }}">{{ \App\Support\TravelConditions::rain($work) }}</dd>
+                        </div>
+                        <div class="flex items-center justify-between gap-4">
+                            <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Heavy traffic</dt>
+                            <dd class="text-xs font-semibold {{ $tones['traffic'] }}">{{ \App\Support\TravelConditions::traffic($work) }}</dd>
+                        </div>
+                    @endif
                     <div class="flex items-center justify-between gap-4">
                         <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Service radius</dt>
                         <dd class="text-xs font-semibold">

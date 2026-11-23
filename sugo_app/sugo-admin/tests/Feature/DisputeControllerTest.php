@@ -65,7 +65,37 @@ class DisputeControllerTest extends TestCase
             self::BASE.'/storage/v1/object/sign/dispute-photos/*' => Http::response([
                 'signedURL' => '/object/sign/dispute-photos/'.self::JOB_ID.'/1.jpg?token=abc',
             ]),
+            // The booking's work record (20261122000002).
+            self::BASE.'/rest/v1/job_evidence*' => Http::response([[
+                'job_id' => self::JOB_ID,
+                'milestone' => 'intake',
+                'photo_paths' => [self::JOB_ID.'/before.jpg'],
+                'note' => 'Power board already scorched on arrival',
+                'latitude' => 7.0731,
+                'longitude' => 125.6128,
+                'captured_at' => '2026-09-27T09:15:00+00:00',
+            ]]),
+            self::BASE.'/storage/v1/object/sign/job-evidence/*' => Http::response([
+                'signedURL' => '/object/sign/job-evidence/'.self::JOB_ID.'/before.jpg?token=xyz',
+            ]),
         ]);
+    }
+
+    public function test_the_admin_sees_the_bookings_work_record_beside_the_report(): void
+    {
+        $this->fakeReadEndpoints();
+
+        $this->withSession($this->signedIn())
+            ->get(route('disputes.index'))
+            ->assertOk()
+            ->assertSee('Work record')
+            ->assertSee('As found (before)')
+            ->assertSee('Power board already scorched on arrival')
+            ->assertSee('https://www.google.com/maps?q=7.0731,125.6128', false)
+            ->assertSee(self::BASE.'/storage/v1/object/sign/job-evidence/'.self::JOB_ID.'/before.jpg?token=xyz', false);
+
+        Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), self::BASE.'/rest/v1/job_evidence')
+            && str_contains(urldecode($request->url()), 'job_id=in.('.self::JOB_ID.')'));
     }
 
     public function test_guests_are_sent_to_sign_in(): void

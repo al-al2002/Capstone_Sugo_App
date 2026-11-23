@@ -21,9 +21,7 @@ use RuntimeException;
  */
 class VerificationController extends Controller
 {
-    public function __construct(private readonly Supabase $supabase)
-    {
-    }
+    public function __construct(private readonly Supabase $supabase) {}
 
     public function index(Request $request): View
     {
@@ -113,9 +111,10 @@ class VerificationController extends Controller
 
         if (($verification['role'] ?? null) === 'technician') {
             // The work they take (2026-11-17): context for the reviewer - a
-            // Shop Repair applicant should have a shop pinned.
+            // Shop Repair applicant should have a shop pinned. Plus whether
+            // they travel in rain / heavy traffic (2026-11-22).
             $work = $this->supabase->first('technicians', [
-                'select' => 'offers_home_service,offers_shop_repair,shop_name,shop_latitude,shop_longitude',
+                'select' => 'offers_home_service,offers_shop_repair,shop_name,shop_latitude,shop_longitude,rain_travel,heavy_traffic_travel',
                 'id' => 'eq.'.$verification['user_id'],
             ]);
 

@@ -321,6 +321,20 @@
                         @endif
                     @endif
                 </div>
+                {{-- Will they travel in rain / heavy traffic (2026-11-22) --}}
+                @if (($work ?? null) !== null)
+                    @php($tones = \App\Support\TravelConditions::tones($work))
+                    <dl class="mt-4 space-y-2 border-t border-line pt-3">
+                        <div class="flex items-center justify-between gap-4">
+                            <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">In the rain</dt>
+                            <dd class="text-xs font-semibold {{ $tones['rain'] }}">{{ \App\Support\TravelConditions::rain($work) }}</dd>
+                        </div>
+                        <div class="flex items-center justify-between gap-4">
+                            <dt class="text-[11px] font-bold uppercase tracking-wider text-ink-muted">Heavy traffic</dt>
+                            <dd class="text-xs font-semibold {{ $tones['traffic'] }}">{{ \App\Support\TravelConditions::traffic($work) }}</dd>
+                        </div>
+                    </dl>
+                @endif
             </section>
         @endif
 

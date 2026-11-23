@@ -24,9 +24,7 @@ use Illuminate\View\View;
  */
 class AccountController extends Controller
 {
-    public function __construct(private readonly Supabase $supabase)
-    {
-    }
+    public function __construct(private readonly Supabase $supabase) {}
 
     public function index(Request $request, string $role): View|RedirectResponse
     {
@@ -98,7 +96,7 @@ class AccountController extends Controller
         }
 
         $technicians = $this->supabase->select('technicians', [
-            'select' => 'id,offers_home_service,offers_shop_repair,shop_name,shop_latitude,shop_longitude',
+            'select' => 'id,offers_home_service,offers_shop_repair,shop_name,shop_latitude,shop_longitude,rain_travel,heavy_traffic_travel',
             'id' => 'in.('.implode(',', $ids).')',
         ]);
 
