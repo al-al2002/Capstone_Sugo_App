@@ -18,14 +18,26 @@ marketplace that just lists everyone by rating gets three things wrong:
 
 1. **It ignores fit.** The highest-rated technician on the platform may only do
    aircon.
-2. **It ignores reality.** The best-fitting technician may be fully booked, 30
-   km away, in a thunderstorm, and priced above the client's budget.
+2. **It ignores reality.** The best-fitting technician may be fully booked, an
+   hour away in a thunderstorm, and unlikely to take a job at the fixed price.
 3. **It concentrates work.** Rank by score alone and every job goes to the same
    person until they are saturated, so nobody else ever builds a record and the
    ranking calcifies.
 
 RB-CARS answers all three with a two-stage score, live context, and a
 workload-aware tie-break.
+
+### How the code maps to the paper (2026-11-22)
+
+| Paper | Code | Section |
+| --- | --- | --- |
+| Table 10, Normalized Criterion Scores | `FINAL_WEIGHTS`, `scoring/recommendation.ts` | 5b |
+| Table 10's "Skill relevance" | Stage 1, `SUITABILITY_WEIGHTS`, `scoring/suitability.ts` | 3 |
+| Table 11, Acceptance Likelihood Signals | Stage 2, `ACCEPTANCE_WEIGHTS`, `scoring/acceptance.ts` | 4 |
+
+The paper's worked example (Provider A 0.879, Provider B 0.8185) is a test in
+`recommendation.test.ts`, so the code cannot drift from the table without a
+test failing.
 
 ---
 
@@ -72,7 +84,7 @@ the row it is about to touch.
 
 ---
 
-## 3. Stage 1 - Suitability
+## 3. Stage 1 - Skill relevance
 
 *Can this technician fix this device, for this symptom, well?*
 
@@ -87,13 +99,17 @@ score out. Weights live in
 
 | Factor | Weight | 0..1 scored on |
 | --- | --- | --- |
-| Skill tag match | 0.35 | exact symptom tag = 1.0; token overlap = 0.35 + coverage x 0.55; device-only tag = 0.4 |
-| Specialisation | 0.25 | device type in `specialization` = 1.0; empty = 0.35; mismatch = 0.15 |
-| Tier | 0.15 | standard 0.50, pro 0.80, elite 1.00 |
-| Verified | 0.15 | 1 or 0 |
-| Diagnosis accuracy | 0.10 | the feedback signal, below |
+| Brand and device match | 0.45 | the assessed specialisation ladder: expert on this brand 1.00, intermediate on this brand 0.85, expert on the device 0.70, intermediate on the device 0.60, unassessed claim 0.35, nothing 0.10 |
+| Skill tag match | 0.30 | exact symptom tag = 1.0; token overlap = 0.35 + coverage x 0.55; device-only tag = 0.4 |
+| Diagnosis accuracy | 0.15 | the feedback signal, below |
+| Tier | 0.10 | standard 0.50, pro 0.80, elite 1.00 |
 
-Stage score is the weighted mean, so it is always in 0..1.
+Stage score is the weighted mean, so it is always in 0..1. It is Table 10's
+"Skill relevance" criterion.
+
+Until 2026-11-22 this stage also scored the trust badge (0.14) and the client
+rating (0.12). Both are criteria of their own in Table 10, so they moved to the
+final score (section 5b) - scoring them here too would count them twice.
 
 ### Cold start
 
@@ -140,23 +156,97 @@ signal = smoothed x (1 - 0.30 x reroute_rate)
 
 ---
 
-## 4. Stage 2 - Acceptance
+## 4. Stage 2 - Acceptance likelihood (Table 11)
 
 *Will they take it, and turn up?*
 
-| Factor | Weight | 0..1 scored on |
+| Signal | Weight | What it assesses | 0..1 scored on |
+| --- | --- | --- | --- |
+| Travel burden | 0.30 | Traffic-adjusted travel time to the task location | `1 - exposure x min(eta, 60) / 60`, where `eta` = distance from their base at the live TomTom speed (20 km/h when TomTom is down) |
+| Current workload | 0.25 | How many active bookings they already hold | `1 - min(workload, 5) / 5` |
+| Price fit | 0.20 | Whether the task's fixed price meets the technician's rate | 1.0 at or above the tier minimum, linear to 0 at half of it; no single price = 0.70 |
+| Coverage fit | 0.15 | Whether the task falls within their service area | inside the radius = 1.0; past it, linear to 0 at 50 km |
+| Weather & traffic readiness | 0.10 | Whether they will travel in the current weather and traffic | their own registration answer while it rains or traffic is heavy; estimated from the weather and their trip otherwise (below) |
+
+**The rule the table was rebuilt on (2026-11-22): every signal differs between
+technicians.** The old stage also scored traffic, weather, urgency x path and
+client reliability as values measured once per job. Every candidate got the
+same number, so none of them could change who ranked first. Traffic and weather
+now act through each technician's own travel time; urgency acts through the
+"Needed today" rule (section 5a); client reliability is still recorded in the
+breakdown but no longer scored.
+
+Availability (on vacation or not) is not in this table. It is a criterion of
+its own in Table 10, and scoring it in both places would count it twice.
+
+### Price fit, and why it replaced Budget fit
+
+SUGO quotes one fixed labor fee per symptom (`LaborPriceCatalog` in the app,
+`_shared/labor_price.ts` on the server, kept identical by
+`labor_price.test.ts`). Clients no longer type a budget, so "does the budget
+cover the technician's rate?" had nothing to compare. Since the price is fixed,
+the acceptance question became: **is this price worth this technician's time?**
+
+| Tier | Minimum (`PRICE_FIT_MIN_PHP`) | Effect |
 | --- | --- | --- |
-| Budget fit | 0.25 | quote inside `budget_max` = 1.0, decaying to 0 at 2x the ceiling; no budget = 0.70 |
-| Workload | 0.25 | `1 - min(workload, 5) / 5` |
-| Urgency x path | 0.15 | lookup table, below |
-| Traffic | 0.15 | `1 - congestion x travel_exposure` |
-| Proximity | 0.10 | `1 - min(km, 25) / 25` |
-| Weather | 0.10 | `1 - severity x travel_exposure` |
+| standard | ₱300 | every job in the catalogue meets it |
+| pro | ₱500 | meets most jobs; dips on the ₱300-₱450 quick fixes |
+| elite | ₱800 | only the bigger jobs meet it in full; ₱600 scores 0.5 |
+
+The price compared is the labor fee plus the 20% urgent fee when the job is
+needed today (so an urgent ₱600 job is ₱720). The travel or delivery fee is left
+out: it pays for the trip, which Travel burden already scores. The minimums are
+placeholders until real figures are agreed - one edit in `constants.ts`.
+
+### Weather & traffic readiness (2026-11-22)
+
+*Whether the technician will travel in the current weather and traffic.*
+
+Registration asks every technician two questions (the "What work do you take?"
+step; editable later in Edit profile; migration 20261122000001):
+
+| Question | Answers | Stored in |
+| --- | --- | --- |
+| Will you still go to a client when it is raining? | Yes, even in heavy rain or a storm / Yes, but not in heavy rain or a storm / No | `technicians.rain_travel` = `any` / `not_heavy` / `never` |
+| Will you still go when traffic is heavy? | Yes / No | `technicians.heavy_traffic_travel` = true / false |
+
+The signal is the **lower** of two parts - someone who will ride in the rain but
+not in a jam is not coming today either way:
+
+| Part | Counted when | Answered | Not answered (null) |
+| --- | --- | --- | --- |
+| Rain | weather data is available | while raining: 1 if they said they go, 0 if not ("not in heavy rain" = 1 in rain, 0 in heavy rain or a storm) | `1 - severity x exposure x min(eta, 60) / 60` |
+| Traffic | the traffic is heavy (congestion >= 0.6 or a road closure) | 1 if they said they go, 0 if not | `1 - congestion x exposure x min(eta, 60) / 60` |
+
+An answer is scaled by the path's exposure, `1 - exposure x (1 - answer)`, so a
+home visit takes it whole, a shop pickup takes 60% of it, a remote job almost
+none. With no rain the rain answer is not used at all - a dry day is the same
+for everyone.
+
+**The effect, in order:** in the rain, *said yes* (1.0) > *not answered* (an
+estimate) > *said no* (0.0). The rain rules raise this signal's weight x1.5 (rain)
+and x1.95 (heavy rain); the heavy-traffic rule raises it x1.5. A "no" lowers the
+score; it never removes the technician. The client sees the answer as a reason:
+"Said they still come in heavy rain", or the caveat "Said they do not travel in
+heavy rain - they may decline today".
+
+**Worked example** (pinned in `recommendation.test.ts`): two technicians
+identical in every way, 6 km from a home visit, heavy rain. Final scores:
+said *even in heavy rain* **0.8611**, not answered **0.8498**, said *never in
+rain* **0.7945**. The gap between "yes" and "not answered" grows with distance,
+because the estimate falls as the ride gets longer.
+
+Technicians registered before the question have null for both, so their score
+is exactly what it was before; they are asked nothing until they open Edit
+profile. The paper's first wording was "whether the technician's transport
+suits the current weather"; SUGO still records no vehicle, so the question asks
+about the technician's own willingness instead - which is what decides whether
+they accept.
 
 ### Travel exposure
 
-Traffic and weather are not applied flat. They are multiplied by how much the
-chosen path actually involves travel:
+Travel burden and weather & traffic readiness are multiplied by how much the chosen path
+actually involves travel:
 
 | Path | Exposure |
 | --- | --- |
@@ -164,22 +254,7 @@ chosen path actually involves travel:
 | `pickup` | 0.60 |
 | `it_community` | 0.10 |
 
-Without this, a rainy afternoon would lower every candidate by the same amount,
-change nothing about the ranking, and make all the printed numbers look worse
-for no reason.
-
-### Urgency crossed with path
-
-The brief's requirement, made explicit as a table:
-
-| | home_service | pickup | it_community |
-| --- | --- | --- | --- |
-| `need_today` | 1.00 | 0.55 | 0.40 |
-| `can_wait` | 0.85 | 0.85 | 0.75 |
-
-When the client needs it today, an on-site visit clearly beats shipping the unit
-to a shop. When they can wait, path choice barely predicts acceptance, so the
-scores sit close together and other factors decide.
+A home visit rides the whole way; a remote IT job barely travels at all.
 
 ### Graceful degradation
 
@@ -197,16 +272,20 @@ amount, the ranking would be identical, and the displayed scores would be lies.
 
 ## 5. Combining and ranking
 
-Since 2026-09-27 the ranking is the **recommendation score** from Stage 3
-(section 5b). Before that it was a fixed blend:
+The ranking is the **final score**, Table 10's weighted sum (section 5b). Its
+history:
 
 ```text
-final = 0.60 x suitability + 0.40 x acceptance      (version 1, retired)
+version 1 (retired 2026-09-27): 0.60 x suitability + 0.40 x acceptance
+version 2 (retired 2026-11-22): suitability 0.45, acceptance 0.20, context fit
+                                0.15, client history 0.10, track record 0.10
+version 3 (now, Table 10):      skill 0.45, acceptance 0.40, rating 0.05,
+                                availability 0.05, trust badge 0.05
 ```
 
-Suitability still outweighs everything else, for the same reason: a technician
-who is available, close and cheap but cannot fix the device is a worse outcome
-for the client than a slightly slower one who can.
+Skill relevance still outweighs everything else, for the same reason: a
+technician who is available, close and cheap but cannot fix the device is a
+worse outcome for the client than a slightly slower one who can.
 
 ---
 
@@ -217,31 +296,61 @@ request and wrong for an unusual one - in a downpour, when the client needs
 someone today, distance matters far more than it does on a dry afternoon.
 
 **Signals.** Once per job the engine derives yes/no facts from data it actually
-has: `urgent` (needed today), `rain` (weather severity >= 0.5), `heavy_traffic`
-(TomTom congestion >= 0.6, or a road closure), `on_site` (home service),
-`appliance` / `technology` (the device type).
+has: `urgent` (needed today), `rain` (weather severity >= 0.5), `heavy_rain`
+(severity >= 0.85: OpenWeatherMap's heavy rain or a thunderstorm; always held
+with `rain`), `heavy_traffic` (TomTom congestion >= 0.6, or a road closure),
+`on_site` (home service), `appliance` / `technology` (the device type).
+
+| Weather (OpenWeatherMap) | Severity | Signals |
+| --- | --- | --- |
+| Clear / clouds | 0.00 / 0.10 | none |
+| Mist, haze | 0.30 | none |
+| Drizzle | 0.35 | none |
+| Rain | 0.55 | `rain` |
+| Heavy or extreme rain | 0.85 | `rain`, `heavy_rain` |
+| Thunderstorm | 1.00 | `rain`, `heavy_rain` |
+
+| Traffic (TomTom congestion) | Label | Signal |
+| --- | --- | --- |
+| below 0.15 | clear roads | none |
+| 0.15 - 0.35 | light traffic | none |
+| 0.35 - 0.60 | moderate traffic | none |
+| 0.60 and above, or a road closure | heavy traffic | `heavy_traffic` |
 
 **Rules** are data, not branches - `MATCHING_RULES`:
 
-| Rule | IF | THEN multiply |
+| Rule | IF | THEN multiply (Table 11; Table 10) |
 | --- | --- | --- |
-| Urgent visit in the rain | urgent AND rain AND on_site | distance x1.6, availability x1.4, weather x1.5; context fit x1.5, acceptance x1.2 |
-| Heavy traffic on the way | heavy_traffic AND on_site | distance x1.5, traffic x1.5, availability x1.2; context fit x1.3 |
-| Needed today | urgent | availability x1.3, workload x1.4, urgency fit x1.2 |
-| Appliance repair | appliance | brand/device match x1.3, skill x1.2, tier x1.2, diagnosis accuracy x1.2 |
+| Urgent visit in the rain | urgent AND rain AND on_site | travel burden x1.6, readiness x1.5; acceptance likelihood x1.3, availability x1.4 |
+| Rain on the way | rain AND on_site | travel burden x1.3, readiness x1.5 |
+| Heavy rain or thunderstorm | heavy_rain AND on_site | travel burden x1.3, readiness x1.3; acceptance likelihood x1.2 (on top of "Rain on the way") |
+| Heavy traffic on the way | heavy_traffic AND on_site | travel burden x1.5, readiness x1.5; acceptance likelihood x1.2, availability x1.2 |
+| Needed today | urgent | current workload x1.4; availability x1.3 |
+| Appliance repair | appliance | brand/device match x1.3, skill x1.2, tier x1.2, diagnosis accuracy x1.2 (Stage 1) |
+
+**Rain is graded (2026-11-22).** Before, rain moved the ranking only when the
+job was also urgent. Now any rain on a home visit fires "Rain on the way", and
+heavy rain or a storm also fires "Heavy rain or thunderstorm", so the two
+multiply: travel burden x1.69 and readiness x1.95 in a downpour, against
+x1.3 and x1.5 in ordinary rain. In the tests, the near technician's lead over a
+far one grows from 0.210 (dry) to 0.240 (rain) to 0.273 (heavy rain). A shop
+repair fires no rain rule - nobody rides to the client - though its weather
+readiness still counts the pickup trip at 60% exposure.
 
 Multipliers compose when several rules fire, are **capped at x2.0** per factor,
 and the stage is renormalised so its weights still sum to 1. A factor a rule
 moved keeps its `base_weight` in the breakdown, so the detailed sheet prints
-"x18%->27%".
+"30%->42%". A test checks that every rule names a factor that exists, so a
+renamed factor cannot leave a rule silently doing nothing.
 
-**Why multipliers and not replacement weight tables.** A rule says "distance
-matters more", not "distance is 27%". Multipliers compose; tables would need
-one per combination of conditions and would drift from `constants.ts`.
+**Why multipliers and not replacement weight tables.** A rule says "travel
+matters more", not "travel is 42%". Multipliers compose; tables would need one
+per combination of conditions and would drift from `constants.ts`.
 
 **Fallback is automatic.** A signal whose source is down is absent, so its rule
 does not fire and the base weights stand. TomTom down means no traffic rule -
-distance still carries the ranking, exactly as the brief asks.
+travel burden still carries the ranking at a typical city speed, exactly as the
+brief asks.
 
 **Honest gaps.** The brief's example rule is "urgent + errand + rain". SUGO has
 no errand category (jobs are laptop, phone, appliance, network), so the rule is
@@ -249,50 +358,81 @@ written against an on-site visit, which is the same situation for a repair.
 There is no data on a technician's equipment or rain readiness, so no rule
 pretends to weigh either.
 
-## 5b. Stage 3 - Recommendation (Step 6)
+## 5b. The final score (Table 10)
 
-`scoring/recommendation.ts`. Matching answers "who is qualified and
-compatible?"; recommendation answers "which of them is most relevant to *this*
-client, *now*?".
+`scoring/recommendation.ts`. Table 10's weighted sum, `sum(W_j x C_ij)`:
 
-| Factor | Weight | 0..1 scored on |
+| Criterion | W_j | C_ij, 0..1 |
 | --- | --- | --- |
-| Suitability | 0.45 | the Stage 1 score, after rules |
-| Acceptance | 0.20 | the Stage 2 score, after rules |
-| Context fit | 0.15 | mean of whichever apply: inside their service area; travel time at current speed (on-site); free today (urgent); short trip (rain + on-site) |
-| Client preference | 0.10 | this client's history: rated them >= 4 stars 1.0, worked together 0.75, never booked 0.50, rated <= 2 stars 0.10 |
-| Track record | 0.10 | mean of smoothed offer-acceptance rate (prior 0.75, weight 3) and log-scaled experience (1.0 at 50 jobs) |
+| Skill relevance | 0.45 | the Stage 1 score, after rules |
+| Acceptance likelihood | 0.40 | the Stage 2 (Table 11) score, after rules |
+| User rating | 0.05 | the rating smoothed toward 4.0 by 5 notional jobs, mapped from 1-5 to 0-1 |
+| Availability | 0.05 | 0 while on vacation, 1 otherwise |
+| Trust badge | 0.05 | ID verified 0.55, Skill verified 0.80, Community Trusted 1.00 (for this job's device) |
 
-Rules can re-weight this stage too. The result is stored as
-`job_matches.final_score` and in `score_breakdown.recommendation`.
+Rules can re-weight these too. The result is stored as
+`job_matches.final_score` and in `score_breakdown.recommendation` (key kept so
+installed app builds still read it; `version` is 3).
 
-**Cold start, both sides.** A client with no past bookings has *no*
-preferences - `client_preference` is null and dropped, and its weight is shared
-out (the same rule as section 4's graceful degradation). Nobody is ranked on a
-preference the client never showed. A technician who has never answered an
-offer sits at the 0.75 prior.
+**Worked example, pinned.** The paper's Provider A (0.90, 0.85, 0.88, 1.00,
+0.80) scores 0.879 and Provider B (0.70, 0.95, 0.92, 0.80, 0.75) scores 0.8185 -
+exactly the printed totals. Row 2 was printed as "Location proximity"; it is
+Acceptance likelihood now, with the same numbers.
 
-**Not double-counted.** Rating is already a Stage 1 factor, so track record
-leaves it out.
+**Why "Location proximity" became "Acceptance likelihood".** Location is scored
+inside Table 11 (Travel burden, Coverage fit). Keeping a separate proximity row
+here would count distance twice, and would leave Table 11 with no row in the
+final score at all.
+
+**Availability at 0.05.** A technician on vacation loses exactly 5 points out
+of 100 - a score, not a gate, so the only expert on a client's exact machine
+still appears with an "On vacation" label instead of an empty Top 3.
+`job-response` refuses the booking.
+
+**What left the score.** Context fit (it re-scored service area, travel time and
+readiness - the same double count, now inside Table 11), client history and
+track record. Neither of the last two is in the paper. Both still earn reasons
+the client reads: "You rated them 5 stars last time", "Usually accepts the jobs
+they are offered".
 
 **Not counted at all: cancellations.** `jobs` records that a job was cancelled
 but not who cancelled it. Holding a client's change of plans against the
 technician would be unfair.
 
+## 5b-2. Step 5: Previous Provider Priority (2026-11-22)
+
+`applyPreviousTechnicianPriority` in `scoring/rank.ts`, run right after
+ranking. One technician is moved to the top when all of these hold:
+
+| Condition | Why |
+| --- | --- |
+| The client has a **completed** job with them | A cancelled or unfinished booking says nothing about the work |
+| They are in this job's pool at all | The move happens after every gate and client preference, never around them |
+| Overall rating **4.5 or higher** | The paper's threshold |
+| The client's own last rating of them, if any, is **4 stars or more** | Someone the client rated 3 or below is never pushed back at them |
+| **Not on vacation** | A technician who cannot be booked is never put first |
+
+When several qualify, the best-ranked moves up. Their **score is not changed**:
+the card still shows the honest Table 10 number, and the reason "You booked
+them before, so they are shown first" says why they are first anyway. The
+breakdown carries `recommendation.previous_technician = true`, and the ranking
+walkthrough labels them "(booked before)". The paper wrote this step for
+"recurring tasks"; SUGO has none, so it applies to any repeat booking.
+
 ## 5c. Reasons a client reads (Part 17)
 
 `scoring/reasons.ts` writes `recommendation.reasons`: sentences like "Passed
-SUGO's assessment on laptops", "2.1 km from your location", "Typical rate fits
-your ₱1,500 budget". Each is gated on a recorded number crossing a stated
-threshold and quotes that number - a 4.8 rating over two jobs is never quoted,
-"beats the traffic" is never claimed on clear roads. Caveats (on vacation,
-outside their service area, above budget, rated low by you) are listed after
-the positives so a recommendation never hides the thing that would change the
-client's mind.
+SUGO's assessment on laptops", "2.1 km from your location". Each is gated on a
+recorded number crossing a stated threshold and quotes that number - a 4.8
+rating over two jobs is never quoted, "beats the traffic" is never claimed on
+clear roads. Caveats (on vacation, outside their service area, rated low by
+you) are listed after the positives so a recommendation never hides the thing
+that would change the client's mind. There are no budget reasons since fixed
+prices: the price is the same whoever takes the job.
 
 The app shows them in the "Why this technician?" sheet. The factor-by-factor
 working, rules included, is one tap further ("See how the score was worked
-out"), and the whole pipeline - request, context, rules, three stages, Top 3 -
+out"), and the whole pipeline - request, context, rules, both stages, the final score, Top 3 -
 is the **ranking walkthrough**, opened by long-pressing "Based on your current
 situation" on the results screen (also a visible link in debug builds).
 
@@ -360,7 +500,7 @@ shows the technician exactly as they were when the match was scored.
 | --- | --- | --- |
 | 1 | `job_posting_screen.dart` - device, symptom, physical damage | draft only |
 | 2 | `guided_classification_screen.dart` - suggested path and why | draft only |
-| 3 | `job_detail_input_screen.dart` - location, urgency, budget, schedule, photos | `jobs` insert, then `match-technician` |
+| 3 | `job_detail_input_screen.dart` - location, urgency, schedule, photos (no budget: the price is fixed per symptom) | `jobs` insert, then `match-technician` |
 | 4 | `client_review_screen.dart` - the Top 3 | reads `job_matches` |
 
 ### Classification rules
@@ -609,8 +749,10 @@ Stating these yourself is stronger than being asked.
 | `job-response` reads then writes `current_workload` | Two concurrent accepts could race. Low risk at capstone scale. | A Postgres function doing `set current_workload = current_workload + 1` atomically |
 | Rule multipliers are hand-set | Same as the weights: no outcome data to learn them from yet. Each rule carries a written rationale and the cap stops any one from dominating. | Compare acceptance and completion by condition once `job_outcomes` has volume |
 | No equipment, rain-gear or errand data | None of it exists in the schema, and inventing it would make the reasons dishonest. | Columns on `technicians`, then one rule each |
-| Cancellations are not in the track record | `jobs` does not say who cancelled. | A `cancelled_by` column |
-| Client history is per technician only | "Prefers nearby" or "prefers cheaper" would need more bookings per client than a capstone produces. | Learn preferred distance and budget bands from past bookings |
+| Cancellations are not scored | `jobs` does not say who cancelled. | A `cancelled_by` column |
+| Client history earns reasons but is not scored | It is not a Table 10 criterion, and "prefers nearby" would need more bookings per client than a capstone produces. | Learn preferred distance from past bookings, then add it to Table 10 |
+| Price-fit minimums are placeholders | No survey of what each tier will accept exists yet. | Agree the three figures with real technicians; one edit to `PRICE_FIT_MIN_PHP` |
+| Readiness is self-declared | A technician could say "yes" to rank higher and then decline. | Compare each answer with their real accept rate on rainy and jammed days once `job_matches` has volume |
 
 ---
 

@@ -120,3 +120,27 @@ workshop" (saving there with Shop Repair on asks for the pin).
 The "Back to login" button on the submitted-registration screen is a SUGO
 button now (navy fill; an outline beside "Retake my photos"). It was a plain
 Material outline that matched nothing else in the app.
+
+## Rain and heavy traffic (2026-11-22)
+
+The same step now ends with **Travelling to clients**, two questions every
+technician must answer before Continue:
+
+| Question | Answers | Column (migration 20261122000001) |
+| --- | --- | --- |
+| Will you still go to a client when it is raining? | Yes, even in heavy rain or a storm / Yes, but not in heavy rain or a storm / No, I do not travel in the rain | `rain_travel`: `any` / `not_heavy` / `never` |
+| Will you still go when traffic is heavy? | Yes, I still go in heavy traffic / No, I avoid heavy traffic | `heavy_traffic_travel`: true / false |
+
+Nothing is preselected. The recap shows them ("Even in heavy rain · Goes in
+heavy traffic"), and Edit profile shows the same two questions, so a technician
+registered before today can answer there. Their columns are null until they do,
+and null is scored exactly as before.
+
+Matching uses the answers in Stage 2's **Weather & traffic readiness** signal,
+only while it is raining or the traffic is heavy at the job. See
+`docs/rb-cars.md`, section 4, for the formula and a worked example.
+
+Deploy: `db push` (the migration adds the columns and re-creates
+`matching_candidates` with them), then `match-technician`, `job-response` and
+`urgent-offer-sweep`, then the app. The app reads and writes the new columns, so
+it must not ship before the migration is applied.
