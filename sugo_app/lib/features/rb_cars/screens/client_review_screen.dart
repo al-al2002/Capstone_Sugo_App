@@ -36,6 +36,7 @@ import '../widgets/more_technicians_section.dart';
 import '../widgets/recommendation_reasons_sheet.dart';
 import '../widgets/relax_preferences_panel.dart';
 import '../widgets/request_send_intro.dart';
+import '../widgets/send_request_animation.dart';
 import '../widgets/technician_matching_loader.dart';
 import 'matching_walkthrough_screen.dart';
 import '../../tracking/screens/job_tracking_screen.dart';
@@ -1313,9 +1314,16 @@ class _ClientReviewView extends StatelessWidget {
 
     if (confirmed != true || !context.mounted) return;
 
-    final bool ok = await matching.selectTechnician(
-      match.id,
-      deliveryOption: isShopRepair ? deliveryOption : null,
+    // The request flies away to them while it is really being sent
+    // (2026-11-23); the tick only lands once the server has accepted it.
+    final bool ok = await runWithSendAnimation(
+      context,
+      matching.selectTechnician(
+        match.id,
+        deliveryOption: isShopRepair ? deliveryOption : null,
+      ),
+      name: name,
+      technician: match.technician,
     );
     if (!context.mounted) return;
 

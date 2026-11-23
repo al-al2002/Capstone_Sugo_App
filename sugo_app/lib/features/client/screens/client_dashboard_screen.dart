@@ -17,6 +17,7 @@ import '../../../core/widgets/sugo_card.dart';
 import '../../../core/widgets/sugo_delete_animation.dart';
 import '../../../core/widgets/sugo_dialog.dart';
 import '../../../core/widgets/sugo_staggered_column.dart';
+import '../../../core/widgets/sugo_tab_switcher.dart';
 import '../../auth/data/models/app_user.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../bookings/screens/bookings_list_view.dart';
@@ -43,6 +44,7 @@ import '../../rb_cars/screens/client_review_screen.dart';
 import '../../rb_cars/screens/job_posting_screen.dart';
 import '../../rb_cars/screens/technician_browse_screen.dart';
 import '../../rb_cars/screens/technician_detail_screen.dart';
+import '../../rb_cars/services/match_decline_watcher.dart';
 import '../../rb_cars/services/rb_cars_service.dart';
 import '../../search/search_screen.dart';
 import '../../tracking/models/job_tracking.dart';
@@ -147,6 +149,14 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   double? _originLat;
   double? _originLon;
 
+  /// Hears a technician decline over Realtime while the app is open, so the
+  /// pop-up shows even when no push can arrive - on the web, or on a phone
+  /// with notifications off (2026-11-23).
+  late final MatchDeclineWatcher _declines = MatchDeclineWatcher(
+    service: _service,
+  );
+  StreamSubscription<DeclineNotice>? _declineFeed;
+
   @override
   void initState() {
     super.initState();
@@ -159,6 +169,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     _loadJobs().then((_) => _maybeAskForRating());
     _loadBadges();
     _resolveOrigin();
+    _declineFeed = _declines.notices.listen(_onDeclineNotice);
+    _declines.start();
   }
 
   @override
@@ -168,7 +180,24 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
     NotificationRouter.arrived.removeListener(_onPushArrived);
     _stopHeroWatch();
     _directory.dispose();
+    _declineFeed?.cancel();
+    _declines.dispose();
     super.dispose();
+  }
+
+  /// A technician declined (heard over Realtime): the same pop-up the push
+  /// raises, with general wording for what is left.
+  void _onDeclineNotice(DeclineNotice notice) {
+    if (!mounted) return;
+    _loadJobs();
+    final String? first = notice.technicianName?.trim().split(' ').first;
+    _showDeclined(
+      NotificationTap(
+        type: 'declined',
+        jobId: notice.jobId,
+        name: (first == null || first.isEmpty) ? null : first,
+      ),
+    );
   }
 
   /// Back from the background - typically from tapping a push notification.
@@ -359,6 +388,10 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   /// (FCM can repeat one) does not stack a second pop-up on it.
   bool _declinedOpen = false;
 
+  /// When each job's decline was last announced, so the push and the
+  /// Realtime watcher do not both pop up for one decline.
+  final Map<String, DateTime> _declineShownAt = <String, DateTime>{};
+
   /// "Ryan can't take this one" (2026-11-23). Raised from here because this
   /// screen stays mounted under every other client screen, so it shows over a
   /// chat or a booking too. The button opens the job where it now stands -
@@ -366,6 +399,17 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   /// tapping the push would.
   Future<void> _showDeclined(NotificationTap push) async {
     if (_declinedOpen) return;
+    // The push and the Realtime watcher can both report one decline: shown
+    // once per job within a short window.
+    final String? jobKey = push.jobId;
+    final DateTime now = DateTime.now();
+    if (jobKey != null) {
+      final DateTime? last = _declineShownAt[jobKey];
+      if (last != null && now.difference(last) < const Duration(seconds: 45)) {
+        return;
+      }
+      _declineShownAt[jobKey] = now;
+    }
     _declinedOpen = true;
     final bool go = await showDeclinedAlert(
       context,
@@ -936,23 +980,27 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
       // spinner and the scroll both start at the very top. Since 2026-11-16
       // the header is on the navy illustrated cover, so the status-bar icons
       // are white.
-      body: _tab == ClientTab.home
-          ? AnnotatedRegion<SystemUiOverlayStyle>(
-              value: SystemUiOverlayStyle.light,
-              child: _homeFeed(name),
-            )
-          : SafeArea(
-              bottom: false,
-              child: switch (_tab) {
-                ClientTab.home => const SizedBox.shrink(),
-                ClientTab.bookings => BookingsListView(
-                  role: BookingsRole.client,
-                  onPostJob: _startPosting,
-                ),
-                ClientTab.community => const _CommunityTab(),
-                ClientTab.profile => const ProfileView(),
-              },
-            ),
+      // Tabs glide in from the side you tapped toward (2026-11-23).
+      body: SugoTabSwitcher(
+        index: _tab.index,
+        child: _tab == ClientTab.home
+            ? AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle.light,
+                child: _homeFeed(name),
+              )
+            : SafeArea(
+                bottom: false,
+                child: switch (_tab) {
+                  ClientTab.home => const SizedBox.shrink(),
+                  ClientTab.bookings => BookingsListView(
+                    role: BookingsRole.client,
+                    onPostJob: _startPosting,
+                  ),
+                  ClientTab.community => const _CommunityTab(),
+                  ClientTab.profile => const ProfileView(),
+                },
+              ),
+      ),
       bottomNavigationBar: SugoBottomNav(
         items: _navItems,
         currentIndex: _tab.index,

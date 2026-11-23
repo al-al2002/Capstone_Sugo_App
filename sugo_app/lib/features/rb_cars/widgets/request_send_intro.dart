@@ -507,6 +507,34 @@ class _Stage extends StatelessWidget {
 
 // --------------------------------------------------------------- envelope
 
+/// The letter animation's envelope, already sealed - for anywhere else a
+/// request is "sent" (2026-11-23: the Send request fly-away). The same
+/// drawing, so both moments use one messenger.
+class SealedEnvelope extends StatelessWidget {
+  const SealedEnvelope({super.key, required this.width});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: width * 0.66,
+      child: _Envelope(
+        width: width,
+        height: width * 0.66,
+        letterIn: 1,
+        backIn: 1,
+        letterDown: 1,
+        flap: 1,
+        seal: 1,
+        title: '',
+        detail: null,
+      ),
+    );
+  }
+}
+
 /// The letter going into its envelope, the flap folding, the seal stamping.
 ///
 /// Layers, back to front: the open flap (its inside), the envelope's inside,

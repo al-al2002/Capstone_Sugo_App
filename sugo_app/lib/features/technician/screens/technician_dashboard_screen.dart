@@ -13,6 +13,7 @@ import '../../../core/widgets/sugo_bottom_nav.dart';
 import '../../../core/widgets/sugo_empty_state.dart';
 import '../../../core/widgets/sugo_skeleton.dart';
 import '../../../core/widgets/sugo_staggered_column.dart';
+import '../../../core/widgets/sugo_tab_switcher.dart';
 import '../../community/screens/community_feed_view.dart';
 import '../../community/services/community_service.dart';
 import '../../bookings/screens/bookings_list_view.dart';
@@ -32,6 +33,7 @@ import '../../rb_cars/services/rb_cars_service.dart';
 import '../models/time_off.dart';
 import '../providers/technician_dashboard_provider.dart';
 import '../widgets/active_job_card.dart';
+import '../widgets/decline_confirm.dart';
 import '../widgets/incoming_offer_card.dart';
 import '../widgets/job_request_details_sheet.dart';
 import '../widgets/recent_reviews_strip.dart';
@@ -273,7 +275,7 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
       case UrgentOfferChoice.accept:
         await _respond(_provider, () => _provider.acceptOffer(picked.id));
       case UrgentOfferChoice.decline:
-        await _respond(_provider, () => _provider.declineOffer(picked.id));
+        await _decline(_provider, picked);
       case UrgentOfferChoice.details:
         showJobRequestDetails(
           context,
@@ -281,8 +283,7 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
           isBusy: _provider.isBusy,
           onAccept: () =>
               _respond(_provider, () => _provider.acceptOffer(picked.id)),
-          onDecline: () =>
-              _respond(_provider, () => _provider.declineOffer(picked.id)),
+          onDecline: () => _decline(_provider, picked),
           onMessage: () => _openOfferChat(picked),
         );
       case null:
@@ -546,6 +547,20 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
     _flash(provider);
   }
 
+  /// Declines an offer - after asking (2026-11-23, at the user's request).
+  ///
+  /// A decline cannot be undone and the client is told at once, so a stray
+  /// tap must not send it. Every Decline button - the offer card, the
+  /// details sheet, the urgent alert - comes through here.
+  Future<void> _decline(
+    TechnicianDashboardProvider provider,
+    MatchResult match,
+  ) async {
+    final bool sure = await confirmDeclineOffer(context);
+    if (!sure || !mounted) return;
+    await _respond(provider, () => provider.declineOffer(match.id));
+  }
+
   @override
   Widget build(BuildContext context) {
     final TechnicianDashboardProvider provider = context
@@ -556,41 +571,45 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
       // The home tab runs under the status bar since 2026-11-16: its header
       // is the navy cover and pads itself by the inset, with white status-bar
       // icons. The other tabs keep their SafeArea.
-      body: _tab == TechnicianTab.home
-          ? AnnotatedRegion<SystemUiOverlayStyle>(
-              value: SystemUiOverlayStyle.light,
-              // Only the home tab wraps in the provider's RefreshIndicator;
-              // the other tabs own their own loading and pull-to-refresh.
-              child: RefreshIndicator(
-                // Below the status bar, so the spinner is not drawn under
-                // the clock.
-                edgeOffset: MediaQuery.paddingOf(context).top,
-                // Badges refresh here too. They were loaded once in
-                // `initState` and again only after the inbox closed, so
-                // anything arriving while the technician was on another tab
-                // left a stale count until the app restarted.
-                onRefresh: () async {
-                  await Future.wait(<Future<void>>[
-                    provider.refresh(),
-                    _loadBadges(),
-                  ]);
+      // Tabs glide in from the side you tapped toward (2026-11-23).
+      body: SugoTabSwitcher(
+        index: _tab.index,
+        child: _tab == TechnicianTab.home
+            ? AnnotatedRegion<SystemUiOverlayStyle>(
+                value: SystemUiOverlayStyle.light,
+                // Only the home tab wraps in the provider's RefreshIndicator;
+                // the other tabs own their own loading and pull-to-refresh.
+                child: RefreshIndicator(
+                  // Below the status bar, so the spinner is not drawn under
+                  // the clock.
+                  edgeOffset: MediaQuery.paddingOf(context).top,
+                  // Badges refresh here too. They were loaded once in
+                  // `initState` and again only after the inbox closed, so
+                  // anything arriving while the technician was on another tab
+                  // left a stale count until the app restarted.
+                  onRefresh: () async {
+                    await Future.wait(<Future<void>>[
+                      provider.refresh(),
+                      _loadBadges(),
+                    ]);
+                  },
+                  child: _body(provider),
+                ),
+              )
+            : SafeArea(
+                bottom: false,
+                child: switch (_tab) {
+                  TechnicianTab.home => const SizedBox.shrink(),
+                  TechnicianTab.jobs => const BookingsListView(
+                    role: BookingsRole.technician,
+                  ),
+                  TechnicianTab.community => const CommunityFeedView(
+                    isClient: false,
+                  ),
+                  TechnicianTab.profile => const ProfileView(),
                 },
-                child: _body(provider),
               ),
-            )
-          : SafeArea(
-              bottom: false,
-              child: switch (_tab) {
-                TechnicianTab.home => const SizedBox.shrink(),
-                TechnicianTab.jobs => const BookingsListView(
-                  role: BookingsRole.technician,
-                ),
-                TechnicianTab.community => const CommunityFeedView(
-                  isClient: false,
-                ),
-                TechnicianTab.profile => const ProfileView(),
-              },
-            ),
+      ),
       bottomNavigationBar: SugoBottomNav(
         items: _navItems,
         currentIndex: _tab.index,
@@ -727,10 +746,7 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
                       provider,
                       () => provider.acceptOffer(match.id),
                     ),
-                    onDecline: () => _respond(
-                      provider,
-                      () => provider.declineOffer(match.id),
-                    ),
+                    onDecline: () => _decline(provider, match),
                     onViewDetails: () => showJobRequestDetails(
                       context,
                       match: match,
@@ -739,10 +755,7 @@ class _TechnicianDashboardViewState extends State<_TechnicianDashboardView> {
                         provider,
                         () => provider.acceptOffer(match.id),
                       ),
-                      onDecline: () => _respond(
-                        provider,
-                        () => provider.declineOffer(match.id),
-                      ),
+                      onDecline: () => _decline(provider, match),
                       onMessage: () => _openOfferChat(match),
                     ),
                     onMessage: () => _openOfferChat(match),

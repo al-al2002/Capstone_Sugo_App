@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../constants/app_colors.dart';
@@ -348,10 +350,34 @@ class _NavItem extends StatelessWidget {
                         children: <Widget>[
                           Transform.scale(
                             scale: 1 + 0.06 * t,
-                            child: Icon(
-                              active ? item.activeIcon : item.icon,
-                              size: 22,
-                              color: iconColor,
+                            // A springy pop as the tab is chosen
+                            // (2026-11-23): it rises a touch and settles,
+                            // once. Keyed on [active], so it plays only on
+                            // the change, never on a rebuild.
+                            child: TweenAnimationBuilder<double>(
+                              key: ValueKey<bool>(active),
+                              tween: Tween<double>(begin: 0, end: 1),
+                              duration: active && !AppMotion.reduced(context)
+                                  ? const Duration(milliseconds: 420)
+                                  : Duration.zero,
+                              builder:
+                                  (BuildContext _, double v, Widget? icon) {
+                                    final double pop = active
+                                        ? math.sin(math.pi * v) * (1 - v * 0.35)
+                                        : 0;
+                                    return Transform.translate(
+                                      offset: Offset(0, -3 * pop),
+                                      child: Transform.scale(
+                                        scale: 1 + 0.22 * pop,
+                                        child: icon,
+                                      ),
+                                    );
+                                  },
+                              child: Icon(
+                                active ? item.activeIcon : item.icon,
+                                size: 22,
+                                color: iconColor,
+                              ),
                             ),
                           ),
                           if (item.showBadge)
