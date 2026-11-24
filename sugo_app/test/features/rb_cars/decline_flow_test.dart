@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sugo_app/core/services/local_prefs.dart';
 import 'package:sugo_app/features/rb_cars/models/job.dart';
 import 'package:sugo_app/features/rb_cars/models/job_enums.dart';
 import 'package:sugo_app/features/rb_cars/models/match_result.dart';
@@ -72,6 +74,99 @@ void main() {
 
     test('no job, nothing to say', () {
       expect(isTechnicianDecline(null, const <MatchResult>[]), isFalse);
+    });
+  });
+
+  group('unannouncedDecline (a decline while the app was closed)', () {
+    final DateTime now = DateTime(2026, 11, 23, 20);
+
+    MatchResult answered(
+      String id,
+      String status,
+      DateTime? at, {
+      String technician = 't1',
+    }) => MatchResult.fromJson(<String, dynamic>{
+      ...row(status, technician: technician),
+      'id': id,
+      'responded_at': at?.toIso8601String(),
+    });
+
+    test('the latest unseen decline is announced', () {
+      final MatchResult? missed = unannouncedDecline(
+        job(JobStatus.matched),
+        <MatchResult>[
+          answered('old', 'declined', now.subtract(const Duration(hours: 5))),
+          answered('new', 'declined', now.subtract(const Duration(minutes: 3))),
+          answered('s', 'shortlisted', null, technician: 't3'),
+        ],
+        const <String>{},
+        now: now,
+      );
+      expect(missed?.id, 'new');
+    });
+
+    test('once announced, never again', () {
+      expect(
+        unannouncedDecline(
+          job(JobStatus.matched),
+          <MatchResult>[
+            answered('new', 'declined', now.subtract(const Duration(minutes: 3))),
+          ],
+          const <String>{'new'},
+          now: now,
+        ),
+        isNull,
+      );
+    });
+
+    test('old history is not news', () {
+      expect(
+        unannouncedDecline(
+          job(JobStatus.matched),
+          <MatchResult>[
+            answered('x', 'declined', now.subtract(const Duration(days: 4))),
+          ],
+          const <String>{},
+          now: now,
+        ),
+        isNull,
+      );
+    });
+
+    test('silent while another offer is live, or a row was never offered', () {
+      expect(
+        unannouncedDecline(
+          job(JobStatus.matched),
+          <MatchResult>[
+            answered('a', 'declined', now.subtract(const Duration(minutes: 3))),
+            answered('b', 'offered', null, technician: 't2'),
+          ],
+          const <String>{},
+          now: now,
+        ),
+        isNull,
+      );
+      // Declined but never answered as an offer (closed when someone else
+      // took the job): not a technician's decline.
+      expect(
+        unannouncedDecline(
+          job(JobStatus.matched),
+          <MatchResult>[answered('c', 'declined', null)],
+          const <String>{},
+          now: now,
+        ),
+        isNull,
+      );
+    });
+
+    test('the device remembers what it has announced', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      LocalPrefs.instance.debugReset();
+
+      expect(await LocalPrefs.instance.shownDeclines(), isEmpty);
+      await LocalPrefs.instance.markDeclineShown('m-1');
+      await LocalPrefs.instance.markDeclineShown('m-2');
+      expect(await LocalPrefs.instance.shownDeclines(), <String>{'m-1', 'm-2'});
     });
   });
 

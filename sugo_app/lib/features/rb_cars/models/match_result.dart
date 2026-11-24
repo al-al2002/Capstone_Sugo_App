@@ -30,6 +30,7 @@ class MatchResult {
     this.finalScore = 0,
     this.createdAt,
     this.offeredAt,
+    this.respondedAt,
   });
 
   factory MatchResult.fromJson(Map<String, dynamic> json) {
@@ -56,6 +57,7 @@ class MatchResult {
       job: jobSnapshot == null ? null : JobSnapshot.fromJson(jobSnapshot),
       createdAt: asDate(json['created_at']),
       offeredAt: asDate(json['offered_at']),
+      respondedAt: asDate(json['responded_at']),
     );
   }
 
@@ -89,6 +91,12 @@ class MatchResult {
   /// When the client sent this request (status became `offered`), set by the
   /// `job_matches_offer_clock` trigger. Null for a row never offered.
   final DateTime? offeredAt;
+
+  /// When an offer ended - accepted or declined - set by the same trigger.
+  /// Null for a row that was never offered, or is still waiting. Used to
+  /// tell a client about a decline that happened while they were away
+  /// (2026-11-23).
+  final DateTime? respondedAt;
 
   /// The job was posted as Urgent.
   bool get isUrgent => job?.isUrgent ?? false;

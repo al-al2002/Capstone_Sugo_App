@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/services/local_prefs.dart';
 import '../../../core/services/notification_router.dart';
 import '../../../core/session/session_controller.dart';
 import '../../../core/session/session_state.dart';
@@ -38,6 +39,7 @@ import '../../rb_cars/models/job.dart';
 import '../../rb_cars/models/job_enums.dart';
 import '../../rb_cars/models/job_party.dart';
 import '../../rb_cars/models/job_technician.dart';
+import '../../rb_cars/models/match_result.dart';
 import '../../rb_cars/models/technician.dart';
 import '../../rb_cars/providers/technician_directory_provider.dart';
 import '../../rb_cars/screens/client_review_screen.dart';
@@ -197,7 +199,78 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
         jobId: notice.jobId,
         name: (first == null || first.isEmpty) ? null : first,
       ),
+      matchId: notice.matchId,
     );
+  }
+
+  bool _checkingDeclines = false;
+
+  /// A decline that happened while the app was closed (2026-11-23).
+  ///
+  /// The user declined a request as the technician, then opened the
+  /// client's dashboard, and nothing said so - the live pop-up only fires
+  /// while the app is open. So every time the bookings load, each open Home
+  /// Service or Shop Repair request is checked for a decline this device has
+  /// not announced ([unannouncedDecline]), and the latest is announced, one
+  /// at a time; the next load tells the rest.
+  ///
+  /// Decoration, like the figures: any failure just means no pop-up, and the
+  /// card still says "Your turn to choose".
+  Future<void> _checkMissedDeclines() async {
+    if (_checkingDeclines || _declinedOpen || !mounted) return;
+    _checkingDeclines = true;
+    try {
+      final Set<String> shown = await LocalPrefs.instance.shownDeclines();
+      for (final Job job in List<Job>.of(_jobs)) {
+        final bool open =
+            job.status == JobStatus.pending || job.status == JobStatus.matched;
+        final bool service =
+            job.servicePath == ServicePath.homeService ||
+            job.servicePath == ServicePath.pickup;
+        if (!open || !service) continue;
+
+        final List<MatchResult> matches = await _service.fetchMatches(job.id);
+        final MatchResult? missed = unannouncedDecline(job, matches, shown);
+        if (missed == null) continue;
+        if (!mounted) return;
+
+        final String? first = missed.technician?.displayName
+            .trim()
+            .split(' ')
+            .first;
+        await _showDeclined(
+          NotificationTap(
+            type: 'declined',
+            jobId: job.id,
+            name: (first == null || first.isEmpty) ? null : first,
+          ),
+          matchId: missed.id,
+        );
+        break;
+      }
+    } catch (_) {
+      // A missed announcement, not an error worth showing.
+    } finally {
+      _checkingDeclines = false;
+    }
+  }
+
+  /// Remembers a decline as announced, so no other path repeats it. A push
+  /// carries no match id, so the job's latest declined offer is looked up.
+  Future<void> _rememberDecline(String jobId, String? matchId) async {
+    try {
+      String? id = matchId;
+      if (id == null) {
+        final List<MatchResult> matches = await _service.fetchMatches(jobId);
+        final MatchResult? latest = unannouncedDecline(
+          _jobs.where((Job j) => j.id == jobId).firstOrNull,
+          matches,
+          const <String>{},
+        );
+        id = latest?.id;
+      }
+      if (id != null) await LocalPrefs.instance.markDeclineShown(id);
+    } catch (_) {}
   }
 
   /// Back from the background - typically from tapping a push notification.
@@ -246,6 +319,9 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
         _technicians = people;
         _jobsLoading = false;
       });
+
+      // A decline that happened while the app was closed (2026-11-23).
+      unawaited(_checkMissedDeclines());
 
       await _loadHeroTracking();
 
@@ -397,7 +473,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
   /// chat or a booking too. The button opens the job where it now stands -
   /// the shortlist, normally - on top of whatever is showing, the same as
   /// tapping the push would.
-  Future<void> _showDeclined(NotificationTap push) async {
+  Future<void> _showDeclined(NotificationTap push, {String? matchId}) async {
     if (_declinedOpen) return;
     // The push and the Realtime watcher can both report one decline: shown
     // once per job within a short window.
@@ -409,6 +485,7 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen>
         return;
       }
       _declineShownAt[jobKey] = now;
+      unawaited(_rememberDecline(jobKey, matchId));
     }
     _declinedOpen = true;
     final bool go = await showDeclinedAlert(

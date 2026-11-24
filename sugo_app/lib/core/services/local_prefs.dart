@@ -219,4 +219,30 @@ class LocalPrefs extends ChangeNotifier {
       await (await _store())?.setStringList(_delayAlertsKey, merged);
     } catch (_) {}
   }
+
+  // -------------------------------------------------- decline pop-ups
+
+  /// Not scoped by user: every key is a match id, and a match is one job's.
+  static const String _declinesKey = 'decline_popups_shown';
+
+  /// Declines are recent news; older ids can be forgotten.
+  static const int _maxDeclines = 80;
+
+  /// Match ids whose "can't take this one" pop-up this device has shown
+  /// (2026-11-23), so a decline is announced once - live, from a push, or on
+  /// opening the app - and never again.
+  Future<Set<String>> shownDeclines() async =>
+      ((await _store())?.getStringList(_declinesKey) ?? const <String>[])
+          .toSet();
+
+  /// No [notifyListeners]: nothing on screen depends on this list.
+  Future<void> markDeclineShown(String matchId) async {
+    final List<String> merged = <String>{
+      matchId,
+      ...await shownDeclines(),
+    }.take(_maxDeclines).toList();
+    try {
+      await (await _store())?.setStringList(_declinesKey, merged);
+    } catch (_) {}
+  }
 }

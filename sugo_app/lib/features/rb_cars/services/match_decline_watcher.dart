@@ -12,12 +12,49 @@ import 'rb_cars_service.dart';
 /// A technician declined one of the client's requests.
 @immutable
 class DeclineNotice {
-  const DeclineNotice({required this.jobId, this.technicianName});
+  const DeclineNotice({required this.jobId, this.matchId, this.technicianName});
 
   final String jobId;
 
+  /// The declined offer, so it can be remembered as announced.
+  final String? matchId;
+
   /// From the declined match's technician snapshot, when it has one.
   final String? technicianName;
+}
+
+/// A decline the client has not been told about yet - for when it happened
+/// while their app was closed (2026-11-23).
+///
+/// The user declined a request as the technician, then opened the client's
+/// dashboard, and nothing said so: the live pop-up only fires while the
+/// app is open. So the dashboard also asks, each time it loads, whether an
+/// open request has a decline the client has not seen, and announces the
+/// latest one once.
+///
+/// Only an offer that really ended in a decline counts - `declined` with a
+/// `responded_at` (stamped by the offer-clock trigger when an offer is
+/// answered) - and only when [isTechnicianDecline] holds, so a request the
+/// client re-sent to someone else, or that was accepted, stays silent.
+/// Declines older than [within] are history, not news.
+MatchResult? unannouncedDecline(
+  Job? job,
+  List<MatchResult> matches,
+  Set<String> shown, {
+  DateTime? now,
+  Duration within = const Duration(days: 3),
+}) {
+  if (!isTechnicianDecline(job, matches)) return null;
+  final DateTime cutoff = (now ?? DateTime.now()).subtract(within);
+
+  MatchResult? latest;
+  for (final MatchResult m in matches) {
+    final DateTime? at = m.respondedAt;
+    if (!m.isDeclined || at == null || at.isBefore(cutoff)) continue;
+    if (latest == null || at.isAfter(latest.respondedAt!)) latest = m;
+  }
+  if (latest == null || shown.contains(latest.id)) return null;
+  return latest;
 }
 
 /// Whether a match that just turned `declined` was a technician declining -
@@ -132,17 +169,20 @@ class MatchDeclineWatcher {
     } catch (_) {
       // No snapshot: the pop-up says "Your technician".
     }
+    final Object? matchId = row['id'];
 
-    unawaited(_check(jobId, name));
+    unawaited(_check(jobId, matchId is String ? matchId : null, name));
   }
 
-  Future<void> _check(String jobId, String? name) async {
+  Future<void> _check(String jobId, String? matchId, String? name) async {
     try {
       await Future<void>.delayed(settle);
       final Job? job = await _service.jobById(jobId);
       final List<MatchResult> matches = await _service.fetchMatches(jobId);
       if (isTechnicianDecline(job, matches) && !_notices.isClosed) {
-        _notices.add(DeclineNotice(jobId: jobId, technicianName: name));
+        _notices.add(
+          DeclineNotice(jobId: jobId, matchId: matchId, technicianName: name),
+        );
       }
     } catch (error) {
       debugPrint('MatchDeclineWatcher check failed: $error');
